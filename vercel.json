@@ -1,0 +1,14 @@
+{
+  "functions": {
+    "src/pages/api/*.ts": {
+      "maxDuration": 10,
+      "regions": ["cle1"]
+    }
+  },
+  "crons": [
+    {
+      "path": "/secret-santa/api/health",
+      "schedule": "0 17 * * *"
+    }
+  ]
+}

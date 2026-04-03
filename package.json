@@ -1,0 +1,29 @@
+{
+  "name": "secret-santa-picker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "next": "^16.1.6",
+    "nodemailer": "^8.0.2",
+    "react": "^18",
+    "react-dom": "^18",
+    "sanitize-html": "^2.17.2",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/mssql": "^9.1.9",
+    "@types/node": "^20",
+    "@types/nodemailer": "^6",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/sanitize-html": "^2.16.1",
+    "@types/uuid": "^10",
+    "typescript": "^5"
+  }
+}
