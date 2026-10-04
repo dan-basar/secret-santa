@@ -2,7 +2,7 @@
 
 A full-stack web application for running Secret Santa gift exchanges. Create a draw, assign participants to groups to prevent unwanted pairings, share a results link, and optionally send everyone an email revealing their match.
 
-Built with **Next.js**, **TypeScript**, and **Azure SQL**, deployed on **Vercel**.
+Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Vercel**.
 
 ---
 
@@ -22,7 +22,7 @@ Built with **Next.js**, **TypeScript**, and **Azure SQL**, deployed on **Vercel*
 | Layer | Technology |
 |---|---|
 | Framework | Next.js (pages router), React 18, TypeScript 5 |
-| Database | Azure SQL Server via `mssql` |
+| Database | Neon Postgres via `@neondatabase/serverless` (HTTP driver) |
 | Email | Nodemailer + Gmail SMTP |
 | CAPTCHA | Cloudflare Turnstile |
 | Deployment | Vercel |
@@ -34,19 +34,16 @@ Built with **Next.js**, **TypeScript**, and **Azure SQL**, deployed on **Vercel*
 ### Prerequisites
 
 - Node.js LTS and npm
-- An Azure SQL Server instance
+- A [Neon](https://neon.tech) Postgres database (on Vercel, connect it through the Neon integration so `DATABASE_URL` is set for you)
 - A Gmail account with an [app-specific password](https://support.google.com/accounts/answer/185833)
 - A [Cloudflare Turnstile](https://www.cloudflare.com/products/turnstile/) site/secret key pair
 
 ### Environment Variables
 
-Create a `.env.local` file in the project root:
+Create a `.env.local` file in the project root (or run `vercel env pull .env.local` to fetch the values from the linked Vercel project):
 
 ```dotenv
-AZURE_SQL_SERVER=your-server.database.windows.net
-AZURE_SQL_DATABASE=your-database-name
-AZURE_SQL_USER=your-db-username
-AZURE_SQL_PASSWORD=your-db-password
+DATABASE_URL=postgresql://user:password@your-endpoint.neon.tech/neondb?sslmode=require
 
 GMAIL_USER=you@gmail.com
 GMAIL_APP_PASSWORD=your-16-char-app-password
@@ -60,10 +57,14 @@ TURNSTILE_SECRET_KEY=your-secret-key
 Run the schema script once to create all required tables (`Draws`, `Participants`, `Matches`, `DailyEmailLog`):
 
 ```bash
-sqlcmd -S <server> -d <database> -U <user> -P <password> -i sql/setup.sql
+psql "$DATABASE_URL" -f sql/setup.sql
 ```
 
+You can also paste the script into the SQL Editor in the Neon console.
+
 See [`sql/setup.sql`](sql/setup.sql) for the full schema.
+
+[`scripts/copy-azure-to-neon.ts`](scripts/copy-azure-to-neon.ts) is a one-off script that copies the original Azure SQL data into Neon; see the comment at the top of the file for usage.
 
 ### Running
 
@@ -100,7 +101,7 @@ Draw creation returns a `drawId` and a random `adminKey`. The creator is redirec
 ```
 src/
   lib/
-    db.ts             # Azure SQL singleton pool with retry/backoff
+    db.ts             # Neon serverless SQL client
     matching.ts       # Matching algorithm (shuffle + backtracking)
     email.ts          # Nodemailer email service
     sanitize.ts       # HTML stripping (XSS prevention)
@@ -110,12 +111,13 @@ src/
       get-draw.ts     # GET: fetch draw + participants + matches
       send-emails.ts  # POST: CAPTCHA + rate-limit + idempotent send
       delete-draw.ts  # POST: soft-delete
-      health.ts       # GET: DB health check (Vercel cron)
-      ping.ts         # GET: lightweight warm-up ping
+      health.ts       # GET: DB health check
     index.tsx         # Home page — participant form
     draw/[id].tsx     # Results page — matches, email, admin actions
 sql/
-  setup.sql           # Database schema
+  setup.sql           # Database schema (Postgres)
+scripts/
+  copy-azure-to-neon.ts  # One-off Azure SQL -> Neon data copy
 ```
 
 ---
@@ -130,8 +132,7 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 | `GET` | `/api/get-draw?id=<uuid>[&key=<adminKey>]` | Fetch draw, participants, and matches. `410` for deleted draws; emails included only with a valid admin key. |
 | `POST` | `/api/send-emails` | Verify CAPTCHA, check daily limit, send match emails. Returns `409` if already sent. |
 | `POST` | `/api/delete-draw` | Soft-delete a draw. Idempotent. |
-| `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503` otherwise. Called by Vercel cron daily. |
-| `GET` | `/api/ping` | Lightweight connectivity check. |
+| `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503` otherwise. |
 
 ---
 
@@ -141,8 +142,8 @@ Import the repository into Vercel and add all environment variables under **Proj
 
 Key configuration notes:
 - All routes are served under `/secret-santa` (`basePath` in `next.config.js`) — do not remove this
-- `mssql` is listed under `serverExternalPackages` in `next.config.js` — required for the driver to work in serverless functions
-- `vercel.json` sets a 10s function timeout and a daily cron at 17:00 UTC to keep the Azure SQL connection warm
+- `DATABASE_URL` is provided by the Neon integration on Vercel
+- `vercel.json` sets a 10s function timeout and the `cle1` region for API functions
 
 ---
 

@@ -38,7 +38,6 @@ export default function Home() {
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    fetch(`${router.basePath}/api/ping`).catch(() => {});
     const draft = sessionStorage.getItem('editDraftData');
     if (draft) {
       sessionStorage.removeItem('editDraftData');

@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getPool, withRetry, sql } from '@/lib/db';
+import { sql, isUuid } from '@/lib/db';
 import { sendMatchEmail } from '@/lib/email';
 import { stripHtml } from '@/lib/sanitize';
 
@@ -11,6 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { id, organizerName, organizerEmail, turnstileToken } = req.body;
   if (!id || typeof id !== 'string') return res.status(400).end();
+  if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
   if (!organizerName || typeof organizerName !== 'string' || !organizerName.trim()) return res.status(400).json({ error: 'Organizer name is required.' });
   if (!organizerEmail || typeof organizerEmail !== 'string' || !organizerEmail.trim()) return res.status(400).json({ error: 'Organizer email is required.' });
 
@@ -47,55 +48,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const dbData = await withRetry(async () => {
-      const pool = await getPool();
+    const [drawRows, matchRows] = await sql.transaction([
+      sql`
+        SELECT
+             id
+            ,emails_sent_at
+            ,deleted_at
+        FROM Draws
+        WHERE id = ${id}::uuid
+      `,
+      sql`
+        SELECT
+             givers.name as giver_name
+            ,givers.email as giver_email
+            ,receivers.name as receiver_name
+        FROM Matches as matches
+             INNER JOIN Participants as givers ON matches.giver_participant_id = givers.id
+             INNER JOIN Participants as receivers ON matches.receiver_participant_id = receivers.id
+        WHERE matches.draw_id = ${id}::uuid
+      `,
+    ], { readOnly: true });
 
-      const r1 = new sql.Request(pool);
-      const drawResult = await r1
-        .input('drawId', sql.UniqueIdentifier, id)
-        .query(`SELECT id, emails_sent_at, deleted_at FROM Draws WHERE id = @drawId`);
+    if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
 
-      if (!drawResult.recordset.length) return null;
+    const draw = drawRows[0];
 
-      const draw = drawResult.recordset[0];
-      // Short-circuit: if the draw is already sent or deleted, return early
-      // without fetching matches (we'll reject below anyway)
-      if (draw.deleted_at || draw.emails_sent_at) return { draw, matches: null };
+    if (draw.deleted_at) return res.status(410).json({ error: 'This draw has been deleted.' });
 
-      const r2 = new sql.Request(pool);
-      const matchesResult = await r2
-        .input('drawId', sql.UniqueIdentifier, id)
-        .query(`
-          SELECT
-            g.name AS giver_name,
-            g.email AS giver_email,
-            rv.name AS receiver_name
-          FROM Matches m
-          JOIN Participants g ON m.giver_participant_id = g.id
-          JOIN Participants rv ON m.receiver_participant_id = rv.id
-          WHERE m.draw_id = @drawId
-        `);
-
-      return { draw, matches: matchesResult.recordset };
-    });
-
-    if (!dbData) return res.status(404).json({ error: 'Draw not found.' });
-
-    if (dbData.draw.deleted_at) return res.status(410).json({ error: 'This draw has been deleted.' });
-
-    if (dbData.draw.emails_sent_at) return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
+    if (draw.emails_sent_at) return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
 
     // Step 1: Check global daily email cap
-    const toSend = dbData.matches!.filter((match: any) => match.giver_email);
+    const toSend = matchRows.filter(match => match.giver_email);
 
-    const dailyCount = await withRetry(async () => {
-      const pool = await getPool();
-      const rCap = new sql.Request(pool);
-      const capResult = await rCap.query(
-        `SELECT ISNULL(emails_sent, 0) AS emails_sent FROM DailyEmailLog WHERE log_date = CAST(GETUTCDATE() AS DATE)`
-      );
-      return (capResult.recordset[0]?.emails_sent ?? 0) as number;
-    });
+    const capRows = await sql`
+      SELECT COALESCE(emails_sent, 0) as emails_sent
+      FROM DailyEmailLog
+      WHERE log_date = (now() at time zone 'utc')::date
+    `;
+    const dailyCount: number = capRows[0]?.emails_sent ?? 0;
 
     if (dailyCount + toSend.length > DAILY_EMAIL_LIMIT) {
       return res.status(503).json({
@@ -103,86 +93,54 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    // Step 2: Optimistically mark emails as sent BEFORE sending.
+    // Step 2: Claim the draw BEFORE sending.
     //
-    // This prevents two concurrent requests from both passing the cap check above
-    // and both sending a full set of emails. The WHERE clause makes the UPDATE
-    // atomic: only the first request to reach this point will update the row
-    // (because emails_sent_at will be non-null for any subsequent request).
-    await withRetry(async () => {
-      const pool = await getPool();
-      const rUpdate = new sql.Request(pool);
-      await rUpdate
-        .input('drawId', sql.UniqueIdentifier, id)
-        .input('organizerName', sql.NVarChar(200), safeOrganizerName)
-        .input('organizerEmail', sql.NVarChar(320), safeOrganizerEmail)
-        .query(`
-          UPDATE Draws
-          SET emails_sent_at = GETUTCDATE(), organizer_name = @organizerName, organizer_email = @organizerEmail
-          WHERE id = @drawId AND emails_sent_at IS NULL
-        `);
-    });
+    // This prevents two concurrent requests from both passing the checks above
+    // and both sending a full set of emails. The UPDATE is atomic: only the first
+    // request matches `emails_sent_at IS NULL`, so only it gets a row back from
+    // RETURNING. Any other request gets no row and stops here.
+    const claimRows = await sql`
+      UPDATE Draws
+      SET emails_sent_at = now(), organizer_name = ${safeOrganizerName}, organizer_email = ${safeOrganizerEmail}
+      WHERE id = ${id}::uuid
+           AND emails_sent_at IS NULL
+      RETURNING id
+    `;
 
-    // Step 3: Verify the update succeeded (optimistic lock check).
-    // If emails_sent_at is still null, a concurrent request beat us to it.
-    const lockCheck = await withRetry(async () => {
-      const pool = await getPool();
-      const rCheck = new sql.Request(pool);
-      const checkResult = await rCheck
-        .input('drawId', sql.UniqueIdentifier, id)
-        .query(`SELECT emails_sent_at FROM Draws WHERE id = @drawId`);
-      return checkResult.recordset[0];
-    });
-
-    if (!lockCheck?.emails_sent_at) {
-      return res.status(500).json({ error: 'Failed to lock draw for email sending.' });
+    if (!claimRows.length) {
+      return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
     }
 
-    // Step 4: Send the emails.
+    // Step 3: Send the emails.
     // allSettled (rather than all) lets us attempt every email even if some fail,
     // so partial delivery is possible.
     const results = await Promise.allSettled(
-      toSend.map((match: any) =>
+      toSend.map(match =>
         sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail)
       )
     );
 
-    // Step 5: Check results
+    // Step 4: Check results
     const failures = results.filter(r => r.status === 'rejected');
 
     if (failures.length > 0 && failures.length === toSend.length) {
       // ALL emails failed — roll back the timestamp so the user can retry.
       // We don't roll back on partial failure: some recipients already received
       // their email, so re-sending to everyone would cause duplicates.
-      await withRetry(async () => {
-        const pool = await getPool();
-        const rRollback = new sql.Request(pool);
-        await rRollback
-          .input('drawId', sql.UniqueIdentifier, id)
-          .query(`UPDATE Draws SET emails_sent_at = NULL WHERE id = @drawId`);
-      });
+      await sql`UPDATE Draws SET emails_sent_at = NULL WHERE id = ${id}::uuid`;
 
       return res.status(500).json({ error: 'Failed to send emails. Please try again.' });
     }
 
-    // Step 6: Record successfully sent emails in the daily counter.
-    // MERGE with HOLDLOCK prevents a race condition where two concurrent requests
-    // on the same UTC date both find no existing row and both try to INSERT —
-    // HOLDLOCK forces the second request to wait and hit the UPDATE branch instead.
+    // Step 5: Record successfully sent emails in the daily counter.
+    // ON CONFLICT makes the upsert atomic: if two requests on the same UTC date
+    // both try to insert, the second one updates the existing row instead.
     const actualSent = toSend.length - failures.length;
-    await withRetry(async () => {
-      const pool = await getPool();
-      const rLog = new sql.Request(pool);
-      await rLog
-        .input('count', sql.Int, actualSent)
-        .query(`
-          MERGE DailyEmailLog WITH (HOLDLOCK) AS target
-          USING (SELECT CAST(GETUTCDATE() AS DATE) AS log_date) AS source
-          ON target.log_date = source.log_date
-          WHEN MATCHED THEN UPDATE SET emails_sent = emails_sent + @count
-          WHEN NOT MATCHED THEN INSERT (log_date, emails_sent) VALUES (source.log_date, @count);
-        `);
-    });
+    await sql`
+      INSERT INTO DailyEmailLog (log_date, emails_sent)
+      VALUES ((now() at time zone 'utc')::date, ${actualSent})
+      ON CONFLICT (log_date) DO UPDATE SET emails_sent = DailyEmailLog.emails_sent + EXCLUDED.emails_sent
+    `;
 
     return res.status(200).json({
       success: true,
