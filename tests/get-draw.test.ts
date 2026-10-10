@@ -39,6 +39,10 @@ async function get(query: Record<string, unknown>) {
   const res = {
     statusCode: 0,
     body: undefined as unknown,
+    headers: {} as Record<string, string>,
+    setHeader(name: string, value: string) {
+      this.headers[name] = value;
+    },
     status(code: number) {
       this.statusCode = code;
       return this;
@@ -95,6 +99,11 @@ describe('GET /api/get-draw', () => {
       matches: matchRows,
     });
     expect(JSON.stringify(res.body)).not.toContain(ADMIN_KEY);
+  });
+
+  it('keeps draw data out of search engines', async () => {
+    const res = await get({ id: DRAW_ID });
+    expect(res.headers['X-Robots-Tag']).toBe('noindex, nofollow');
   });
 
   it('returns 410 for a deleted draw', async () => {

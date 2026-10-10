@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { escapeHtml } from '@/lib/sanitize';
+import { siteUrl } from '@/lib/site';
 
 // A draw's emails share 3 reused SMTP connections instead of opening one per
 // email, which is faster and less likely to be throttled by Gmail
@@ -13,14 +14,9 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-/**
- * Public URL of a participant's private reveal page. NEXT_PUBLIC_BASE_URL is the
- * site origin; the /secret-santa basePath is added here, and stripped first if
- * the setting already ends with it, so it is never doubled.
- */
+/** Public URL of a participant's private reveal page */
 export function revealUrl(revealToken: string): string {
-  const origin = (process.env.NEXT_PUBLIC_BASE_URL ?? '').replace(/\/+$/, '').replace(/\/secret-santa$/, '');
-  return `${origin}/secret-santa/reveal/${encodeURIComponent(revealToken)}`;
+  return siteUrl(`/reveal/${encodeURIComponent(revealToken)}`);
 }
 
 export async function sendMatchEmail(

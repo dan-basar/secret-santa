@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import { siteUrl } from '@/lib/site';
 import styles from '@/styles/Home.module.css';
 
 interface Participant {
@@ -12,6 +13,9 @@ interface Participant {
 }
 
 const MAX_PARTICIPANTS = 50;
+
+const TITLE = 'Secret Santa Picker';
+const DESCRIPTION = 'Draw Secret Santa matches and notify everyone by email.';
 
 function generateId() {
   return Math.random().toString(36).slice(2);
@@ -169,8 +173,22 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Secret Santa Picker</title>
-        <meta name="description" content="Draw Secret Santa matches and notify everyone by email." />
+        <title>{TITLE}</title>
+        <meta name="description" content={DESCRIPTION} />
+        <link rel="canonical" href={siteUrl()} />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content={TITLE} />
+        <meta property="og:title" content={TITLE} />
+        <meta property="og:description" content={DESCRIPTION} />
+        <meta property="og:url" content={siteUrl()} />
+        <meta property="og:image" content={siteUrl('/og-image.png')} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content="Secret Santa Picker: draw matches, keep groups apart, and email everyone their person." />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={TITLE} />
+        <meta name="twitter:description" content={DESCRIPTION} />
+        <meta name="twitter:image" content={siteUrl('/og-image.png')} />
       </Head>
 
       <div className={styles.page}>
