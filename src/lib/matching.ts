@@ -11,16 +11,36 @@ export interface Match {
 }
 
 /**
+ * Normalizes a group name for comparison: "Family", "family" and " FAMILY "
+ * are the same group. An empty result means the participant has no group.
+ */
+export function normalizeGroup(group: string): string {
+  return group.trim().toLowerCase();
+}
+
+/**
+ * Gives each participant a constraint key: participants with the same key
+ * cannot be matched. Members of a named group share their group's key, and
+ * each ungrouped participant gets a key of their own, which makes the
+ * no-self-match rule the same rule as the no-same-group rule.
+ */
+function constraintKeys(participants: Participant[]): number[] {
+  const groupKeys = new Map<string, number>();
+  return participants.map((p, i) => {
+    const g = normalizeGroup(p.group);
+    if (!g) return participants.length + i;
+    if (!groupKeys.has(g)) groupKeys.set(g, groupKeys.size);
+    return groupKeys.get(g)!;
+  });
+}
+
+/**
  * Checks whether a valid matching is mathematically possible.
- * A valid matching requires that no single group holds more than floor(n/2)
- * participants when n is even, or floor(n/2) when n is odd — more precisely,
- * no group can have more members than the total number of people outside that group
- * (since each group member needs a receiver from outside the group,
- * and also needs to receive from outside the group).
  *
- * The exact condition: for a valid derangement-with-constraints to exist,
- * no group should account for more than half the participants (strictly more
- * than n/2 means it's impossible).
+ * Each group member needs a receiver from outside the group and a giver from
+ * outside the group, so a valid matching exists exactly when no group holds
+ * more than half the participants (Hall's theorem; see backtrackMatch()).
+ * Groups are compared case-insensitively, the same way createMatches() does.
  */
 export function isMatchingPossible(participants: Participant[]): {
   possible: boolean;
@@ -31,26 +51,29 @@ export function isMatchingPossible(participants: Participant[]): {
     return { possible: false, reason: 'At least 2 participants are required.' };
   }
 
-  // Count group sizes (only for named groups — ungrouped participants are unconstrained)
-  const groupCounts: Record<string, number> = {};
+  // Count group sizes (only for named groups — ungrouped participants are unconstrained).
+  // The first spelling seen is used in error messages.
+  const groupCounts = new Map<string, { label: string; count: number }>();
   for (const p of participants) {
-    const g = p.group.trim();
+    const g = normalizeGroup(p.group);
     if (g) {
-      groupCounts[g] = (groupCounts[g] || 0) + 1;
+      const entry = groupCounts.get(g) ?? { label: p.group.trim(), count: 0 };
+      entry.count++;
+      groupCounts.set(g, entry);
     }
   }
 
-  for (const [group, count] of Object.entries(groupCounts)) {
+  for (const { label, count } of groupCounts.values()) {
     if (count >= n) {
       return {
         possible: false,
-        reason: `All participants are in group "${group}". No valid matches can be made.`,
+        reason: `All participants are in group "${label}". No valid matches can be made.`,
       };
     }
     if (count > n / 2) {
       return {
         possible: false,
-        reason: `Group "${group}" has too many members (${count} out of ${n}). A valid matching is impossible because there aren't enough people outside this group.`,
+        reason: `Group "${label}" has too many members (${count} out of ${n}). A valid matching is impossible because there aren't enough people outside this group.`,
       };
     }
   }
@@ -59,105 +82,85 @@ export function isMatchingPossible(participants: Participant[]): {
 }
 
 /**
- * Attempts to create a valid matching using a shuffle-and-verify approach
- * with backtracking fallback. Returns null if no valid matching found after
- * max attempts (should not happen if isMatchingPossible returns true).
+ * Creates a valid matching. Participants are compared by position, not by
+ * name, so two people with the same name are still matched as two people.
+ * The returned matches hold the same object references that were passed in.
+ * Returns null only when isMatchingPossible() would return false.
  */
 export function createMatches(participants: Participant[]): Match[] | null {
-  // 1000 attempts is more than sufficient given the mathematical guarantee
-  // from isMatchingPossible(). The backtracking fallback only fires in the
-  // extremely unlikely event that all random attempts happen to be invalid.
+  const keys = constraintKeys(participants);
+  const toMatches = (receivers: number[]) =>
+    receivers.map((ri, gi) => ({ giver: participants[gi], receiver: participants[ri] }));
+
+  // Phase 1: uniform shuffle-and-verify. When an attempt succeeds the result
+  // is uniformly random over all valid matchings. Draws with one large group
+  // rarely produce a valid shuffle, which phase 2 handles.
   const MAX_ATTEMPTS = 1000;
-
+  const indices = Array.from({ length: participants.length }, (_, i) => i);
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    // Biased shuffle (sort with random comparator) — not uniform, but fast
-    // and good enough for exploratory phase 1. Correctness is handled by
-    // backtracking if all 1000 attempts fail.
-    const shuffled = [...participants].sort(() => Math.random() - 0.5);
-    const result: Match[] = [];
-    let valid = true;
-
-    for (let i = 0; i < participants.length; i++) {
-      const giver = participants[i];
-      const receiver = shuffled[i];
-
-      // Reject self-matches and same-group matches.
-      // Group comparison is case-insensitive so "Family" and "family" are the same group.
-      if (
-        giver.name === receiver.name ||
-        (giver.group.trim() &&
-          receiver.group.trim() &&
-          giver.group.trim().toLowerCase() === receiver.group.trim().toLowerCase())
-      ) {
-        valid = false;
-        break;
-      }
-
-      result.push({ giver, receiver });
-    }
-
-    if (valid) return result;
+    const receivers = shuffle(indices);
+    if (receivers.every((ri, gi) => keys[ri] !== keys[gi])) return toMatches(receivers);
   }
 
-  // Fallback: deterministic backtracking
-  return backtrackMatch(participants);
+  // Phase 2: randomized backtracking with a feasibility check
+  const receivers = backtrackMatch(keys);
+  return receivers && toMatches(receivers);
 }
 
 /**
- * Deterministic recursive backtracking matcher.
+ * Randomized matcher that assigns a receiver to each giver in turn.
  *
- * Assigns a receiver to each giver one at a time (in `participants` order).
- * For each giver, a shuffled list of candidate receiver indices is tried; any
- * index already used or violating a constraint is skipped. If no valid
- * receiver exists for the current giver, the function returns null and the
- * caller backtracks by trying the next candidate at the previous level.
- *
- * Guaranteed to find a solution if `isMatchingPossible()` returned true.
- * The shuffle at each level ensures the result is still random rather than
- * always producing the same deterministic assignment.
+ * Giver i may give to receiver j when keys[i] !== keys[j]. By Hall's theorem
+ * the remaining givers and receivers can still be matched exactly when, for
+ * every key, the remaining givers with that key are no more than the
+ * remaining receivers without it. Each candidate receiver is checked against
+ * that condition before it is taken, so the search never walks into a dead
+ * end and runs in polynomial time instead of backtracking exponentially.
+ * Candidates are tried in shuffled order so the result is still random.
  */
-function backtrackMatch(
-  participants: Participant[],
-  index = 0,
-  used = new Set<number>(),
-  result: Match[] = []
-): Match[] | null {
-  if (index === participants.length) return result;
-
-  const giver = participants[index];
-  // Shuffle candidate indices for randomness — unlike phase 1's biased sort,
-  // this uses a proper Fisher-Yates shuffle (see shuffle() below).
-  const indices = shuffle(
-    Array.from({ length: participants.length }, (_, i) => i)
-  );
-
-  for (const ri of indices) {
-    if (used.has(ri)) continue;
-    const receiver = participants[ri];
-    if (
-      giver.name === receiver.name ||
-      (giver.group.trim() &&
-        receiver.group.trim() &&
-        giver.group.trim().toLowerCase() ===
-          receiver.group.trim().toLowerCase())
-    )
-      continue;
-
-    used.add(ri);
-    result.push({ giver, receiver });
-    const sub = backtrackMatch(participants, index + 1, used, result);
-    if (sub) return sub;
-    // This path led to a dead end — undo and try the next candidate
-    used.delete(ri);
-    result.pop();
+function backtrackMatch(keys: number[]): number[] | null {
+  const n = keys.length;
+  const giversLeft = new Map<number, number>();
+  const receiversLeft = new Map<number, number>();
+  for (const k of keys) {
+    giversLeft.set(k, (giversLeft.get(k) ?? 0) + 1);
+    receiversLeft.set(k, (receiversLeft.get(k) ?? 0) + 1);
   }
 
-  return null;
+  const feasible = (remaining: number) => {
+    for (const [k, givers] of giversLeft) {
+      if (givers > remaining - (receiversLeft.get(k) ?? 0)) return false;
+    }
+    return true;
+  };
+
+  if (!feasible(n)) return null;
+
+  const used = new Set<number>();
+  const result: number[] = [];
+  for (let gi = 0; gi < n; gi++) {
+    const remaining = n - gi - 1;
+    giversLeft.set(keys[gi], giversLeft.get(keys[gi])! - 1);
+
+    const receiver = shuffle(Array.from({ length: n }, (_, i) => i)).find(ri => {
+      if (used.has(ri) || keys[ri] === keys[gi]) return false;
+      receiversLeft.set(keys[ri], receiversLeft.get(keys[ri])! - 1);
+      if (feasible(remaining)) return true;
+      receiversLeft.set(keys[ri], receiversLeft.get(keys[ri])! + 1);
+      return false;
+    });
+
+    // Unreachable while the feasibility check above held, kept as a guard
+    if (receiver === undefined) return null;
+    used.add(receiver);
+    result.push(receiver);
+  }
+
+  return result;
 }
 
 /**
- * Uniform Fisher-Yates in-place shuffle. Returns a new shuffled array.
- * Used by backtrackMatch to randomise candidate order at each recursion level.
+ * Uniform Fisher-Yates shuffle. Returns a new shuffled array.
  */
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];

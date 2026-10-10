@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from '@/lib/db';
-import { isMatchingPossible, createMatches, Participant } from '@/lib/matching';
+import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
 import { stripHtml } from '@/lib/sanitize';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -21,6 +21,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     p.name = stripHtml(p.name);
     p.email = p.email ? p.email.trim().toLowerCase() : '';
     p.group = p.group ? stripHtml(p.group) : '';
+  }
+
+  // Group names that differ only in case are one group, as in matching
+  const groupNames = new Set(participants.map(p => normalizeGroup(p.group)).filter(Boolean));
+  if (groupNames.size > 20) {
+    return res.status(400).json({ error: 'Maximum 20 groups allowed.' });
+  }
+  if (participants.some(p => p.group.length > 200)) {
+    return res.status(400).json({ error: 'Group names must be 200 characters or fewer.' });
   }
 
   // Re-validate after sanitization (names could become empty after stripping tags)

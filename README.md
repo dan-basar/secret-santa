@@ -83,8 +83,8 @@ npm run build && npm start  # production
 No participant can draw themselves or anyone in their group. Before writing to the DB, the algorithm checks feasibility: if any single group holds more than 50% of participants, a valid assignment is impossible and the draw is rejected.
 
 Matching runs in two phases:
-1. **Random shuffle** — up to 1,000 attempts pairing givers with a shuffled receiver list
-2. **Backtracking fallback** — deterministic recursive search if Phase 1 fails (rare in practice)
+1. **Random shuffle** — up to 1,000 attempts pairing givers with a uniformly shuffled receiver list
+2. **Feasibility-checked fallback** — assigns receivers one giver at a time, only taking a receiver that leaves the rest still matchable, so it never dead-ends
 
 ### Email Flow
 
@@ -152,7 +152,7 @@ Key configuration notes:
 Pull requests are welcome. A few conventions to follow:
 
 - TypeScript strict mode — avoid `any`
-- No test runner configured — verify changes via the dev server
+- Run `npm run typecheck` and `npm test` before opening a PR; CI runs both plus the build
 - Always use parameterized SQL queries; never interpolate user input
 - Multi-step writes must use transactions with rollback on error
 - Open PRs against `main`; use descriptive kebab-case branch names

@@ -53,6 +53,8 @@ tsconfig.json
 npm run dev      # Start dev server on http://localhost:3000/secret-santa
 npm run build    # Production build
 npm run start    # Serve production build
+npm run typecheck  # tsc --noEmit
+npm test         # Vitest unit tests (tests/)
 ```
 
 **Always prefix `npm run dev` with the appropriate `cd` command:**
@@ -61,7 +63,7 @@ npm run start    # Serve production build
 cd /home/user/secret-santa-app && npm run dev
 ```
 
-There is no test runner configured. There is no linter configured beyond TypeScript strict mode.
+Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR. There is no linter configured beyond TypeScript strict mode.
 
 ## Environment Variables
 
@@ -108,11 +110,11 @@ Error responses always use `{ error: string }` JSON. Use appropriate HTTP status
 
 Core business logic — handle carefully:
 
-1. **Constraint**: participants in the same `group_name` cannot be matched together
+1. **Constraint**: participants in the same `group_name` cannot be matched together; group names are compared trimmed and case-insensitively (`normalizeGroup()`)
 2. **Validation**: if any single group contains >50% of participants, matching is mathematically impossible — reject early
-3. **Phase 1**: random shuffle with up to 1000 attempts
-4. **Phase 2**: backtracking fallback if Phase 1 fails
-5. No self-matches, no same-group matches
+3. **Phase 1**: uniform Fisher-Yates shuffle with up to 1000 attempts
+4. **Phase 2**: randomized assignment with a Hall's-condition feasibility check if Phase 1 fails; never dead-ends, so large-group draws stay fast
+5. No self-matches, no same-group matches; participants are compared by position, so duplicate names are fine
 
 ## Database Connection (`src/lib/db.ts`)
 
