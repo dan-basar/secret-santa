@@ -64,7 +64,7 @@ const WHITELISTED_IPS = new Set(
   (process.env.RATE_LIMIT_IP_WHITELIST ?? '').split(',').map(s => s.trim()).filter(Boolean)
 );
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // Normalize: strip basePath if present (request.nextUrl.pathname includes it)
   const apiPath = pathname.startsWith(BASE_PATH)
@@ -99,7 +99,7 @@ export function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Only run middleware on API routes
+// Only run proxy on API routes
 export const config = {
   matcher: '/api/:path*',
 };
