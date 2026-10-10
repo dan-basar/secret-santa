@@ -26,4 +26,11 @@ describe('next.config.js headers', () => {
       expect(rule?.headers).toContainEqual({ key: 'X-Robots-Tag', value: 'noindex, nofollow' });
     }
   });
+
+  it('sends the security headers on every route', async () => {
+    const rules = await nextConfig.headers!();
+    const rule = rules.find((r: { source: string }) => r.source === '/:path*');
+    expect(rule?.headers).toContainEqual({ key: 'Content-Security-Policy', value: "frame-ancestors 'none'" });
+    expect(rule?.headers).toContainEqual({ key: 'X-Frame-Options', value: 'DENY' });
+  });
 });

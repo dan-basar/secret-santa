@@ -65,15 +65,15 @@ export default function DrawPage() {
     let scriptEl: HTMLScriptElement | null = null;
 
     const render = () => {
-      if (!turnstileContainerRef.current || !(window as any).turnstile) return;
+      if (!turnstileContainerRef.current || !window.turnstile) return;
       if (turnstileWidgetId.current !== null) return; // already rendered
-      turnstileWidgetId.current = (window as any).turnstile.render(turnstileContainerRef.current, {
-        sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+      turnstileWidgetId.current = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!,
         callback: (token: string) => setTurnstileToken(token),
       });
     };
 
-    if ((window as any).turnstile) {
+    if (window.turnstile) {
       render();
     } else {
       // Script is still loading — fire render once it finishes.
@@ -82,14 +82,14 @@ export default function DrawPage() {
         scriptEl.addEventListener('load', render, { once: true });
         // Fallback: if the script finished loading between our window.turnstile
         // check above and attaching the listener, the load event won't fire again.
-        if ((window as any).turnstile) render();
+        if (window.turnstile) render();
       }
     }
 
     return () => {
       if (scriptEl) scriptEl.removeEventListener('load', render);
-      if (turnstileWidgetId.current !== null && (window as any).turnstile) {
-        (window as any).turnstile.remove(turnstileWidgetId.current);
+      if (turnstileWidgetId.current !== null && window.turnstile) {
+        window.turnstile.remove(turnstileWidgetId.current);
         turnstileWidgetId.current = null;
       }
     };
@@ -138,7 +138,7 @@ export default function DrawPage() {
       setEmailError('Network error. Please try again.');
     } finally {
       // A Turnstile token works once, so get a fresh one for any next attempt
-      if (turnstileWidgetId.current !== null && (window as any).turnstile) (window as any).turnstile.reset(turnstileWidgetId.current);
+      if (turnstileWidgetId.current !== null && window.turnstile) window.turnstile.reset(turnstileWidgetId.current);
       setTurnstileToken(null);
       setEmailLoading(false);
     }

@@ -72,7 +72,7 @@ Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next
 
 ## Environment Variables
 
-All required — no defaults. Store in `.env.local` locally.
+All required except `RATE_LIMIT_IP_WHITELIST` — no defaults. Store in `.env.local` locally.
 
 **Local `DATABASE_URL` points at the Neon `dev` branch, never production.** The production connection string lives only in Vercel; never run queries, scripts or the dev server against it. `.env.development.local` holds Cloudflare's always-pass Turnstile test keys so emails can be sent from `npm run dev` (the real keys reject `localhost`). Only send email for draws you create, to addresses you were given.
 
@@ -82,6 +82,9 @@ All required — no defaults. Store in `.env.local` locally.
 | `GMAIL_USER`         | Gmail address for outbound email  |
 | `GMAIL_APP_PASSWORD` | Gmail app-specific password       |
 | `NEXT_PUBLIC_BASE_URL` | Site origin for reveal links in emails, without the `/secret-santa` basePath |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key for the send-emails widget |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key; `send-emails` verifies the widget token with it |
+| `RATE_LIMIT_IP_WHITELIST` | Optional. Comma-separated IPs that `src/proxy.ts` never rate limits |
 
 ## Database Schema
 
