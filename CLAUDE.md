@@ -36,13 +36,14 @@ src/
     index.tsx          # Home page — draw creation form
     draw/[id].tsx      # Draw results page
     reveal/[token].tsx # Participant's private tap-to-reveal page
+  proxy.ts             # Per-IP hourly rate limits for create-draw, send-emails, delete-draw (RateLimits table)
   styles/
     globals.css        # Design tokens (CSS custom properties), resets
     Home.module.css
     Draw.module.css
     Reveal.module.css
 sql/
-  setup.sql            # Database schema (Draws, Participants, Matches, DailyEmailLog tables)
+  setup.sql            # Database schema (Draws, Participants, Matches, DailyEmailLog, RateLimits tables)
   migrations/          # One-off schema changes for existing databases (run manually)
 scripts/
   copy-azure-to-neon.ts  # One-off Azure SQL -> Neon data copy (run manually)
@@ -84,18 +85,19 @@ All required — no defaults. Store in `.env.local` locally.
 
 ## Database Schema
 
-Three tables (see `sql/setup.sql`):
+Tables (see `sql/setup.sql`):
 
 - **Draws** — one row per draw session; `id` is a `uuid`; soft-delete via `deleted_at`
 - **Participants** — name, optional email, optional group, `position` (1..n order within the draw); FK to `draw_id`
 - **Matches** — giver/receiver pairs; FKs to both `draw_id` and `Participants`
 - **DailyEmailLog** — one row per UTC date counting emails sent (daily cap)
+- **RateLimits** — one hit counter per SHA-256-hashed IP + route per hour, shared by every Vercel instance; `src/proxy.ts` upserts it and fails open if the query errors
 
 ### Conventions
 - Column names: `snake_case`
 - Public IDs: `uuid`
 - Internal join keys: `integer GENERATED ALWAYS AS IDENTITY`
-- Soft deletes only — never hard-delete rows
+- Soft deletes only — never hard-delete rows. The one exception is `RateLimits`: its rows are counters, not people's data, so `src/proxy.ts` deletes rows older than 2 days on about 1 in 100 limited requests
 - Always use parameterized queries: the `sql` tagged template sends `${...}` values as bind parameters; never build SQL text with string concatenation
 - Multi-step writes use `sql.transaction([...])`, which runs all statements in one transaction and rolls back on error
 

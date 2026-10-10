@@ -56,3 +56,13 @@ CREATE TABLE DailyEmailLog (
      log_date date PRIMARY KEY
     ,emails_sent integer NOT NULL DEFAULT 0
 );
+
+-- One hit counter per hashed IP + route per hour, shared by every Vercel instance
+-- (src/proxy.ts). Counter rows older than 2 days are hard-deleted by the proxy: they
+-- hold no one's data, so they're an exception to the soft-delete rule.
+CREATE TABLE RateLimits (
+     bucket varchar(200) NOT NULL        -- SHA-256 hex of IP + route; raw IPs are never stored
+    ,window_start timestamptz NOT NULL   -- start of the hour the hits fall in
+    ,hits integer NOT NULL DEFAULT 1
+    ,PRIMARY KEY (bucket, window_start)
+);

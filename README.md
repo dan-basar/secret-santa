@@ -67,13 +67,13 @@ TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 
 ### Database Setup
 
-Run the schema script once to create all required tables (`Draws`, `Participants`, `Matches`, `DailyEmailLog`):
+Run the schema script once to create all required tables (`Draws`, `Participants`, `Matches`, `DailyEmailLog`, `RateLimits`):
 
 ```bash
 psql "$DATABASE_URL" -f sql/setup.sql
 ```
 
-An existing database created before reveal links needs `sql/migrations/002_reveal_tokens.sql` once; `setup.sql` already includes it.
+An existing database created before reveal links needs `sql/migrations/002_reveal_tokens.sql` once; `setup.sql` already includes it. A database created before shared rate limits needs `sql/migrations/003_rate_limits.sql` once.
 
 You can also paste the script into the SQL Editor in the Neon console.
 

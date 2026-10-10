@@ -1,60 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sql } from '@/lib/db';
 
-// Simple in-memory rate limiter using a Map
-// Note: On Vercel serverless, each cold start gets a fresh Map, so this is
-// per-instance. For a low-traffic app this is sufficient. For heavier traffic,
-// consider Vercel KV or Upstash Redis.
+// Rate limiter backed by the RateLimits table, so every Vercel instance counts
+// against the same numbers. One row per hashed IP + route per hour; a single
+// atomic upsert bumps the count and returns it.
 
-interface RateEntry {
-  count: number;
-  resetAt: number;
-}
-
-const rateLimitMap = new Map<string, RateEntry>();
-
-// Clean up expired entries periodically to prevent memory leaks
-function cleanupExpired() {
-  const now = Date.now();
-  rateLimitMap.forEach((entry, key) => {
-    if (now > entry.resetAt) {
-      rateLimitMap.delete(key);
-    }
-  });
-}
-
-// Run cleanup every 60 seconds
-let lastCleanup = Date.now();
-
-function rateLimit(ip: string, limit: number, windowMs: number): boolean {
-  const now = Date.now();
-
-  // Periodic cleanup
-  if (now - lastCleanup > 60_000) {
-    cleanupExpired();
-    lastCleanup = now;
-  }
-
-  const entry = rateLimitMap.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
-    return true; // allowed
-  }
-
-  if (entry.count < limit) {
-    entry.count++;
-    return true; // allowed
-  }
-
-  return false; // blocked
-}
-
-// Rate limit configuration per route
-const RATE_LIMITS: Record<string, { limit: number; windowMs: number }> = {
-  '/api/create-draw': { limit: 10, windowMs: 60 * 60 * 1000 }, // 10 per hour per IP
-  '/api/send-emails': { limit: 5, windowMs: 60 * 60 * 1000 },  // 5 per hour per IP
-  '/api/delete-draw': { limit: 10, windowMs: 60 * 60 * 1000 }, // 10 per hour per IP
+// Hourly limits per IP, per route
+const RATE_LIMITS: Record<string, number> = {
+  '/api/create-draw': 10,
+  '/api/send-emails': 5,
+  '/api/delete-draw': 10,
 };
+
+// Roughly 1 in this many limited requests also deletes counter rows older than
+// 2 days. They're counters, not people's data: a documented exception to the
+// soft-delete rule (CLAUDE.md).
+const CLEANUP_ONE_IN = 100;
 
 const BASE_PATH = '/secret-santa';
 
@@ -64,15 +25,21 @@ const WHITELISTED_IPS = new Set(
   (process.env.RATE_LIMIT_IP_WHITELIST ?? '').split(',').map(s => s.trim()).filter(Boolean)
 );
 
-export function proxy(request: NextRequest) {
+// SHA-256 hex of the IP and route, so raw IPs are never stored
+async function bucketFor(ip: string, apiPath: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip}:${apiPath}`));
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // Normalize: strip basePath if present (request.nextUrl.pathname includes it)
   const apiPath = pathname.startsWith(BASE_PATH)
     ? pathname.slice(BASE_PATH.length)
     : pathname;
 
-  const config = RATE_LIMITS[apiPath];
-  if (!config) {
+  const limit = RATE_LIMITS[apiPath];
+  if (limit === undefined) {
     return NextResponse.next(); // No rate limit for this route
   }
 
@@ -86,10 +53,26 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const key = `${ip}:${apiPath}`;
-  const allowed = rateLimit(key, config.limit, config.windowMs);
+  let hits: number;
+  try {
+    const bucket = await bucketFor(ip, apiPath);
+    const rows = await sql`
+      INSERT INTO RateLimits (bucket, window_start, hits)
+      VALUES (${bucket}, date_bin('1 hour', now(), 'epoch'), 1)
+      ON CONFLICT (bucket, window_start) DO UPDATE SET hits = RateLimits.hits + 1
+      RETURNING hits`;
+    hits = rows[0].hits as number;
 
-  if (!allowed) {
+    if (Math.random() < 1 / CLEANUP_ONE_IN) {
+      await sql`DELETE FROM RateLimits WHERE window_start < now() - interval '2 days'`;
+    }
+  } catch (error) {
+    // Fail open: a database hiccup must never block real organizers
+    console.error('Rate limit check failed; allowing request', error);
+    return NextResponse.next();
+  }
+
+  if (hits > limit) {
     return NextResponse.json(
       { error: 'Sorry, too many requests from your IP address. Please try again later.' },
       { status: 429 }
