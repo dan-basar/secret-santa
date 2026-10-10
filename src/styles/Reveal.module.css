@@ -1,0 +1,64 @@
+.centered {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.card {
+  padding: 48px 40px;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.bigIcon {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.muted {
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.lead {
+  font-size: 16px;
+  color: var(--ink-light);
+}
+
+.revealButton {
+  margin-top: 16px;
+}
+
+.matchName {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 8px 0;
+  word-break: break-word;
+}
+
+.meta {
+  margin-top: 16px;
+  color: var(--ink-faint);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 600px) {
+  .card {
+    padding: 36px 20px;
+  }
+
+  .matchName {
+    font-size: 26px;
+  }
+}

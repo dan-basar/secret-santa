@@ -26,6 +26,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const emailRegex = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
   if (!emailRegex.test(safeOrganizerEmail)) return res.status(400).json({ error: 'Invalid organizer email format.' });
 
+  // Every email carries a reveal link built from this; an email can't be taken
+  // back, so refuse to send rather than send broken links
+  if (!process.env.NEXT_PUBLIC_BASE_URL) {
+    console.error('NEXT_PUBLIC_BASE_URL is not set');
+    return res.status(500).json({ error: 'Emails are not configured on this server. Please contact the site owner.' });
+  }
+
   // Verify Turnstile token
   if (!turnstileToken) {
     return res.status(400).json({ error: 'CAPTCHA verification required.' });
@@ -64,6 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         SELECT
              givers.name as giver_name
             ,givers.email as giver_email
+            ,givers.reveal_token as giver_reveal_token
             ,receivers.name as receiver_name
         FROM Matches as matches
              INNER JOIN Participants as givers ON matches.giver_participant_id = givers.id
@@ -122,7 +130,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // so partial delivery is possible.
     const results = await Promise.allSettled(
       toSend.map(match =>
-        sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail)
+        sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_token)
       )
     );
 

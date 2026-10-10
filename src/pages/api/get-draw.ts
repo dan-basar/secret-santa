@@ -23,10 +23,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       `,
       sql`
         SELECT
-             id
-            ,name
+             name
             ,email
             ,group_name
+            ,reveal_token
         FROM Participants
         WHERE draw_id = ${id}::uuid
         ORDER BY position
@@ -55,22 +55,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const isAdmin = typeof key === 'string' && key === draw.admin_key;
     const participantsWithEmailCount = participantRows.filter(p => p.email).length;
 
-    const participants = isAdmin
-      ? participantRows
-      : participantRows.map(({ email: _email, ...rest }) => rest);
-
-    const matches = isAdmin
-      ? matchRows
-      : matchRows.map(({ giver_email: _ge, ...rest }) => rest);
-
-    return res.status(200).json({
+    const base = {
       id: draw.id,
       created_at: draw.created_at,
       emails_sent_at: draw.emails_sent_at,
       isAdmin,
+    };
+
+    // Pairings stay private on the shared link: each participant sees their
+    // own match through their personal reveal link instead
+    if (!isAdmin) {
+      return res.status(200).json({
+        ...base,
+        participants: participantRows.map(p => ({ name: p.name })),
+      });
+    }
+
+    return res.status(200).json({
+      ...base,
       participantsWithEmailCount,
-      participants,
-      matches,
+      participants: participantRows,
+      matches: matchRows,
     });
   } catch (err) {
     console.error(err);

@@ -27,19 +27,23 @@ src/
   pages/
     api/
       create-draw.ts   # POST: create draw + participants + matches in a transaction
-      get-draw.ts      # GET: retrieve draw, participants, matches
+      get-draw.ts      # GET: retrieve draw; matches + reveal tokens for admins only
+      reveal.ts        # GET: one participant's own match, by reveal token
       send-emails.ts   # POST: send match emails (idempotent)
       delete-draw.ts   # POST: soft-delete a draw
       health.ts        # GET: DB health check
     _app.tsx           # App wrapper
     index.tsx          # Home page — draw creation form
     draw/[id].tsx      # Draw results page
+    reveal/[token].tsx # Participant's private tap-to-reveal page
   styles/
     globals.css        # Design tokens (CSS custom properties), resets
     Home.module.css
     Draw.module.css
+    Reveal.module.css
 sql/
   setup.sql            # Database schema (Draws, Participants, Matches, DailyEmailLog tables)
+  migrations/          # One-off schema changes for existing databases (run manually)
 scripts/
   copy-azure-to-neon.ts  # One-off Azure SQL -> Neon data copy (run manually)
 next.config.js
@@ -69,11 +73,14 @@ Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next
 
 All required — no defaults. Store in `.env.local` locally.
 
+**Local `DATABASE_URL` points at the Neon `dev` branch, never production.** The production connection string lives only in Vercel; never run queries, scripts or the dev server against it. `.env.development.local` holds Cloudflare's always-pass Turnstile test keys so emails can be sent from `npm run dev` (the real keys reject `localhost`). Only send email for draws you create, to addresses you were given.
+
 | Variable             | Purpose                           |
 |----------------------|-----------------------------------|
 | `DATABASE_URL`       | Neon Postgres connection string (set by the Neon integration on Vercel; `vercel env pull .env.local` locally) |
 | `GMAIL_USER`         | Gmail address for outbound email  |
 | `GMAIL_APP_PASSWORD` | Gmail app-specific password       |
+| `NEXT_PUBLIC_BASE_URL` | Site origin for reveal links in emails, without the `/secret-santa` basePath |
 
 ## Database Schema
 
@@ -99,7 +106,8 @@ All endpoints live under `/api/`:
 | Method | Path            | Notes                                          |
 |--------|-----------------|------------------------------------------------|
 | POST   | `/api/create-draw`  | Validates 2–50 participants before DB write    |
-| GET    | `/api/get-draw`     | `?id=UUID`; returns 410 for deleted draws      |
+| GET    | `/api/get-draw`     | `?id=UUID`; names only unless `key` is the admin key; 410 for deleted draws |
+| GET    | `/api/reveal`       | `?token=UUID`; one participant's own match; 404 unknown, 410 deleted |
 | POST   | `/api/send-emails`  | Idempotent — rejects if already sent (409)     |
 | POST   | `/api/delete-draw`  | Idempotent soft-delete                         |
 | GET    | `/api/health`       | Returns 503 if DB unreachable                  |

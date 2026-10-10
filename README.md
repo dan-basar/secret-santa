@@ -10,7 +10,8 @@ Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Ver
 
 - **Conflict-free matching** — participants in the same group (e.g. families, teams) are never paired together
 - **Up to 50 participants** across up to 20 groups per draw
-- **Shareable results link** — public view shows matches without revealing email addresses
+- **Private reveal links** — each participant gets a personal link that shows only who they drew, behind a tap-to-reveal
+- **Shareable link** — public view lists participant names only; pairings stay private
 - **Email notifications** — one-click emails to all participants, protected by Cloudflare Turnstile CAPTCHA
 - **Admin access** — the creator gets a private link to view emails, delete the draw, or edit and redraw
 - **Soft-delete** — draws are hidden, not destroyed
@@ -48,8 +49,20 @@ DATABASE_URL=postgresql://user:password@your-endpoint.neon.tech/neondb?sslmode=r
 GMAIL_USER=you@gmail.com
 GMAIL_APP_PASSWORD=your-16-char-app-password
 
+# Site origin used for the reveal links in emails, without the /secret-santa basePath
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
+
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=your-site-key
 TURNSTILE_SECRET_KEY=your-secret-key
+```
+
+**Local development never uses the production database.** Point `DATABASE_URL` in `.env.local` at the Neon `dev` branch (an empty copy of the schema, with no real participants); the production connection string lives only in Vercel. `vercel env pull` writes the production value, so swap `DATABASE_URL` back to the dev branch after running it.
+
+The real Turnstile keys don't accept `localhost`. For `npm run dev`, put Cloudflare's [published test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) in `.env.development.local`, which overrides `.env.local` only in development:
+
+```dotenv
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
 
 ### Database Setup
@@ -59,6 +72,8 @@ Run the schema script once to create all required tables (`Draws`, `Participants
 ```bash
 psql "$DATABASE_URL" -f sql/setup.sql
 ```
+
+An existing database created before reveal links needs `sql/migrations/002_reveal_tokens.sql` once; `setup.sql` already includes it.
 
 You can also paste the script into the SQL Editor in the Neon console.
 
@@ -108,14 +123,17 @@ src/
   pages/
     api/
       create-draw.ts  # POST: validate, match, persist in a transaction
-      get-draw.ts     # GET: fetch draw + participants + matches
+      get-draw.ts     # GET: fetch draw; matches and reveal links for the organizer only
+      reveal.ts       # GET: one participant's own match, by reveal token
       send-emails.ts  # POST: CAPTCHA + rate-limit + idempotent send
       delete-draw.ts  # POST: soft-delete
       health.ts       # GET: DB health check
     index.tsx         # Home page — participant form
-    draw/[id].tsx     # Results page — matches, email, admin actions
+    draw/[id].tsx     # Results page — names for everyone; matches, personal links, email, admin actions for the organizer
+    reveal/[token].tsx  # Participant's private tap-to-reveal page
 sql/
   setup.sql           # Database schema (Postgres)
+  migrations/         # One-off schema changes for existing databases
 scripts/
   copy-azure-to-neon.ts  # One-off Azure SQL -> Neon data copy
 ```
@@ -129,7 +147,8 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/create-draw` | Validate participants, generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. |
-| `GET` | `/api/get-draw?id=<uuid>[&key=<adminKey>]` | Fetch draw, participants, and matches. `410` for deleted draws; emails included only with a valid admin key. |
+| `GET` | `/api/get-draw?id=<uuid>[&key=<adminKey>]` | Fetch a draw. Without a valid admin key: participant names only. With it: emails, groups, reveal tokens and matches. `410` for deleted draws. |
+| `GET` | `/api/reveal?token=<uuid>` | One participant's name, their match, the draw date and the organizer (once emails are sent). `404` for unknown tokens, `410` for deleted draws. |
 | `POST` | `/api/send-emails` | Verify CAPTCHA, check daily limit, send match emails. Returns `409` if already sent. |
 | `POST` | `/api/delete-draw` | Soft-delete a draw. Idempotent. |
 | `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503` otherwise. |

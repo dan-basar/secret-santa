@@ -29,7 +29,11 @@ CREATE TABLE Participants (
      -- NULL when not provided; the API filters out empty emails before sending
     ,email varchar(320) NULL
     ,group_name varchar(200) NULL
+     -- Secret token in the participant's private /reveal/<token> link; shows only
+     -- their own match (added by migrations/002_reveal_tokens.sql)
+    ,reveal_token uuid NOT NULL DEFAULT gen_random_uuid()
     ,UNIQUE (draw_id, position)
+    ,CONSTRAINT UQ_Participants_RevealToken UNIQUE (reveal_token)
 );
 
 CREATE TABLE Matches (

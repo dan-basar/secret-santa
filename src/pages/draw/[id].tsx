@@ -12,14 +12,16 @@ interface Match {
   receiver_group: string | null;
 }
 
+// The shared link gets participant names only; email, group_name, reveal_token,
+// participantsWithEmailCount and matches come back for the organizer alone
 interface DrawData {
   id: string;
   created_at: string;
   emails_sent_at: string | null;
   isAdmin: boolean;
-  participantsWithEmailCount: number;
-  participants: Array<{ name: string; email?: string; group_name: string | null }>;
-  matches: Match[];
+  participantsWithEmailCount?: number;
+  participants: Array<{ name: string; email?: string | null; group_name?: string | null; reveal_token?: string }>;
+  matches?: Match[];
 }
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
@@ -43,8 +45,12 @@ export default function DrawPage() {
   const [deleted, setDeleted] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
+  const [redrawLoading, setRedrawLoading] = useState(false);
+  const [redrawError, setRedrawError] = useState('');
+
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetId = useRef<string | null>(null);
@@ -167,9 +173,41 @@ export default function DrawPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const personalUrl = (token: string) => typeof window !== 'undefined'
+    ? `${window.location.origin}${router.basePath}/reveal/${token}`
+    : '';
+
+  const handleCopyPersonalLink = (token: string) => {
+    navigator.clipboard.writeText(personalUrl(token));
+    setCopiedToken(token);
+    setTimeout(() => setCopiedToken((current) => (current === token ? null : current)), 2000);
+  };
+
   const handleEditAndRedraw = async () => {
-    if (!draw) return;
-    const groups = Array.from(new Set(draw.participants.map((p) => p.group_name).filter((g): g is string => g !== null)));
+    // Emails can't be taken back, so a redraw after sending would leave people
+    // holding the wrong match; the button is disabled in that case too
+    if (!draw || draw.emails_sent_at) return;
+    setRedrawLoading(true);
+    setRedrawError('');
+    try {
+      const res = await fetch(`${router.basePath}/api/delete-draw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: draw.id, key: adminKey }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setRedrawError(data.error || 'Could not remove this draw to redraw it. Please try again.');
+        return;
+      }
+    } catch {
+      setRedrawError('Network error. Please try again.');
+      return;
+    } finally {
+      setRedrawLoading(false);
+    }
+
+    const groups = Array.from(new Set(draw.participants.map((p) => p.group_name).filter((g): g is string => !!g)));
     const participants = draw.participants.map((p) => ({
       id: Math.random().toString(36).slice(2),
       name: p.name ?? '',
@@ -180,15 +218,6 @@ export default function DrawPage() {
       groups: groups.length > 0 ? groups : [''],
       participants,
     }));
-    try {
-      await fetch(`${router.basePath}/api/delete-draw`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draw.id, key: adminKey }),
-      });
-    } catch {
-      // non-blocking — proceed to home regardless
-    }
     router.push('/');
   };
 
@@ -254,6 +283,8 @@ export default function DrawPage() {
       })
     : null;
 
+  const matches = draw.isAdmin ? draw.matches ?? [] : null;
+
   return (
     <>
       <Head>
@@ -280,22 +311,49 @@ export default function DrawPage() {
             </button>
           </div>
 
-          {/* Matches table */}
-          <section className={`card ${styles.section}`}>
+          {/* Public view: pairings stay private on the shared link */}
+          {!matches && (
+            <section className={`card ${styles.section}`}>
+              <h2 className={styles.sectionTitle}>Participants</h2>
+              <p className={styles.sectionDesc}>
+                {draw.participants.length} participant{draw.participants.length !== 1 ? 's' : ''} in this draw. Matches are private:
+                each person sees only who they drew, through their own personal link. If you don&rsquo;t have yours,
+                ask your organizer for your personal link.
+              </p>
+              <ul className={styles.participantList}>
+                {draw.participants.map((p, i) => (
+                  <li key={i} className={styles.name}>{p.name}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Matches table (organizer only) */}
+          {matches && <section className={`card ${styles.section}`}>
             <div className={styles.matchesTitleRow}>
               <h2 className={styles.sectionTitle} style={{ marginBottom: 0 }}>Matches</h2>
-              {draw.isAdmin && (
-                <button className="btn btn-secondary" onClick={handleEditAndRedraw}>
-                  ← Edit &amp; Redraw
-                </button>
-              )}
+              <button
+                className="btn btn-secondary"
+                onClick={handleEditAndRedraw}
+                disabled={!!draw.emails_sent_at || redrawLoading}
+                title={draw.emails_sent_at ? 'Emails have already been sent for this draw' : undefined}
+              >
+                {redrawLoading ? 'Removing…' : '← Edit & Redraw'}
+              </button>
             </div>
+            {draw.emails_sent_at && (
+              <p className={styles.sectionDesc}>
+                Edit &amp; Redraw is off because emails have already gone out. A redraw would leave people holding the wrong match.
+              </p>
+            )}
+            {redrawError && <p className="error-msg" style={{ marginBottom: 12 }}>{redrawError}</p>}
             <p className={styles.sectionDesc}>
-              {draw.matches.length} participant{draw.matches.length !== 1 ? 's' : ''} — each person will give a gift to the person listed beside them.
+              {matches.length} participant{matches.length !== 1 ? 's' : ''} — each person will give a gift to the person listed beside them.
+              Only you can see this table; the shareable link shows names only.
             </p>
 
             {(() => {
-              const hasGroups = draw.matches.some((m) => m.giver_group || m.receiver_group);
+              const hasGroups = matches.some((m) => m.giver_group || m.receiver_group);
               return (
                 <table className={styles.table}>
                   <colgroup>
@@ -324,7 +382,7 @@ export default function DrawPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...draw.matches].sort((a, b) => {
+                    {[...matches].sort((a, b) => {
                       const aGroup = a.giver_group || '';
                       const bGroup = b.giver_group || '';
                       if (aGroup && !bGroup) return -1;
@@ -343,7 +401,7 @@ export default function DrawPage() {
                                 : <span className={styles.noGroup}>No Group</span>}
                             </span>
                           )}
-                          {draw.isAdmin && m.giver_email && <span className={styles.email}>{m.giver_email}</span>}
+                          {m.giver_email && <span className={styles.email}>{m.giver_email}</span>}
                         </td>
                         {hasGroups && (
                           <td className={styles.groupCol}>
@@ -376,14 +434,36 @@ export default function DrawPage() {
                 </table>
               );
             })()}
-          </section>
+          </section>}
+
+          {/* Personal reveal links (organizer only) */}
+          {matches && <section className={`card ${styles.section}`}>
+            <h2 className={styles.sectionTitle}>Personal links</h2>
+            <p className={styles.sectionDesc}>
+              Each link shows one person only who they drew. Send each person their own link by text or chat.
+              {draw.emails_sent_at ? ' Everyone with an email address already got theirs in the email.' : ' The emails below include these links too.'}
+            </p>
+            <ul className={styles.personalLinks}>
+              {draw.participants.map((p, i) => p.reveal_token && (
+                <li key={i} className={styles.personalLinkRow}>
+                  <div className={styles.personalLinkText}>
+                    <span className={styles.name}>{p.name}</span>
+                    <span className={styles.shareUrl}>{personalUrl(p.reveal_token)}</span>
+                  </div>
+                  <button className="btn btn-secondary" onClick={() => handleCopyPersonalLink(p.reveal_token!)}>
+                    {copiedToken === p.reveal_token ? '✓ Copied' : 'Copy'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>}
 
           {/* Email section */}
           {draw.isAdmin && <section className={`card ${styles.section}`}>
             <h2 className={styles.sectionTitle}>Email notifications</h2>
 
             {(() => {
-              const emailCount = draw.participantsWithEmailCount;
+              const emailCount = draw.participantsWithEmailCount ?? 0;
               const hasEmails = emailCount > 0;
 
               if (emailsSentDate) {
@@ -401,7 +481,7 @@ export default function DrawPage() {
                 <>
                   <p className={styles.sectionDesc}>
                     {hasEmails
-                      ? `Send each participant an email revealing who they drew. This can only be done once. ${emailCount} of ${draw.matches.length} participant${draw.matches.length !== 1 ? 's' : ''} have an email address.`
+                      ? `Send each participant an email revealing who they drew. This can only be done once. ${emailCount} of ${draw.participants.length} participant${draw.participants.length !== 1 ? 's' : ''} have an email address.`
                       : 'No participants have an email address. Add emails to participants to enable this feature.'}
                   </p>
                   <div className={styles.organizerFields}>
@@ -464,7 +544,7 @@ export default function DrawPage() {
           {draw.isAdmin && <section className={`card ${styles.section} ${styles.dangerSection}`}>
             <h2 className={styles.sectionTitle}>Delete this draw</h2>
             <p className={styles.sectionDesc}>
-              Permanently removes access to this draw. The shareable link will no longer display any results.
+              Permanently removes access to this draw. The shareable link and every personal link will stop working.
               This cannot be undone.
             </p>
             {deleteError && <p className="error-msg" style={{ marginBottom: 12 }}>{deleteError}</p>}

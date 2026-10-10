@@ -1,4 +1,5 @@
-.env.local
+# Every env file holds secrets (.env.local, .env.neon-branch, .env.local.prod-backup, ...)
+.env*
 node_modules/
 .next/
 .claude/
