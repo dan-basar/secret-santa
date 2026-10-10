@@ -1,5 +1,9 @@
 {
   "functions": {
+    "src/pages/api/send-emails.ts": {
+      "maxDuration": 60,
+      "regions": ["cle1"]
+    },
     "src/pages/api/*.ts": {
       "maxDuration": 10,
       "regions": ["cle1"]

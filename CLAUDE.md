@@ -13,7 +13,7 @@ Deployed on Vercel at the `/secret-santa` path prefix.
 - **Framework**: Next.js (pages router, React 18, TypeScript 5)
 - **Database**: Neon Postgres via `@neondatabase/serverless` (HTTP driver, no connection pool)
 - **Email**: Nodemailer with Gmail SMTP
-- **Deployment**: Vercel (region: `cle1`, timeout: 10s per function)
+- **Deployment**: Vercel (region: `cle1`, timeout: 10s per function, 60s for send-emails)
 - **Hosting path**: All routes are under `/secret-santa` (set via `next.config.js` `basePath`)
 
 ## Repository Structure
@@ -159,6 +159,6 @@ Core business logic — handle carefully:
 
 ## Deployment Notes
 
-- `vercel.json` sets function max duration to 10s and deploys to region `cle1`
+- `vercel.json` sets function max duration to 10s (60s for send-emails, so a 50-person draw has time to send) and deploys to region `cle1`
 - `next.config.js` `basePath: '/secret-santa'` affects all internal Next.js links and API calls — do not remove this
 - `DATABASE_URL` comes from the Neon integration on the Vercel project (Free plan, AWS US East 2)
