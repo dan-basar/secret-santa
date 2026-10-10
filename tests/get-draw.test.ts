@@ -24,9 +24,9 @@ const drawRow = {
 };
 
 const participantRows = [
-  { name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_token: '11111111-1111-4111-8111-111111111111' },
-  { name: 'Sam', email: 'sam@example.com', group_name: null, reveal_token: '22222222-2222-4222-8222-222222222222' },
-  { name: 'Jo', email: null, group_name: 'Smiths', reveal_token: '33333333-3333-4333-8333-333333333333' },
+  { name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_token: '11111111-1111-4111-8111-111111111111', email_sent_at: '2026-10-02T09:00:00.000Z' },
+  { name: 'Sam', email: 'sam@example.com', group_name: null, reveal_token: '22222222-2222-4222-8222-222222222222', email_sent_at: null },
+  { name: 'Jo', email: null, group_name: 'Smiths', reveal_token: '33333333-3333-4333-8333-333333333333', email_sent_at: null },
 ];
 
 const matchRows = [
@@ -79,11 +79,13 @@ describe('GET /api/get-draw', () => {
         if (p.email) expect(serialized).not.toContain(p.email);
       }
       expect(serialized).not.toContain('Smiths');
+      expect(serialized).not.toContain('email_sent_at');
+      expect(serialized).not.toContain('2026-10-02T09:00:00.000Z');
       expect(serialized).not.toContain(ADMIN_KEY);
     }
   });
 
-  it('gives the organizer the matches and every personal reveal token', async () => {
+  it('gives the organizer the matches, every personal reveal token and each email status', async () => {
     const res = await get({ id: DRAW_ID, key: ADMIN_KEY });
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({

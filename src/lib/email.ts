@@ -1,8 +1,12 @@
 import nodemailer from 'nodemailer';
 import { escapeHtml } from '@/lib/sanitize';
 
+// A draw's emails share 3 reused SMTP connections instead of opening one per
+// email, which is faster and less likely to be throttled by Gmail
 const transporter = nodemailer.createTransport({
   service: 'gmail',
+  pool: true,
+  maxConnections: 3,
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,

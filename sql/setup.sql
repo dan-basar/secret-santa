@@ -32,6 +32,9 @@ CREATE TABLE Participants (
      -- Secret token in the participant's private /reveal/<token> link; shows only
      -- their own match (added by migrations/002_reveal_tokens.sql)
     ,reveal_token uuid NOT NULL DEFAULT gen_random_uuid()
+     -- When this participant's match email went out; NULL = not sent (yet), so the
+     -- organizer can resend to just those people (added by migrations/004_email_status.sql)
+    ,email_sent_at timestamptz NULL
     ,UNIQUE (draw_id, position)
     ,CONSTRAINT UQ_Participants_RevealToken UNIQUE (reveal_token)
 );

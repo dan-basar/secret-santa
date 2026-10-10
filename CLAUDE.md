@@ -29,7 +29,7 @@ src/
       create-draw.ts   # POST: create draw + participants + matches in a transaction
       get-draw.ts      # GET: retrieve draw; matches + reveal tokens for admins only
       reveal.ts        # GET: one participant's own match, by reveal token
-      send-emails.ts   # POST: send match emails (idempotent)
+      send-emails.ts   # POST: send match emails; claims each person first, so nobody is emailed twice
       delete-draw.ts   # POST: soft-delete a draw
       health.ts        # GET: DB health check
     _app.tsx           # App wrapper
@@ -88,7 +88,7 @@ All required — no defaults. Store in `.env.local` locally.
 Tables (see `sql/setup.sql`):
 
 - **Draws** — one row per draw session; `id` is a `uuid`; soft-delete via `deleted_at`
-- **Participants** — name, optional email, optional group, `position` (1..n order within the draw); FK to `draw_id`
+- **Participants** — name, optional email, optional group, `position` (1..n order within the draw), `email_sent_at` (NULL until their email goes out); FK to `draw_id`
 - **Matches** — giver/receiver pairs; FKs to both `draw_id` and `Participants`
 - **DailyEmailLog** — one row per UTC date counting emails sent (daily cap)
 - **RateLimits** — one hit counter per SHA-256-hashed IP + route per hour, shared by every Vercel instance; `src/proxy.ts` upserts it and fails open if the query errors
@@ -110,7 +110,7 @@ All endpoints live under `/api/`:
 | POST   | `/api/create-draw`  | Validates 2–50 participants before DB write    |
 | GET    | `/api/get-draw`     | `?id=UUID`; names only unless `key` is the admin key; 410 for deleted draws |
 | GET    | `/api/reveal`       | `?token=UUID`; one participant's own match; 404 unknown, 410 deleted |
-| POST   | `/api/send-emails`  | Idempotent — rejects if already sent (409)     |
+| POST   | `/api/send-emails`  | Rejects a second full send (409); `retryFailed: true` resends only to people whose email failed |
 | POST   | `/api/delete-draw`  | Idempotent soft-delete                         |
 | GET    | `/api/health`       | Returns 503 if DB unreachable                  |
 

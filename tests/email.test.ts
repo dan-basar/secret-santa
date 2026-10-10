@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendMail = vi.fn();
+const createTransport = vi.fn((_options: Record<string, unknown>) => ({ sendMail }));
 vi.mock('nodemailer', () => ({
-  default: { createTransport: () => ({ sendMail }) },
+  default: { createTransport },
 }));
 
 const { sendMatchEmail, revealUrl } = await import('@/lib/email');
@@ -61,6 +62,13 @@ describe('sendMatchEmail', () => {
 
     expect(opening).toContain('Hi Alex,');
     expect(opening).not.toContain('Sam');
+  });
+});
+
+describe('transporter', () => {
+  it('pools 3 reused SMTP connections', () => {
+    expect(createTransport).toHaveBeenCalledOnce();
+    expect(createTransport.mock.calls[0][0]).toMatchObject({ service: 'gmail', pool: true, maxConnections: 3 });
   });
 });
 

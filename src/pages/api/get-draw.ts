@@ -27,6 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             ,email
             ,group_name
             ,reveal_token
+            ,email_sent_at
         FROM Participants
         WHERE draw_id = ${id}::uuid
         ORDER BY position

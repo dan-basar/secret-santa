@@ -13,14 +13,14 @@ interface Match {
 }
 
 // The shared link gets participant names only; email, group_name, reveal_token,
-// participantsWithEmailCount and matches come back for the organizer alone
+// email_sent_at, participantsWithEmailCount and matches come back for the organizer alone
 interface DrawData {
   id: string;
   created_at: string;
   emails_sent_at: string | null;
   isAdmin: boolean;
   participantsWithEmailCount?: number;
-  participants: Array<{ name: string; email?: string | null; group_name?: string | null; reveal_token?: string }>;
+  participants: Array<{ name: string; email?: string | null; group_name?: string | null; reveal_token?: string; email_sent_at?: string | null }>;
   matches?: Match[];
 }
 
@@ -36,7 +36,6 @@ export default function DrawPage() {
 
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
-  const [emailSuccess, setEmailSuccess] = useState(false);
   const [organizerName, setOrganizerName] = useState('');
   const [organizerEmail, setOrganizerEmail] = useState('');
 
@@ -52,12 +51,16 @@ export default function DrawPage() {
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetId = useRef<string | null>(null);
 
-  // Explicitly render the Turnstile widget once the email form is visible.
+  // People with an email address who haven't been sent one: everyone before the
+  // first send, and anyone whose email failed after it
+  const unsentCount = draw?.participants.filter((p) => p.email && !p.email_sent_at).length ?? 0;
+
+  // Explicitly render the Turnstile widget once the Send or Resend button is visible.
   // We cannot rely on Turnstile's auto-scan (which only fires once on script load)
   // because the .cf-turnstile container doesn't exist yet when the script first executes —
   // the page is still in "loading" state at that point.
   useEffect(() => {
-    if (state !== 'loaded' || !draw?.isAdmin || draw.emails_sent_at) return;
+    if (state !== 'loaded' || !draw?.isAdmin || (draw.emails_sent_at && unsentCount === 0)) return;
 
     let scriptEl: HTMLScriptElement | null = null;
 
@@ -90,25 +93,32 @@ export default function DrawPage() {
         turnstileWidgetId.current = null;
       }
     };
-  }, [state, draw?.isAdmin, draw?.emails_sent_at]);
+  }, [state, draw?.isAdmin, draw?.emails_sent_at, unsentCount]);
 
-  useEffect(() => {
+  const loadDraw = useCallback(async () => {
     if (!id) return;
     const key = router.query.key;
     const keyParam = key ? `&key=${encodeURIComponent(key as string)}` : '';
-    fetch(`${router.basePath}/api/get-draw?id=${id}${keyParam}`)
-      .then(async (res) => {
-        if (res.status === 410) { setState('deleted'); return; }
-        if (res.status === 404) { setState('not-found'); return; }
-        if (!res.ok) { setState('error'); return; }
-        const data = await res.json();
-        setDraw(data);
-        setState('loaded');
-      })
-      .catch(() => setState('error'));
-  }, [id, router.query.key]);
+    try {
+      const res = await fetch(`${router.basePath}/api/get-draw?id=${id}${keyParam}`);
+      if (res.status === 410) { setState('deleted'); return; }
+      if (res.status === 404) { setState('not-found'); return; }
+      if (!res.ok) { setState('error'); return; }
+      const data = await res.json();
+      setDraw(data);
+      setState('loaded');
+    } catch {
+      setState('error');
+    }
+  }, [id, router.query.key, router.basePath]);
 
-  const handleSendEmails = async () => {
+  useEffect(() => {
+    loadDraw();
+  }, [loadDraw]);
+
+  // retryFailed resends only to people whose email didn't go out; the server
+  // reuses the organizer name and email saved by the first send
+  const handleSendEmails = async (retryFailed: boolean) => {
     if (!draw) return;
     setEmailLoading(true);
     setEmailError('');
@@ -116,22 +126,20 @@ export default function DrawPage() {
       const res = await fetch(`${router.basePath}/api/send-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(), turnstileToken }),
+        body: JSON.stringify(retryFailed
+          ? { id: draw.id, key: adminKey, turnstileToken, retryFailed: true }
+          : { id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(), turnstileToken }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setEmailError(data.error || 'Failed to send emails.');
-        if ((window as any).turnstile) (window as any).turnstile.reset();
-        setTurnstileToken(null);
-      } else {
-        setEmailSuccess(true);
-        setDraw((d) => d ? { ...d, emails_sent_at: new Date().toISOString() } : d);
-      }
+      if (!res.ok) setEmailError(data.error || 'Failed to send emails.');
+      // Reload for each person's sent status rather than guessing it from the response
+      await loadDraw();
     } catch {
       setEmailError('Network error. Please try again.');
-      if ((window as any).turnstile) (window as any).turnstile.reset();
-      setTurnstileToken(null);
     } finally {
+      // A Turnstile token works once, so get a fresh one for any next attempt
+      if (turnstileWidgetId.current !== null && (window as any).turnstile) (window as any).turnstile.reset(turnstileWidgetId.current);
+      setTurnstileToken(null);
       setEmailLoading(false);
     }
   };
@@ -422,7 +430,7 @@ export default function DrawPage() {
             <h2 className={styles.sectionTitle}>Personal links</h2>
             <p className={styles.sectionDesc}>
               Each link shows one person only who they drew. Send each person their own link by text or chat.
-              {draw.emails_sent_at ? ' Everyone with an email address already got theirs in the email.' : ' The emails below include these links too.'}
+              {draw.emails_sent_at ? ' Everyone the emails reached already has theirs.' : ' The emails below include these links too.'}
             </p>
             <ul className={styles.personalLinks}>
               {draw.participants.map((p, i) => p.reveal_token && (
@@ -448,10 +456,36 @@ export default function DrawPage() {
               const hasEmails = emailCount > 0;
 
               if (emailsSentDate) {
+                if (unsentCount === 0) {
+                  return (
+                    <p className="success-msg">
+                      ✓ Emails were sent on {emailsSentDate}. Each participant with an email address has been notified of their match.
+                    </p>
+                  );
+                }
+
+                const notDelivered = draw.participants.filter((p) => p.email && !p.email_sent_at).map((p) => p.name);
                 return (
-                  <p className="success-msg">
-                    ✓ Emails were sent on {emailsSentDate}. Each participant has been notified of their match.
-                  </p>
+                  <>
+                    <p className="error-msg" style={{ marginBottom: 12 }}>
+                      Sent to {emailCount - unsentCount} of {emailCount}. Not delivered: {notDelivered.join(', ')}
+                    </p>
+                    <p className={styles.sectionDesc}>
+                      Resend tries again for just {unsentCount === 1 ? 'this person' : 'these people'}. Everyone else already has their email.
+                      You can also send {unsentCount === 1 ? 'them their' : 'each of them their'} personal link above.
+                    </p>
+                    {emailError && <p className="error-msg" style={{ marginBottom: 12 }}>{emailError}</p>}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                      <div ref={turnstileContainerRef} />
+                      <button
+                        className="btn btn-success"
+                        onClick={() => handleSendEmails(true)}
+                        disabled={emailLoading || !turnstileToken}
+                      >
+                        {emailLoading ? 'Sending…' : `📧 Resend to ${unsentCount} participant${unsentCount !== 1 ? 's' : ''}`}
+                      </button>
+                    </div>
+                  </>
                 );
               }
 
@@ -475,7 +509,7 @@ export default function DrawPage() {
                         value={organizerName}
                         onChange={(e) => setOrganizerName(e.target.value)}
                         placeholder="Your name"
-                        disabled={emailLoading || emailSuccess}
+                        disabled={emailLoading}
                       />
                     </div>
                     <div className={styles.organizerField}>
@@ -487,7 +521,7 @@ export default function DrawPage() {
                         value={organizerEmail}
                         onChange={(e) => setOrganizerEmail(e.target.value)}
                         placeholder="your@email.com"
-                        disabled={emailLoading || emailSuccess}
+                        disabled={emailLoading}
                       />
                       {organizerEmailInvalid && (
                         <p className={styles.organizerFieldError}>Please enter a valid email address.</p>
@@ -500,17 +534,12 @@ export default function DrawPage() {
                     </p>
                   )}
                   {emailError && <p className="error-msg" style={{ marginBottom: 12 }}>{emailError}</p>}
-                  {emailSuccess && (
-                    <p className="success-msg" style={{ marginBottom: 12 }}>
-                      ✓ Emails sent successfully!
-                    </p>
-                  )}
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                     <div ref={turnstileContainerRef} />
                     <button
                       className="btn btn-success"
-                      onClick={handleSendEmails}
-                      disabled={emailLoading || emailSuccess || !canSend || !turnstileToken}
+                      onClick={() => handleSendEmails(false)}
+                      disabled={emailLoading || !canSend || !turnstileToken}
                       title={!hasEmails ? 'No participants have an email address' : !organizerName.trim() || !organizerEmail.trim() ? 'Enter your name and email to send' : undefined}
                     >
                       {emailLoading ? 'Sending…' : `📧 Send emails to ${emailCount} participant${emailCount !== 1 ? 's' : ''}`}
