@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { sql } from '@/lib/db';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
 import { hasHtmlTag } from '@/lib/sanitize';
@@ -7,22 +7,30 @@ import { hasHtmlTag } from '@/lib/sanitize';
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { participants }: { participants: Participant[] } = req.body;
+  // The body is untrusted JSON: check its shape before touching any field, so a
+  // malformed request gets a 400 instead of crashing on .length or .trim()
+  const input: unknown = req.body?.participants;
+  if (!Array.isArray(input)) {
+    return res.status(400).json({ error: 'Participants must be a list.' });
+  }
+  if (!input.every(isParticipantInput)) {
+    return res.status(400).json({ error: 'Each participant needs a text name; email and group must be text if given.' });
+  }
 
-  if (!participants || participants.length < 2) {
+  if (input.length < 2) {
     return res.status(400).json({ error: 'At least 2 participants required.' });
   }
-  if (participants.length > 50) {
+  if (input.length > 50) {
     return res.status(400).json({ error: 'Maximum 50 participants allowed.' });
   }
 
   // Names and groups are stored as plain text exactly as typed (e.g. "Tom & Jerry");
   // React escapes them on screen and email.ts escapes them in emails
-  for (const p of participants) {
-    p.name = p.name ? p.name.trim() : '';
-    p.email = p.email ? p.email.trim().toLowerCase() : '';
-    p.group = p.group ? p.group.trim() : '';
-  }
+  const participants: Participant[] = input.map(p => ({
+    name: p.name.trim(),
+    email: (p.email ?? '').trim().toLowerCase(),
+    group: (p.group ?? '').trim(),
+  }));
 
   // Group names that differ only in case are one group, as in matching
   const groupNames = new Set(participants.map(p => normalizeGroup(p.group)).filter(Boolean));
@@ -36,6 +44,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const emptyNames = participants.filter(p => !p.name);
   if (emptyNames.length > 0) {
     return res.status(400).json({ error: 'All participants must have a name.' });
+  }
+
+  // Column sizes in sql/setup.sql; longer values would fail in the database
+  if (participants.some(p => p.name.length > 200)) {
+    return res.status(400).json({ error: 'Names must be 200 characters or fewer.' });
+  }
+  if (participants.some(p => p.email.length > 320)) {
+    return res.status(400).json({ error: 'Email addresses must be 320 characters or fewer.' });
   }
 
   if (participants.some(p => hasHtmlTag(p.name) || hasHtmlTag(p.group))) {
@@ -61,8 +77,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(422).json({ error: 'Could not find a valid matching. Please adjust your groups.' });
   }
 
-  const drawId = uuidv4();
-  const adminKey = uuidv4();
+  const drawId = randomUUID();
+  const adminKey = randomUUID();
 
   // Positions are 1-based to match WITH ORDINALITY below. Matches reference
   // participants by position rather than name, so two people with the same
@@ -107,4 +123,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.error(err);
     return res.status(500).json({ error: 'Database error. Please try again.' });
   }
+}
+
+interface ParticipantInput {
+  name: string;
+  email?: string | null;
+  group?: string | null;
+}
+
+function isParticipantInput(value: unknown): value is ParticipantInput {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const { name, email, group } = value as Record<string, unknown>;
+  return typeof name === 'string'
+    && (email == null || typeof email === 'string')
+    && (group == null || typeof group === 'string');
 }

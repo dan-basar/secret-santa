@@ -96,4 +96,55 @@ describe('POST /api/create-draw', () => {
     expect(res.statusCode).toBe(422);
     expect(sql.transaction).not.toHaveBeenCalled();
   });
+
+  it('rejects a participants value that is not a list', async () => {
+    for (const participants of [undefined, null, 'A,B', { 0: person('A'), 1: person('B'), length: 2 }]) {
+      const res = await post(participants);
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Participants must be a list.' });
+    }
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects participants with a non-text name, email or group', async () => {
+    for (const bad of [
+      null,
+      'A',
+      { name: 42, email: '', group: '' },
+      { email: '', group: '' },
+      { name: 'A', email: 7, group: '' },
+      { name: 'A', email: '', group: ['Smiths'] },
+    ]) {
+      const res = await post([bad, person('B'), person('C')]);
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Each participant needs a text name; email and group must be text if given.' });
+    }
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
+  it('accepts a missing or null email and group', async () => {
+    const res = await post([{ name: 'A' }, { name: 'B', email: null, group: null }, person('C')]);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects names over 200 characters', async () => {
+    const res = await post([person('x'.repeat(201)), person('B')]);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Names must be 200 characters or fewer.' });
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects email addresses over 320 characters', async () => {
+    const email = `${'x'.repeat(309)}@example.com`; // 321 characters
+    const res = await post([{ name: 'A', email, group: '' }, person('B')]);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Email addresses must be 320 characters or fewer.' });
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
+  it('accepts a 200-character name and a 320-character email', async () => {
+    const email = `${'x'.repeat(308)}@example.com`;
+    const res = await post([{ name: 'x'.repeat(200), email, group: '' }, person('B')]);
+    expect(res.statusCode).toBe(200);
+  });
 });

@@ -14,15 +14,13 @@
     "next": "^16.4.0",
     "nodemailer": "^10.0.16",
     "react": "^18",
-    "react-dom": "^18",
-    "uuid": "^10.0.0"
+    "react-dom": "^18"
   },
   "devDependencies": {
     "@types/mssql": "^9.1.11",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/uuid": "^10",
     "mssql": "^11.0.2",
     "tsx": "^4.23.15",
     "typescript": "^5",
