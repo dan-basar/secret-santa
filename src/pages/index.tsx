@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
+import Link from 'next/link';
 import styles from '@/styles/Home.module.css';
 
 interface Participant {
@@ -37,14 +38,20 @@ export default function Home() {
   const [statusMsg, setStatusMsg] = useState('');
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Set by Edit & Redraw: the earlier draw stays live until this form submits
+  const [replaces, setReplaces] = useState<{ drawId: string; key: string } | null>(null);
+
   useEffect(() => {
     const draft = sessionStorage.getItem('editDraftData');
     if (draft) {
       sessionStorage.removeItem('editDraftData');
       try {
-        const { groups: g, participants: p } = JSON.parse(draft);
+        const { groups: g, participants: p, replacesDrawId, replacesKey } = JSON.parse(draft);
         setGroups(g);
         setParticipants(p);
+        if (typeof replacesDrawId === 'string' && typeof replacesKey === 'string') {
+          setReplaces({ drawId: replacesDrawId, key: replacesKey });
+        }
       } catch {
         // ignore malformed data
       }
@@ -130,12 +137,19 @@ export default function Home() {
       const res = await fetch(`${router.basePath}/api/create-draw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participants: payload }),
+        body: JSON.stringify({
+          participants: payload,
+          replacesDrawId: replaces?.drawId,
+          replacesKey: replaces?.key,
+        }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
+        // The earlier draw is gone, so there is nothing left to replace;
+        // submitting again creates a plain new draw
+        if (res.status === 410) setReplaces(null);
         setError(data.error || 'Something went wrong. Please try again.');
         return;
       }
@@ -148,7 +162,7 @@ export default function Home() {
       setStatusMsg('');
       setLoading(false);
     }
-  }, [participants, router]);
+  }, [participants, replaces, router]);
 
   const filledCount = participants.filter((p) => p.name.trim()).length;
 
@@ -171,6 +185,15 @@ export default function Home() {
         </header>
 
         <main className={styles.main}>
+          {replaces && (
+            <p className={`status-msg ${styles.replaceBanner}`}>
+              <span>This will replace your earlier draw. Its links keep working until you draw new matches.</span>
+              <Link href={{ pathname: '/draw/[id]', query: { id: replaces.drawId, key: replaces.key } }}>
+                Cancel
+              </Link>
+            </p>
+          )}
+
           {/* Step 1: Groups */}
           <section className={`${styles.section} card`}>
             <div className={styles.sectionHeader}>

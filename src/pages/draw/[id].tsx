@@ -45,9 +45,6 @@ export default function DrawPage() {
   const [deleted, setDeleted] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
-  const [redrawLoading, setRedrawLoading] = useState(false);
-  const [redrawError, setRedrawError] = useState('');
-
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -183,30 +180,13 @@ export default function DrawPage() {
     setTimeout(() => setCopiedToken((current) => (current === token ? null : current)), 2000);
   };
 
-  const handleEditAndRedraw = async () => {
+  const handleEditAndRedraw = () => {
     // Emails can't be taken back, so a redraw after sending would leave people
     // holding the wrong match; the button is disabled in that case too
     if (!draw || draw.emails_sent_at) return;
-    setRedrawLoading(true);
-    setRedrawError('');
-    try {
-      const res = await fetch(`${router.basePath}/api/delete-draw`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draw.id, key: adminKey }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setRedrawError(data.error || 'Could not remove this draw to redraw it. Please try again.');
-        return;
-      }
-    } catch {
-      setRedrawError('Network error. Please try again.');
-      return;
-    } finally {
-      setRedrawLoading(false);
-    }
 
+    // This draw stays live until create-draw saves its replacement, so leaving
+    // the form without submitting keeps the original links working
     const groups = Array.from(new Set(draw.participants.map((p) => p.group_name).filter((g): g is string => !!g)));
     const participants = draw.participants.map((p) => ({
       id: Math.random().toString(36).slice(2),
@@ -217,6 +197,8 @@ export default function DrawPage() {
     sessionStorage.setItem('editDraftData', JSON.stringify({
       groups: groups.length > 0 ? groups : [''],
       participants,
+      replacesDrawId: draw.id,
+      replacesKey: adminKey,
     }));
     router.push('/');
   };
@@ -335,10 +317,10 @@ export default function DrawPage() {
               <button
                 className="btn btn-secondary"
                 onClick={handleEditAndRedraw}
-                disabled={!!draw.emails_sent_at || redrawLoading}
+                disabled={!!draw.emails_sent_at}
                 title={draw.emails_sent_at ? 'Emails have already been sent for this draw' : undefined}
               >
-                {redrawLoading ? 'Removing…' : '← Edit & Redraw'}
+                ← Edit &amp; Redraw
               </button>
             </div>
             {draw.emails_sent_at && (
@@ -346,7 +328,6 @@ export default function DrawPage() {
                 Edit &amp; Redraw is off because emails have already gone out. A redraw would leave people holding the wrong match.
               </p>
             )}
-            {redrawError && <p className="error-msg" style={{ marginBottom: 12 }}>{redrawError}</p>}
             <p className={styles.sectionDesc}>
               {matches.length} participant{matches.length !== 1 ? 's' : ''} — each person will give a gift to the person listed beside them.
               Only you can see this table; the shareable link shows names only.

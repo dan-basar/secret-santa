@@ -201,3 +201,16 @@
   .participantRow button { grid-column: 2; grid-row: 1; align-self: start; }
 }
 
+
+.replaceBanner {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.replaceBanner a {
+  color: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+}

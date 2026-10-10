@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'crypto';
-import { sql } from '@/lib/db';
+import { sql, isUuid } from '@/lib/db';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
 import { hasHtmlTag } from '@/lib/sanitize';
 
@@ -15,6 +15,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   if (!input.every(isParticipantInput)) {
     return res.status(400).json({ error: 'Each participant needs a text name; email and group must be text if given.' });
+  }
+
+  // Edit & Redraw: the old draw is only soft-deleted once its replacement is saved
+  const { replacesDrawId, replacesKey } = req.body as { replacesDrawId?: unknown; replacesKey?: unknown };
+  if (replacesDrawId != null && (typeof replacesDrawId !== 'string' || !isUuid(replacesDrawId))) {
+    return res.status(400).json({ error: 'The draw to replace is not valid.' });
   }
 
   if (input.length < 2) {
@@ -77,6 +83,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(422).json({ error: 'Could not find a valid matching. Please adjust your groups.' });
   }
 
+  if (replacesDrawId) {
+    try {
+      const oldRows = await sql`
+        SELECT
+             admin_key
+            ,deleted_at
+            ,emails_sent_at
+        FROM Draws
+        WHERE id = ${replacesDrawId}::uuid
+      `;
+      // Old draws with no stored admin_key never match, as in delete-draw
+      if (!oldRows.length || typeof replacesKey !== 'string' || replacesKey !== oldRows[0].admin_key) {
+        return res.status(403).json({ error: 'Only the organizer can replace this draw.' });
+      }
+      if (oldRows[0].deleted_at) {
+        return res.status(410).json({ error: 'Your earlier draw has already been deleted.' });
+      }
+      if (oldRows[0].emails_sent_at) {
+        return res.status(409).json({ error: 'Emails for your earlier draw have already gone out, so it can no longer be redrawn.' });
+      }
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: 'Database error. Please try again.' });
+    }
+  }
+
   const drawId = randomUUID();
   const adminKey = randomUUID();
 
@@ -91,6 +123,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // One HTTPS round trip; Neon runs the statements in a single transaction
     // and rolls back all of them if any fails
     await sql.transaction([
+      // If the old draw was deleted or emailed since the check above, no row is
+      // updated and 1 / count(*) divides by zero, which rolls everything back
+      ...(replacesDrawId ? [sql`
+        WITH replaced as (
+             UPDATE Draws
+             SET deleted_at = now()
+             WHERE id = ${replacesDrawId}::uuid
+                  AND admin_key = ${replacesKey}
+                  AND deleted_at IS NULL
+                  AND emails_sent_at IS NULL
+             RETURNING id
+        )
+        SELECT 1 / count(*) FROM replaced
+      `] : []),
       sql`
         INSERT INTO Draws (id, admin_key)
         VALUES (${drawId}::uuid, ${adminKey})
@@ -120,6 +166,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ]);
     return res.status(200).json({ drawId, adminKey });
   } catch (err) {
+    if ((err as { code?: string }).code === '22012') { // division_by_zero from the replace guard
+      return res.status(409).json({ error: 'Your earlier draw changed while you were editing. Open it again and try again.' });
+    }
     console.error(err);
     return res.status(500).json({ error: 'Database error. Please try again.' });
   }
