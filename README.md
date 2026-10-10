@@ -104,7 +104,7 @@ src/
     db.ts             # Neon serverless SQL client
     matching.ts       # Matching algorithm (shuffle + backtracking)
     email.ts          # Nodemailer email service
-    sanitize.ts       # HTML stripping (XSS prevention)
+    sanitize.ts       # HTML tag check and escaping for emails
   pages/
     api/
       create-draw.ts  # POST: validate, match, persist in a transaction

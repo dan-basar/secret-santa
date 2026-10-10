@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
 import { sendMatchEmail } from '@/lib/email';
-import { stripHtml } from '@/lib/sanitize';
+import { hasHtmlTag } from '@/lib/sanitize';
 
 // Gmail's free SMTP plan allows ~500 emails/day; 495 gives a 5-email safety margin
 const DAILY_EMAIL_LIMIT = 495;
@@ -16,13 +16,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!organizerName || typeof organizerName !== 'string' || !organizerName.trim()) return res.status(400).json({ error: 'Organizer name is required.' });
   if (!organizerEmail || typeof organizerEmail !== 'string' || !organizerEmail.trim()) return res.status(400).json({ error: 'Organizer email is required.' });
 
-  // Sanitize organizer inputs to prevent HTML injection in emails
-  const safeOrganizerName = stripHtml(organizerName);
+  // Stored and emailed as plain text; email.ts escapes both before they go into HTML
+  const safeOrganizerName = organizerName.trim();
   const safeOrganizerEmail = organizerEmail.trim().toLowerCase();
 
-  if (!safeOrganizerName) return res.status(400).json({ error: 'Organizer name must contain valid text (HTML is not allowed).' });
+  if (hasHtmlTag(safeOrganizerName)) return res.status(400).json({ error: 'Organizer name cannot contain HTML.' });
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // Also rejects "<", ">" and quotes, which have no place in an address shown in the email
+  const emailRegex = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
   if (!emailRegex.test(safeOrganizerEmail)) return res.status(400).json({ error: 'Invalid organizer email format.' });
 
   // Verify Turnstile token

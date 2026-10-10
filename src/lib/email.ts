@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { escapeHtml } from '@/lib/sanitize';
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -15,6 +16,12 @@ export async function sendMatchEmail(
   organizerName: string,
   organizerEmail: string
 ): Promise<void> {
+  // Values are stored as plain text, so escape each one before it goes into HTML
+  const htmlToName = escapeHtml(toName);
+  const htmlMatchName = escapeHtml(matchName);
+  const htmlOrganizerName = escapeHtml(organizerName);
+  const htmlOrganizerEmail = escapeHtml(organizerEmail);
+
   await transporter.sendMail({
     from: `Secret Santa <${process.env.GMAIL_USER}>`,
     to: toEmail,
@@ -22,11 +29,11 @@ export async function sendMatchEmail(
     text: `Dear ${toName},\n\nYou have drawn ${matchName}'s name for the gift exchange.\n\nThis secret message was sent by ${organizerName}. You can contact the organizer at ${organizerEmail} if you need to. Happy Gifting!!`,
     html: `
       <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a;">
-        <p style="font-size: 18px; margin-bottom: 24px;">Dear ${toName},</p>
+        <p style="font-size: 18px; margin-bottom: 24px;">Dear ${htmlToName},</p>
         <p style="font-size: 16px; line-height: 1.6;">
-          You have drawn <strong>${matchName}</strong>'s name for the gift exchange.
+          You have drawn <strong>${htmlMatchName}</strong>'s name for the gift exchange.
         </p>
-        <p style="font-size: 14px; color: #888; margin-top: 32px;">This secret message was sent by ${organizerName}. You can contact the organizer at ${organizerEmail} if you need to. Happy Gifting!!</p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">This secret message was sent by ${htmlOrganizerName}. You can contact the organizer at ${htmlOrganizerEmail} if you need to. Happy Gifting!!</p>
       </div>
     `,
   });

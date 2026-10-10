@@ -70,6 +70,27 @@ describe('POST /api/create-draw', () => {
     expect(sql.transaction).not.toHaveBeenCalled();
   });
 
+  it('stores names and groups as typed, without HTML entities', async () => {
+    const res = await post([person('Tom & Jerry', 'Smith & Co'), person('B'), person('C')]);
+    expect(res.statusCode).toBe(200);
+    // sql`...` calls receive the bound values after the template strings
+    const values = vi.mocked(sql).mock.calls.flatMap(call => call.slice(1) as unknown[]);
+    expect(values).toContainEqual(expect.arrayContaining(['Tom & Jerry']));
+    expect(values).toContainEqual(expect.arrayContaining(['Smith & Co']));
+  });
+
+  it('rejects names and groups that contain HTML tags', async () => {
+    for (const participants of [
+      [person('<b>Tom</b>'), person('B')],
+      [person('A', '<img src=x onerror=alert(1)>'), person('B')],
+    ]) {
+      const res = await post(participants);
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Names and groups cannot contain HTML.' });
+    }
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
   it('rejects "Family" and "family" together as one oversized group', async () => {
     const res = await post([person('A', 'Family'), person('B', 'family'), person('C')]);
     expect(res.statusCode).toBe(422);
