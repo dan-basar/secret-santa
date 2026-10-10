@@ -27,6 +27,7 @@ type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
 export default function DrawPage() {
   const router = useRouter();
   const { id } = router.query;
+  const adminKey = typeof router.query.key === 'string' ? router.query.key : '';
 
   const [state, setState] = useState<PageState>('loading');
   const [draw, setDraw] = useState<DrawData | null>(null);
@@ -40,6 +41,7 @@ export default function DrawPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -52,7 +54,7 @@ export default function DrawPage() {
   // because the .cf-turnstile container doesn't exist yet when the script first executes —
   // the page is still in "loading" state at that point.
   useEffect(() => {
-    if (state !== 'loaded' || draw?.emails_sent_at) return;
+    if (state !== 'loaded' || !draw?.isAdmin || draw.emails_sent_at) return;
 
     let scriptEl: HTMLScriptElement | null = null;
 
@@ -85,7 +87,7 @@ export default function DrawPage() {
         turnstileWidgetId.current = null;
       }
     };
-  }, [state, draw?.emails_sent_at]);
+  }, [state, draw?.isAdmin, draw?.emails_sent_at]);
 
   useEffect(() => {
     if (!id) return;
@@ -111,7 +113,7 @@ export default function DrawPage() {
       const res = await fetch(`${router.basePath}/api/send-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draw.id, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(), turnstileToken }),
+        body: JSON.stringify({ id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(), turnstileToken }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -134,17 +136,21 @@ export default function DrawPage() {
   const handleDelete = async () => {
     if (!draw) return;
     setDeleteLoading(true);
+    setDeleteError('');
     try {
       const res = await fetch(`${router.basePath}/api/delete-draw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draw.id }),
+        body: JSON.stringify({ id: draw.id, key: adminKey }),
       });
       if (res.ok) {
         setDeleted(true);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setDeleteError(data.error || 'Failed to delete the draw. Please try again.');
       }
     } catch {
-      // silent
+      setDeleteError('Network error. Please try again.');
     } finally {
       setDeleteLoading(false);
       setDeleteConfirm(false);
@@ -178,7 +184,7 @@ export default function DrawPage() {
       await fetch(`${router.basePath}/api/delete-draw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draw.id }),
+        body: JSON.stringify({ id: draw.id, key: adminKey }),
       });
     } catch {
       // non-blocking — proceed to home regardless
@@ -373,7 +379,7 @@ export default function DrawPage() {
           </section>
 
           {/* Email section */}
-          <section className={`card ${styles.section}`}>
+          {draw.isAdmin && <section className={`card ${styles.section}`}>
             <h2 className={styles.sectionTitle}>Email notifications</h2>
 
             {(() => {
@@ -452,7 +458,7 @@ export default function DrawPage() {
                 </>
               );
             })()}
-          </section>
+          </section>}
 
           {/* Delete section */}
           {draw.isAdmin && <section className={`card ${styles.section} ${styles.dangerSection}`}>
@@ -461,6 +467,7 @@ export default function DrawPage() {
               Permanently removes access to this draw. The shareable link will no longer display any results.
               This cannot be undone.
             </p>
+            {deleteError && <p className="error-msg" style={{ marginBottom: 12 }}>{deleteError}</p>}
 
             {!deleteConfirm ? (
               <button className="btn btn-danger" onClick={() => setDeleteConfirm(true)}>

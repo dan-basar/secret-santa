@@ -9,9 +9,10 @@ const DAILY_EMAIL_LIMIT = 495;
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { id, organizerName, organizerEmail, turnstileToken } = req.body;
+  const { id, key, organizerName, organizerEmail, turnstileToken } = req.body;
   if (!id || typeof id !== 'string') return res.status(400).end();
   if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
+  if (!key || typeof key !== 'string') return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
   if (!organizerName || typeof organizerName !== 'string' || !organizerName.trim()) return res.status(400).json({ error: 'Organizer name is required.' });
   if (!organizerEmail || typeof organizerEmail !== 'string' || !organizerEmail.trim()) return res.status(400).json({ error: 'Organizer email is required.' });
 
@@ -54,6 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
              id
             ,emails_sent_at
             ,deleted_at
+            ,admin_key
         FROM Draws
         WHERE id = ${id}::uuid
       `,
@@ -72,6 +74,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
 
     const draw = drawRows[0];
+
+    // Old draws with no stored admin_key never match, so they can't send
+    if (key !== draw.admin_key) return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
 
     if (draw.deleted_at) return res.status(410).json({ error: 'This draw has been deleted.' });
 
