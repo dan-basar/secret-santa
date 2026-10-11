@@ -20,7 +20,7 @@ npm run dev        # Start dev server on http://localhost:3000/secret-santa
 npm run build      # Production build
 npm run start      # Serve production build
 npm run typecheck  # tsc --noEmit
-npm test           # Vitest unit tests (tests/)
+npm test           # Vitest tests (tests/)
 ```
 
 **Always prefix `npm run dev` with the appropriate `cd` command:**
@@ -29,7 +29,7 @@ npm test           # Vitest unit tests (tests/)
 cd /home/user/secret-santa && npm run dev
 ```
 
-Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR. There is no linter configured beyond TypeScript strict mode.
+Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). Page tests (`tests/home.test.tsx`) use React Testing Library and start with `// @vitest-environment jsdom`. CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR. There is no linter configured beyond TypeScript strict mode.
 
 ## Environment and Data Safety
 

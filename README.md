@@ -32,7 +32,7 @@ More detail:
 | Email | Nodemailer + Gmail SMTP |
 | CAPTCHA | Cloudflare Turnstile |
 | Deployment | Vercel |
-| Tests | Vitest |
+| Tests | Vitest, React Testing Library |
 
 ---
 
@@ -103,7 +103,7 @@ Numbering starts at 002 because 001 was the original Azure SQL schema, which was
 npm install
 npm run dev        # → http://localhost:3000/secret-santa
 npm run typecheck  # tsc --noEmit
-npm test           # Vitest unit tests in tests/
+npm test           # Vitest tests in tests/
 npm run build && npm start  # production
 ```
 
@@ -173,7 +173,7 @@ src/
   types/
     api.ts            # JSON response types, shared by the API routes and the pages
     turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
-tests/                # Vitest unit tests
+tests/                # Vitest tests: lib, every API route, and the home form (React Testing Library, jsdom)
 public/               # Favicon, icons and link-preview image
 sql/
   setup.sql           # Database schema (Postgres)
