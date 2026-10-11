@@ -149,7 +149,8 @@ src/
     email.ts          # Nodemailer email service
     email-address.ts  # isValidEmail(): the one address check, used by the forms and the API
     sanitize.ts       # HTML tag check and escaping for emails
-    site.ts           # siteUrl(): public URLs with the /secret-santa basePath
+    base-path.json    # The /secret-santa basePath, read by next.config.js and site.ts
+    site.ts           # BASE_PATH, and siteUrl(): public URLs with the basePath
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
     groups.ts         # Home page form state: groups by id, Edit & Redraw draft
   pages/
@@ -203,7 +204,7 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 Import the repository into Vercel and add all environment variables under **Project Settings → Environment Variables**.
 
 Key configuration notes:
-- All routes are served under `/secret-santa` (`basePath` in `next.config.js`) — do not remove this
+- All routes are served under `/secret-santa` (`basePath` in `next.config.js`, read from `src/lib/base-path.json`) — do not remove this. To change the prefix, edit only that JSON file
 - `DATABASE_URL` is provided by the Neon integration on Vercel
 - `vercel.json` gives each API route file its own entry (no globs, so no file matches two patterns): all run in the `cle1` region with a 10s timeout, except `send-emails`, which gets 60s so a 50-person draw has time to send. A new API route needs its own entry; `tests/vercel-config.test.ts` fails until it has one
 
