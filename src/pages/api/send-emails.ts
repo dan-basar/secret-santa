@@ -12,6 +12,11 @@ import { hasHtmlTag } from '@/lib/sanitize';
 // Gmail's free SMTP plan allows ~500 emails/day; 495 gives a 5-email safety margin
 const DAILY_EMAIL_LIMIT = 495;
 
+// A participant's claim normally lasts only as long as their own send. One older
+// than this belongs to a request that was killed mid-send (the function limit is
+// 60s), so that person can be claimed again
+const CLAIM_EXPIRY_MINUTES = 5;
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
 
@@ -156,13 +161,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Step 3: Claim each participant BEFORE sending their email.
     //
     // The same pattern per person, in one statement: a participant comes back
-    // only to the request that flipped their email_sent_at from NULL, so two
-    // clicks of Send or Resend can never email anyone twice.
+    // only to the request that set their email_claimed_at, so two clicks of Send
+    // or Resend can never email anyone twice. A claim older than
+    // CLAIM_EXPIRY_MINUTES was left by a request that died, so it can be taken.
     const participantClaimRows = await sql`
       UPDATE Participants
-      SET email_sent_at = now()
+      SET email_claimed_at = now()
       WHERE id = ANY(${unsent.map(match => match.giver_id)}::int[])
            AND email_sent_at IS NULL
+           AND (email_claimed_at IS NULL OR email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}))
       RETURNING id
     `;
     const claimedIds = new Set(participantClaimRows.map(row => row.id));
@@ -170,29 +177,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (retryFailed && !toSend.length) return res.status(409).json({ error: 'These emails are already being sent.' });
 
-    // Step 4: Send the emails.
-    // allSettled (rather than all) lets us attempt every email even if some fail,
-    // so partial delivery is possible.
-    const results = await Promise.allSettled(
-      toSend.map(match =>
-        sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_token)
-      )
-    );
-
-    // Step 5: Release the claim on everyone whose email failed, so a resend can reach them
-    const failed = toSend.filter((_, i) => results[i].status === 'rejected');
-    const failedNames: string[] = failed.map(match => match.giver_name);
-
-    if (failed.length) {
-      for (const result of results) {
-        if (result.status === 'rejected') console.error(result.reason);
+    // Step 4: Send the emails, recording each one as soon as its own send settles,
+    // so a request killed mid-batch loses at most the emails still in flight (their
+    // claims expire and they show as not delivered). Every email is attempted even
+    // if some fail, so partial delivery is possible.
+    const delivered = await Promise.all(toSend.map(async match => {
+      let ok = true;
+      try {
+        await sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_token);
+      } catch (err) {
+        console.error(err);
+        ok = false;
       }
-      await sql`
-        UPDATE Participants
-        SET email_sent_at = NULL
-        WHERE id = ANY(${failed.map(match => match.giver_id)}::int[])
-      `;
-    }
+
+      try {
+        if (ok) {
+          // Marked sent and counted against the daily cap together. ON CONFLICT
+          // makes the upsert atomic: if two requests on the same UTC date both
+          // try to insert, the second one updates the existing row instead.
+          await sql.transaction([
+            sql`
+              UPDATE Participants
+              SET email_sent_at = now(), email_claimed_at = NULL
+              WHERE id = ${match.giver_id}
+            `,
+            sql`
+              INSERT INTO DailyEmailLog (log_date, emails_sent)
+              VALUES ((now() at time zone 'utc')::date, 1)
+              ON CONFLICT (log_date) DO UPDATE SET emails_sent = DailyEmailLog.emails_sent + EXCLUDED.emails_sent
+            `,
+          ]);
+        } else {
+          // Release the claim so a resend can reach them straight away
+          await sql`
+            UPDATE Participants
+            SET email_claimed_at = NULL
+            WHERE id = ${match.giver_id}
+          `;
+        }
+      } catch (err) {
+        // The email's outcome stands; the claim is left to expire
+        console.error(err);
+      }
+
+      return ok;
+    }));
+
+    const failed = toSend.filter((_, i) => !delivered[i]);
+    const failedNames: string[] = failed.map(match => match.giver_name);
+    const actualSent = toSend.length - failed.length;
 
     const allFailed = failed.length > 0 && failed.length === toSend.length;
 
@@ -202,18 +235,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       await sql`UPDATE Draws SET emails_sent_at = NULL WHERE id = ${id}::uuid`;
 
       return res.status(500).json({ error: 'Failed to send emails. Please try again.' });
-    }
-
-    // Step 6: Record successfully sent emails in the daily counter.
-    // ON CONFLICT makes the upsert atomic: if two requests on the same UTC date
-    // both try to insert, the second one updates the existing row instead.
-    const actualSent = toSend.length - failed.length;
-    if (actualSent > 0) {
-      await sql`
-        INSERT INTO DailyEmailLog (log_date, emails_sent)
-        VALUES ((now() at time zone 'utc')::date, ${actualSent})
-        ON CONFLICT (log_date) DO UPDATE SET emails_sent = DailyEmailLog.emails_sent + EXCLUDED.emails_sent
-      `;
     }
 
     if (allFailed) {

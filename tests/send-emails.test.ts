@@ -4,8 +4,10 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 // A tiny in-memory stand-in for the tables send-emails touches. Each sql`...`
 // call is answered by matching its text, and runs synchronously, so a single
 // UPDATE ... WHERE email_sent_at IS NULL is atomic just as it is in Postgres.
-interface FakeParticipant { id: number; name: string; email: string | null; email_sent_at: string | null }
+// Claim times are milliseconds on a fake clock, db.now, so tests can age them.
+interface FakeParticipant { id: number; name: string; email: string | null; email_sent_at: string | null; email_claimed_at: number | null }
 const db = vi.hoisted(() => ({
+  now: 0,
   draw: {} as { id: string; admin_key: string; deleted_at: string | null; emails_sent_at: string | null; organizer_name: string | null; organizer_email: string | null },
   participants: [] as FakeParticipant[],
   receiverOf: {} as Record<number, number>,
@@ -39,19 +41,25 @@ vi.mock('@/lib/db', async (importOriginal) => {
       db.draw.emails_sent_at = null;
       return [];
     }
-    if (text.includes('UPDATE Participants') && text.includes('email_sent_at = now()')) {
-      const ids = values[0] as number[];
-      const claimed = db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at);
-      for (const p of claimed) p.email_sent_at = 'now';
+    if (text.includes('UPDATE Participants') && text.includes('SET email_claimed_at = now()')) {
+      const [ids, expiryMinutes] = values as [number[], number];
+      const claimed = db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at
+        && (p.email_claimed_at === null || p.email_claimed_at < db.now - expiryMinutes * 60_000));
+      for (const p of claimed) p.email_claimed_at = db.now;
       return claimed.map(p => ({ id: p.id }));
     }
-    if (text.includes('UPDATE Participants') && text.includes('email_sent_at = NULL')) {
-      const ids = values[0] as number[];
-      for (const p of db.participants) if (ids.includes(p.id)) p.email_sent_at = null;
+    if (text.includes('UPDATE Participants') && text.includes('SET email_sent_at = now(), email_claimed_at = NULL')) {
+      const p = db.participants.find(p => p.id === values[0])!;
+      p.email_sent_at = 'now';
+      p.email_claimed_at = null;
       return [];
     }
-    if (text.includes('INSERT INTO DailyEmailLog')) {
-      db.dailySent += values[0] as number;
+    if (text.includes('UPDATE Participants') && text.includes('SET email_claimed_at = NULL')) {
+      db.participants.find(p => p.id === values[0])!.email_claimed_at = null;
+      return [];
+    }
+    if (text.includes('INSERT INTO DailyEmailLog') && text.includes(', 1)')) {
+      db.dailySent += 1;
       return [];
     }
     throw new Error(`Unexpected query: ${text}`);
@@ -109,6 +117,10 @@ function sentNames() {
   return db.participants.filter(p => p.email_sent_at).map(p => p.name);
 }
 
+function claimedNames() {
+  return db.participants.filter(p => p.email_claimed_at !== null).map(p => p.name);
+}
+
 // Emails to these addresses fail; everything else succeeds
 function failFor(...addresses: string[]) {
   sendMatchEmail.mockImplementation(async (_name: string, email: string) => {
@@ -119,13 +131,14 @@ function failFor(...addresses: string[]) {
 beforeEach(() => {
   db.draw = { id: DRAW_ID, admin_key: ADMIN_KEY, deleted_at: null, emails_sent_at: null, organizer_name: null, organizer_email: null };
   db.participants = [
-    { id: 1, name: 'Alex', email: 'alex@example.com', email_sent_at: null },
-    { id: 2, name: 'Sam', email: 'sam@example.com', email_sent_at: null },
-    { id: 3, name: 'Jo', email: 'jo@example.com', email_sent_at: null },
-    { id: 4, name: 'Lee', email: null, email_sent_at: null },
+    { id: 1, name: 'Alex', email: 'alex@example.com', email_sent_at: null, email_claimed_at: null },
+    { id: 2, name: 'Sam', email: 'sam@example.com', email_sent_at: null, email_claimed_at: null },
+    { id: 3, name: 'Jo', email: 'jo@example.com', email_sent_at: null, email_claimed_at: null },
+    { id: 4, name: 'Lee', email: null, email_sent_at: null, email_claimed_at: null },
   ];
   db.receiverOf = { 1: 2, 2: 3, 3: 4, 4: 1 };
   db.dailySent = 0;
+  db.now = Date.UTC(2026, 11, 1);
   sendMatchEmail.mockReset();
   failFor();
   vi.stubEnv('NEXT_PUBLIC_BASE_URL', 'https://baseworkshop.app');
@@ -273,6 +286,75 @@ describe('POST /api/send-emails', () => {
     expect(res.statusCode).toBe(503);
     expect(sendMatchEmail).not.toHaveBeenCalled();
     expect(sentNames()).toEqual(['Alex', 'Jo']);
+  });
+
+  it('records each email and its daily count as soon as that email goes out', async () => {
+    const pending: Record<string, () => void> = {};
+    sendMatchEmail.mockImplementation((_name: string, email: string) => new Promise<void>(resolve => { pending[email] = resolve; }));
+    const sending = post(firstSend);
+    await vi.waitFor(() => expect(Object.keys(pending)).toHaveLength(3));
+    expect(claimedNames()).toEqual(['Alex', 'Sam', 'Jo']);
+    expect(sentNames()).toEqual([]);
+
+    pending['sam@example.com']();
+    await vi.waitFor(() => expect(sentNames()).toEqual(['Sam']));
+    expect(db.dailySent).toBe(1);
+    expect(claimedNames()).toEqual(['Alex', 'Jo']);
+
+    pending['alex@example.com']();
+    pending['jo@example.com']();
+    expect((await sending).statusCode).toBe(200);
+    expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
+    expect(claimedNames()).toEqual([]);
+    expect(db.dailySent).toBe(3);
+  });
+
+  it('releases the claim on someone whose email failed', async () => {
+    failFor('sam@example.com');
+    await post(firstSend);
+    expect(claimedNames()).toEqual([]);
+    expect(sentNames()).toEqual(['Alex', 'Jo']);
+  });
+
+  it('keeps the successes recorded when the request dies mid-send', async () => {
+    // Jo's send never settles, like a function killed at its time limit
+    sendMatchEmail.mockImplementation(async (_name: string, email: string) => {
+      if (email === 'jo@example.com') await new Promise(() => {});
+    });
+    void post(firstSend);
+    await vi.waitFor(() => expect(sentNames()).toEqual(['Alex', 'Sam']));
+    expect(db.dailySent).toBe(2);
+    expect(claimedNames()).toEqual(['Jo']);
+
+    // Jo shows as not delivered, and once the claim expires a resend reaches them
+    failFor();
+    sendMatchEmail.mockClear();
+    db.now += 6 * 60_000;
+    const res = await post(resend);
+    expect(res.statusCode).toBe(200);
+    expect(emailed()).toEqual(['jo@example.com']);
+    expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
+    expect(db.dailySent).toBe(3);
+  });
+
+  it('lets a claim older than 5 minutes be taken again, but not a fresh one', async () => {
+    failFor('sam@example.com');
+    await post(firstSend);
+    failFor();
+    sendMatchEmail.mockClear();
+
+    const sam = db.participants.find(p => p.name === 'Sam')!;
+    sam.email_claimed_at = db.now - 4 * 60_000;
+    const fresh = await post(resend);
+    expect(fresh.statusCode).toBe(409);
+    expect(fresh.body.error).toBe('These emails are already being sent.');
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+
+    sam.email_claimed_at = db.now - 6 * 60_000;
+    const stale = await post(resend);
+    expect(stale.statusCode).toBe(200);
+    expect(emailed()).toEqual(['sam@example.com']);
+    expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
   });
 
   it('rejects a retryFailed that is not a boolean', async () => {

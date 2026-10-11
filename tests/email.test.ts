@@ -70,6 +70,14 @@ describe('transporter', () => {
     expect(createTransport).toHaveBeenCalledOnce();
     expect(createTransport.mock.calls[0][0]).toMatchObject({ service: 'gmail', pool: true, maxConnections: 3 });
   });
+
+  it('gives up on a stalled connection well within the 60s send-emails limit', () => {
+    const options = createTransport.mock.calls[0][0];
+    for (const timeout of ['connectionTimeout', 'greetingTimeout', 'socketTimeout']) {
+      expect(options[timeout]).toBeGreaterThan(0);
+      expect(options[timeout]).toBeLessThanOrEqual(15_000);
+    }
+  });
 });
 
 describe('revealUrl', () => {

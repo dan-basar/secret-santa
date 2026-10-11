@@ -28,7 +28,7 @@ stateDiagram-v2
 
 - **Created.** Matches are drawn and saved with the draw. The organizer can share personal links, send emails, Edit & Redraw, or delete.
 - **Edit & Redraw** (only before emails go out) copies the participants back into the home page form. The old draw stays live until the new one is saved; `create-draw` then soft-deletes the old draw in the **same transaction** that saves the new one, so there is never a moment with neither or both.
-- **Emails sent.** The first send records the organizer's name and email and sets `Draws.emails_sent_at`. Each participant is claimed (`Participants.email_sent_at`) before their email goes out and released if it fails, so the organizer can resend to just those people. A second full send is refused (`409`). Redraw is blocked from here on, in the UI and in `create-draw`, because emails can't be taken back.
+- **Emails sent.** The first send records the organizer's name and email and sets `Draws.emails_sent_at`. Each participant is claimed (`Participants.email_claimed_at`) before their email goes out. When that one email settles, `email_sent_at` is set (and `DailyEmailLog` counted) if it went out, or the claim is released if it failed, so the organizer can resend to just those people. A claim older than 5 minutes is from a request that died mid-send and can be taken again. A second full send is refused (`409`). Redraw is blocked from here on, in the UI and in `create-draw`, because emails can't be taken back.
 - **Deleted.** `deleted_at` is set; the rows stay. Every link to the draw, including personal links, then gets `410` / "no longer available".
 
 ## Request path
@@ -57,7 +57,7 @@ Pages (`index.tsx`, `draw/[id].tsx`, `reveal/[token].tsx`) are client-rendered R
 ```
 Draws (id uuid)
   │ 1
-  ├──< Participants (draw_id, position 1..n, reveal_token, email_sent_at)
+  ├──< Participants (draw_id, position 1..n, reveal_token, email_sent_at, email_claimed_at)
   │         ▲ giver_participant_id     ▲ receiver_participant_id
   └──< Matches (draw_id) ──────────────┘
 
@@ -66,7 +66,7 @@ RateLimits (bucket, window_start)     — hits per hashed IP + route per hour
 ```
 
 - **Draws** — one row per draw: admin key, timestamps (`emails_sent_at`, `deleted_at` double as flags), organizer name/email once emails are sent.
-- **Participants** — one row per person: name, optional email, optional group name, position in the draw, their reveal token and when their email went out.
+- **Participants** — one row per person: name, optional email, optional group name, position in the draw, their reveal token, when their email went out, and a short-lived claim while it is being sent.
 - **Matches** — one row per giver → receiver pair, pointing at two Participants rows. Pairs are linked by position, so duplicate names are fine.
 - **DailyEmailLog** and **RateLimits** are counters, not tied to any draw.
 

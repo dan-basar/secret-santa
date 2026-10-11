@@ -91,6 +91,7 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 | `002_reveal_tokens.sql` | `Participants.reveal_token`, for personal reveal links |
 | `003_rate_limits.sql` | The `RateLimits` table |
 | `004_email_status.sql` | `Participants.email_sent_at`, for per-person email tracking and resend |
+| `005_email_claims.sql` | `Participants.email_claimed_at`, so a send that dies midway leaves nobody wrongly marked as emailed |
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 
@@ -124,7 +125,7 @@ Matching runs in two phases:
 
 The organizer provides their name and email, completes a Turnstile CAPTCHA, and sends. Each participant with an email address gets their match and their personal reveal link.
 
-Sending is tracked per person in `Participants.email_sent_at`. Each person is claimed in the database before their email goes out, so two clicks can never email anyone twice; if their email fails, the claim is released. The organizer then sees who wasn't reached and can **resend to just those people** (`retryFailed: true`), or share their personal links another way. A second full send is rejected with `409 Conflict`. If every email in a first send fails, the draw is reopened so the organizer can start over.
+Sending is tracked per person. Each person is claimed in the database (`Participants.email_claimed_at`) before their email goes out, so two clicks can never email anyone twice. As soon as their own email settles, `email_sent_at` is set and the daily count goes up if it went out, or the claim is released if it failed. A request that dies midway (the function's time limit, or a stalled SMTP connection) leaves only the emails still in flight claimed; a claim older than 5 minutes can be taken again, so those people show as not delivered and can be resent to. SMTP connect, greeting and socket timeouts are 15 seconds, so a stalled send fails well within the 60-second function limit. The organizer then sees who wasn't reached and can **resend to just those people** (`retryFailed: true`), or share their personal links another way. A second full send is rejected with `409 Conflict`. If every email in a first send fails, the draw is reopened so the organizer can start over.
 
 A daily cap of 495 emails across all draws is enforced via `DailyEmailLog` to stay within Gmail SMTP limits.
 

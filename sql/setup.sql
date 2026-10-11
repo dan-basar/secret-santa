@@ -35,6 +35,10 @@ CREATE TABLE Participants (
      -- When this participant's match email went out; NULL = not sent (yet), so the
      -- organizer can resend to just those people (added by migrations/004_email_status.sql)
     ,email_sent_at timestamptz NULL
+     -- When a send-emails request took this participant to email them; cleared as soon
+     -- as that email settles. A claim older than 5 minutes is from a request that died
+     -- mid-send and can be taken again (added by migrations/005_email_claims.sql)
+    ,email_claimed_at timestamptz NULL
     ,UNIQUE (draw_id, position)
     ,CONSTRAINT UQ_Participants_RevealToken UNIQUE (reveal_token)
 );
