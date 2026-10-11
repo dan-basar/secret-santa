@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { siteUrl } from '@/lib/site';
+import { isValidEmail } from '@/lib/email-address';
 import { FormGroup, FormParticipant, groupNameFor, newId } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
@@ -102,7 +103,7 @@ export default function Home() {
 
     const filled = participants.filter((p) => p.name.trim() || p.email.trim());
     const invalid = filled.filter(
-      (p) => !p.name.trim() || (p.email.trim() && !/\S+@\S+\.\S+/.test(p.email))
+      (p) => !p.name.trim() || (p.email.trim() && !isValidEmail(p.email.trim()))
     );
 
     if (filled.length < 2) {
@@ -217,7 +218,9 @@ export default function Home() {
             <div className={styles.groupList}>
               {groups.map((g, i) => (
                 <div key={g.id} className={styles.groupRow}>
+                  <label htmlFor={`group-${i + 1}`} className="visually-hidden">Group {i + 1} name</label>
                   <input
+                    id={`group-${i + 1}`}
                     type="text"
                     placeholder={`Group ${i + 1} name`}
                     value={g.name}
@@ -228,6 +231,7 @@ export default function Home() {
                     className={`btn btn-secondary ${styles.removeBtn}`}
                     onClick={() => removeGroup(g.id)}
                     title="Remove group"
+                    aria-label={`Remove group ${i + 1}`}
                     disabled={groups.length === 1}
                   >
                     ×
@@ -254,7 +258,8 @@ export default function Home() {
               </p>
             </div>
 
-            <div className={styles.participantHeader}>
+            {/* Visual column headings; each input has its own label for screen readers */}
+            <div className={styles.participantHeader} aria-hidden="true">
               <span>Name</span>
               <span>Group</span>
               <span>Email</span>
@@ -264,14 +269,18 @@ export default function Home() {
             <div className={styles.participantList}>
               {participants.map((p, i) => (
                 <div key={p.id} className={`${styles.participantRow} fade-in`}>
+                  <label htmlFor={`person-${i + 1}-name`} className="visually-hidden">Person {i + 1} name</label>
                   <input
+                    id={`person-${i + 1}-name`}
                     type="text"
                     placeholder={`Person ${i + 1}`}
                     value={p.name}
                     onChange={(e) => updateParticipant(p.id, 'name', e.target.value)}
                     maxLength={200}
                   />
+                  <label htmlFor={`person-${i + 1}-group`} className="visually-hidden">Person {i + 1} group</label>
                   <select
+                    id={`person-${i + 1}-group`}
                     value={namedGroups.some((g) => g.id === p.groupId) ? p.groupId : ''}
                     onChange={(e) => updateParticipant(p.id, 'groupId', e.target.value)}
                   >
@@ -280,7 +289,9 @@ export default function Home() {
                       <option key={g.id} value={g.id}>{g.name.trim()}</option>
                     ))}
                   </select>
+                  <label htmlFor={`person-${i + 1}-email`} className="visually-hidden">Person {i + 1} email</label>
                   <input
+                    id={`person-${i + 1}-email`}
                     type="email"
                     placeholder="email (optional)"
                     value={p.email}
@@ -292,6 +303,7 @@ export default function Home() {
                     onClick={() => removeParticipant(p.id)}
                     disabled={participants.length <= 2}
                     title="Remove participant"
+                    aria-label={`Remove person ${i + 1}`}
                   >
                     ×
                   </button>

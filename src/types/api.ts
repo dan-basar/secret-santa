@@ -2,8 +2,7 @@
 // Timestamps are ISO 8601 strings: the database driver returns them as Date
 // objects, and the routes convert them when building the response.
 
-// Every 4xx and 5xx with a body, including 429 from src/proxy.ts. The one
-// exception is get-draw's 410, which is GetDrawDeleted
+// Every 4xx and 5xx, including 405 for a wrong method and 429 from src/proxy.ts
 export interface ApiError {
   error: string;
 }
@@ -37,12 +36,11 @@ export interface AdminParticipant {
   email_sent_at: string | null;
 }
 
+// Indexes into AdminDraw.participants, which holds each person's name, email
+// and group, so they aren't repeated here
 export interface AdminMatch {
-  giver_name: string;
-  giver_email: string | null;
-  giver_group: string | null;
-  receiver_name: string;
-  receiver_group: string | null;
+  giver: number;
+  receiver: number;
 }
 
 export interface AdminDraw {
@@ -50,17 +48,11 @@ export interface AdminDraw {
   created_at: string;
   emails_sent_at: string | null;
   isAdmin: true;
-  participantsWithEmailCount: number;
   participants: AdminParticipant[];
   matches: AdminMatch[];
 }
 
 export type GetDrawResponse = SharedDraw | AdminDraw;
-
-// get-draw's 410 for a deleted draw
-export interface GetDrawDeleted {
-  deleted: true;
-}
 
 // GET /api/reveal
 export interface RevealResponse {
@@ -84,6 +76,4 @@ export interface SendEmailsError extends ApiError {
 }
 
 // GET /api/health
-export interface HealthResponse {
-  ok: boolean;
-}
+export type HealthResponse = { ok: true } | { ok: false; error: string };
