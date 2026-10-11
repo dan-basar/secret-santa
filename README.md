@@ -34,7 +34,7 @@ More detail:
 | Email | Nodemailer + Gmail SMTP |
 | CAPTCHA | Cloudflare Turnstile |
 | Deployment | Vercel |
-| Tests | Vitest |
+| Tests | Vitest, React Testing Library |
 
 ---
 
@@ -105,7 +105,7 @@ Numbering starts at 002 because 001 was the original Azure SQL schema, which was
 npm install
 npm run dev        # → http://localhost:3000/secret-santa
 npm run typecheck  # tsc --noEmit
-npm test           # Vitest unit tests in tests/
+npm test           # Vitest tests in tests/
 npm run build && npm start  # production
 ```
 
@@ -149,8 +149,10 @@ src/
     db.ts             # Neon serverless SQL client, isUuid()
     matching.ts       # Matching algorithm (shuffle + feasibility-checked fallback)
     email.ts          # Nodemailer email service
+    email-address.ts  # isValidEmail(): the one address check, used by the forms and the API
     sanitize.ts       # HTML tag check and escaping for emails
-    site.ts           # siteUrl(): public URLs with the /secret-santa basePath
+    base-path.json    # The /secret-santa basePath, read by next.config.js and site.ts
+    site.ts           # BASE_PATH, and siteUrl(): public URLs with the basePath
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
     groups.ts         # Home page form state: groups by id, Edit & Redraw draft
   pages/
@@ -161,18 +163,19 @@ src/
       send-emails.ts  # POST: CAPTCHA + daily cap + per-person claimed send / resend
       delete-draw.ts  # POST: soft-delete
       health.ts       # GET: DB health check
-    _app.tsx          # App wrapper: global styles, icons and the Turnstile script
+    _app.tsx          # App wrapper: global styles and icons
     index.tsx         # Home page — participant form
     draw/[id].tsx     # Results page — names for everyone; matches, personal links, email, admin actions for the organizer
     reveal/[token].tsx  # Participant's private tap-to-reveal page
   components/
-    draw/             # The results page's sections (share bar, matches table, personal links, email, delete); state stays in the page
+    draw/             # The results page's sections (share bar, matches table, personal links, email, delete); state stays in the page.
+                      # TurnstileWidget.tsx loads the CAPTCHA script, only where the send/resend form renders
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
   styles/             # globals.css design tokens + CSS Modules per page
   types/
     api.ts            # JSON response types, shared by the API routes and the pages
     turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
-tests/                # Vitest unit tests
+tests/                # Vitest tests: lib, every API route, and the home form (React Testing Library, jsdom)
 public/               # Logo, favicons, app icons and link-preview image
 sql/
   setup.sql           # Database schema (Postgres)
@@ -186,16 +189,16 @@ docs/                 # Architecture and operations notes
 
 ## API Reference
 
-All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "<message>" }`. Routes marked *rate limited* return `429` when an IP goes over its hourly limit.
+All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "<message>" }`: `400` for a missing draw id, `405` (with an `Allow` header) for a wrong HTTP method, and the codes listed per route. Routes marked *rate limited* return `429` when an IP goes over its hourly limit.
 
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`), generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
-| `GET` | `/api/get-draw?id=<uuid>` | Fetch a draw. Optional header `X-Admin-Key: <adminKey>` (a `key` in the query string is ignored). Without a valid admin key: participant names only. With it: emails, groups, reveal tokens, per-person email status and matches. `410` for deleted draws. |
+| `GET` | `/api/get-draw?id=<uuid>` | Fetch a draw. Optional header `X-Admin-Key: <adminKey>` (a `key` in the query string is ignored). Without a valid admin key: participant names only. With it: emails, groups, reveal tokens, per-person email status and matches, each match as `{ giver, receiver }` indexes into `participants`. Requests without a key never run the matches query. `410` for deleted draws. |
 | `GET` | `/api/reveal?token=<uuid>` | One participant's name, their match, the draw date and the organizer (once emails are sent). `404` for unknown tokens, `410` for deleted draws. |
 | `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail }`, or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Returns `{ success, totalSent, totalFailed, failedNames }`. `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `409` already sent (or nothing to resend), `410` deleted, `503` daily cap reached. |
 | `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ id, key }`. Soft-delete a draw. Idempotent. `403` wrong key. |
-| `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503` otherwise. |
+| `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503 { ok: false, error }` otherwise. |
 
 ---
 
@@ -204,7 +207,7 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 Import the repository into Vercel and add all environment variables under **Project Settings → Environment Variables**.
 
 Key configuration notes:
-- All routes are served under `/secret-santa` (`basePath` in `next.config.js`) — do not remove this
+- All routes are served under `/secret-santa` (`basePath` in `next.config.js`, read from `src/lib/base-path.json`) — do not remove this. To change the prefix, edit only that JSON file
 - `DATABASE_URL` is provided by the Neon integration on Vercel
 - `vercel.json` gives each API route file its own entry (no globs, so no file matches two patterns): all run in the `cle1` region with a 10s timeout, except `send-emails`, which gets 60s so a 50-person draw has time to send. A new API route needs its own entry; `tests/vercel-config.test.ts` fails until it has one
 

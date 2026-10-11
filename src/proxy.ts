@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { BASE_PATH } from '@/lib/site';
 
 // Rate limiter backed by the RateLimits table, so every Vercel instance counts
 // against the same numbers. One row per hashed IP + route per hour; a single
@@ -16,8 +17,6 @@ const RATE_LIMITS: Record<string, number> = {
 // 2 days. They're counters, not people's data: a documented exception to the
 // soft-delete rule (CLAUDE.md).
 const CLEANUP_ONE_IN = 100;
-
-const BASE_PATH = '/secret-santa';
 
 // IPs exempt from rate limiting — loaded from RATE_LIMIT_IP_WHITELIST env var
 // (comma-separated, e.g. "1.2.3.4,5.6.7.8"). Set in .env.local, never commit IPs.
