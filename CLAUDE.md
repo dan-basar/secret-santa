@@ -26,7 +26,7 @@ npm test           # Vitest unit tests (tests/)
 **Always prefix `npm run dev` with the appropriate `cd` command:**
 
 ```bash
-cd /home/user/secret-santa-app && npm run dev
+cd /home/user/secret-santa && npm run dev
 ```
 
 Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR. There is no linter configured beyond TypeScript strict mode.
