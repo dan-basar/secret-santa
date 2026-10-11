@@ -2,12 +2,20 @@ import nodemailer from 'nodemailer';
 import { escapeHtml } from '@/lib/sanitize';
 import { siteUrl } from '@/lib/site';
 
+// Nodemailer waits up to 2 minutes to connect and 10 minutes on an idle socket by
+// default, far past send-emails' 60s function limit. 15s makes a stalled send
+// fail as a normal error, so its claim is released while the function is alive
+const SMTP_TIMEOUT_MS = 15_000;
+
 // A draw's emails share 3 reused SMTP connections instead of opening one per
 // email, which is faster and less likely to be throttled by Gmail
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   pool: true,
   maxConnections: 3,
+  connectionTimeout: SMTP_TIMEOUT_MS,
+  greetingTimeout: SMTP_TIMEOUT_MS,
+  socketTimeout: SMTP_TIMEOUT_MS,
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,

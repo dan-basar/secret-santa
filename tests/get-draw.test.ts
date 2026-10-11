@@ -35,7 +35,7 @@ const matchRows = [
   { giver_name: 'Jo', giver_email: null, giver_group: 'Smiths', receiver_name: 'Alex', receiver_group: 'Smiths' },
 ];
 
-async function get(query: Record<string, unknown>) {
+async function get(query: Record<string, unknown>, headers: Record<string, string> = {}) {
   const res = {
     statusCode: 0,
     body: undefined as unknown,
@@ -55,7 +55,7 @@ async function get(query: Record<string, unknown>) {
       return this;
     },
   };
-  await handler({ method: 'GET', query } as unknown as NextApiRequest, res as unknown as NextApiResponse);
+  await handler({ method: 'GET', query, headers } as unknown as NextApiRequest, res as unknown as NextApiResponse);
   return res;
 }
 
@@ -66,8 +66,8 @@ beforeEach(() => {
 
 describe('GET /api/get-draw', () => {
   it('gives the shared link participant names only, with no pairings, emails, groups or tokens', async () => {
-    for (const key of [undefined, 'wrong-key']) {
-      const res = await get({ id: DRAW_ID, key });
+    for (const headers of [{}, { 'x-admin-key': 'wrong-key' }] as Record<string, string>[]) {
+      const res = await get({ id: DRAW_ID }, headers);
       expect(res.statusCode).toBe(200);
       expect(res.body).toEqual({
         id: DRAW_ID,
@@ -90,7 +90,7 @@ describe('GET /api/get-draw', () => {
   });
 
   it('gives the organizer the matches, every personal reveal token and each email status', async () => {
-    const res = await get({ id: DRAW_ID, key: ADMIN_KEY });
+    const res = await get({ id: DRAW_ID }, { 'x-admin-key': ADMIN_KEY });
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({
       isAdmin: true,
@@ -101,6 +101,13 @@ describe('GET /api/get-draw', () => {
     expect(JSON.stringify(res.body)).not.toContain(ADMIN_KEY);
   });
 
+  it('ignores an admin key in the query string', async () => {
+    const res = await get({ id: DRAW_ID, key: ADMIN_KEY });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ isAdmin: false, participants: [{ name: 'Alex' }, { name: 'Sam' }, { name: 'Jo' }] });
+    expect(JSON.stringify(res.body)).not.toContain('alex@example.com');
+  });
+
   it('keeps draw data out of search engines', async () => {
     const res = await get({ id: DRAW_ID });
     expect(res.headers['X-Robots-Tag']).toBe('noindex, nofollow');
@@ -108,7 +115,7 @@ describe('GET /api/get-draw', () => {
 
   it('returns 410 for a deleted draw', async () => {
     vi.mocked(sql.transaction).mockResolvedValue([[{ ...drawRow, deleted_at: '2026-10-03T12:00:00.000Z' }], participantRows, matchRows]);
-    const res = await get({ id: DRAW_ID, key: ADMIN_KEY });
+    const res = await get({ id: DRAW_ID }, { 'x-admin-key': ADMIN_KEY });
     expect(res.statusCode).toBe(410);
   });
 

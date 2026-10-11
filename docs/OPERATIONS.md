@@ -57,7 +57,7 @@ Symptoms: `send-emails` reports failures (`failedNames`), or `503` "daily email 
   It resets at midnight UTC.
 - **Gmail itself blocked or throttled the account** (sending limits, suspicious-activity lock, revoked app password). Check the Gmail account's inbox for a notice and the Vercel function logs for the SMTP error. A revoked or changed password needs the rotation steps above.
 
-Meanwhile nobody is stuck: organizers can copy each person's **personal link** from their organizer page and send it by text or chat. Failed emails are released, so once Gmail works again the organizer can press **Resend** to reach just the people who were missed.
+Meanwhile nobody is stuck: organizers can copy each person's **personal link** from their organizer page and send it by text or chat. Failed emails are released (and anyone left claimed by a send that timed out is released after 5 minutes), so once Gmail works again the organizer can press **Resend** to reach just the people who were missed.
 
 ## Rolling back a bad deploy
 

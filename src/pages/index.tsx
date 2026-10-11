@@ -146,7 +146,8 @@ export default function Home() {
         return;
       }
 
-      router.push(`/draw/${data.drawId}?key=${data.adminKey}`);
+      // In the fragment, never the query string, so the key stays out of server logs
+      router.push(`/draw/${data.drawId}#key=${encodeURIComponent(data.adminKey)}`);
     } catch {
       setError('Network error. Please check your connection and try again.');
     } finally {
@@ -194,7 +195,7 @@ export default function Home() {
           {replaces && (
             <p className={`status-msg ${styles.replaceBanner}`}>
               <span>This will replace your earlier draw. Its links keep working until you draw new matches.</span>
-              <Link href={{ pathname: '/draw/[id]', query: { id: replaces.drawId, key: replaces.key } }}>
+              <Link href={`/draw/${replaces.drawId}#key=${encodeURIComponent(replaces.key)}`}>
                 Cancel
               </Link>
             </p>
