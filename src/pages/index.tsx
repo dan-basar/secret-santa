@@ -218,9 +218,9 @@ export default function Home() {
             <div className={styles.groupList}>
               {groups.map((g, i) => (
                 <div key={g.id} className={styles.groupRow}>
-                  <label htmlFor={`group-${g.id}`} className="visually-hidden">Group {i + 1} name</label>
+                  <label htmlFor={`group-${i + 1}`} className="visually-hidden">Group {i + 1} name</label>
                   <input
-                    id={`group-${g.id}`}
+                    id={`group-${i + 1}`}
                     type="text"
                     placeholder={`Group ${i + 1} name`}
                     value={g.name}
@@ -269,18 +269,18 @@ export default function Home() {
             <div className={styles.participantList}>
               {participants.map((p, i) => (
                 <div key={p.id} className={`${styles.participantRow} fade-in`}>
-                  <label htmlFor={`name-${p.id}`} className="visually-hidden">Person {i + 1} name</label>
+                  <label htmlFor={`person-${i + 1}-name`} className="visually-hidden">Person {i + 1} name</label>
                   <input
-                    id={`name-${p.id}`}
+                    id={`person-${i + 1}-name`}
                     type="text"
                     placeholder={`Person ${i + 1}`}
                     value={p.name}
                     onChange={(e) => updateParticipant(p.id, 'name', e.target.value)}
                     maxLength={200}
                   />
-                  <label htmlFor={`group-of-${p.id}`} className="visually-hidden">Person {i + 1} group</label>
+                  <label htmlFor={`person-${i + 1}-group`} className="visually-hidden">Person {i + 1} group</label>
                   <select
-                    id={`group-of-${p.id}`}
+                    id={`person-${i + 1}-group`}
                     value={namedGroups.some((g) => g.id === p.groupId) ? p.groupId : ''}
                     onChange={(e) => updateParticipant(p.id, 'groupId', e.target.value)}
                   >
@@ -289,9 +289,9 @@ export default function Home() {
                       <option key={g.id} value={g.id}>{g.name.trim()}</option>
                     ))}
                   </select>
-                  <label htmlFor={`email-${p.id}`} className="visually-hidden">Person {i + 1} email</label>
+                  <label htmlFor={`person-${i + 1}-email`} className="visually-hidden">Person {i + 1} email</label>
                   <input
-                    id={`email-${p.id}`}
+                    id={`person-${i + 1}-email`}
                     type="email"
                     placeholder="email (optional)"
                     value={p.email}
