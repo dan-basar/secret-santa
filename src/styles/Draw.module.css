@@ -35,13 +35,15 @@
 
 .header {
   border-bottom: 1px solid var(--border);
-  padding: 20px 24px;
+  padding: 20px 0;
   background: white;
 }
 
+/* Same max-width and side padding as .main, so the header lines up with the content */
 .headerInner {
   max-width: 860px;
   margin: 0 auto;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;

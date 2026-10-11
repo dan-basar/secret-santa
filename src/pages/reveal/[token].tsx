@@ -81,7 +81,9 @@ export default function RevealPage() {
       {head}
       <div className={styles.centered}>
         <div className={`card ${styles.card}`}>
-          <Image src={logo} alt="" width={55} height={64} className={styles.logo} />
+          <div className={styles.logoArt}>
+            <Image src={logo} alt="" width={82} height={96} className={styles.logo} />
+          </div>
           <h1 style={{ fontSize: 26 }}>Hi {data.name},</h1>
           <p className={styles.lead}>you&rsquo;re the Secret Santa for&hellip;</p>
 
