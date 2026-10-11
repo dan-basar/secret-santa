@@ -1,6 +1,7 @@
-// GET /api/get-draw?id=<uuid>[&key=<adminKey>]: one draw. Anyone may call it.
-// Without the admin key: participant names only. With it: emails, groups, reveal
-// tokens, per-person email status and matches.
+// GET /api/get-draw?id=<uuid>: one draw. Anyone may call it. The admin key, if
+// any, comes in the X-Admin-Key header, never the query string, so it stays out
+// of request logs. Without it: participant names only. With it: emails, groups,
+// reveal tokens, per-person email status and matches.
 // Returns 200; 404 unknown draw; 410 { deleted: true } for a deleted draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
@@ -10,7 +11,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'GET') return res.status(405).end();
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
 
-  const { id, key } = req.query;
+  const { id } = req.query;
+  const key = req.headers['x-admin-key'];
   if (!id || typeof id !== 'string') return res.status(400).end();
   if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
 

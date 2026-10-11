@@ -30,7 +30,10 @@ type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
 export default function DrawPage() {
   const router = useRouter();
   const { id } = router.query;
-  const adminKey = typeof router.query.key === 'string' ? router.query.key : '';
+  // The admin key lives in the address bar's #key= fragment, which browsers never
+  // send to the server, so it stays out of request logs. null until it has been
+  // read after mount; '' when there is none (the shared link)
+  const [adminKey, setAdminKey] = useState<string | null>(null);
 
   const [state, setState] = useState<PageState>('loading');
   const [draw, setDraw] = useState<DrawData | null>(null);
@@ -96,12 +99,28 @@ export default function DrawPage() {
     };
   }, [state, draw?.isAdmin, draw?.emails_sent_at, unsentCount]);
 
+  useEffect(() => {
+    if (!router.isReady || typeof id !== 'string') return;
+
+    // Admin links from before the fragment carried ?key=. Use it, then swap it
+    // for #key= so the query string isn't kept in the address bar or history
+    const legacyKey = router.query.key;
+    if (typeof legacyKey === 'string' && legacyKey) {
+      setAdminKey(legacyKey);
+      router.replace(`/draw/${id}#key=${encodeURIComponent(legacyKey)}`, undefined, { shallow: true });
+      return;
+    }
+
+    setAdminKey(new URLSearchParams(window.location.hash.slice(1)).get('key') ?? '');
+  }, [router, id]);
+
   const loadDraw = useCallback(async () => {
-    if (!id) return;
-    const key = router.query.key;
-    const keyParam = key ? `&key=${encodeURIComponent(key as string)}` : '';
+    // Wait for the key, so the organizer's page doesn't load the shared view first
+    if (typeof id !== 'string' || adminKey === null) return;
     try {
-      const res = await fetch(`${router.basePath}/api/get-draw?id=${id}${keyParam}`);
+      const res = await fetch(`${router.basePath}/api/get-draw?id=${id}`, {
+        headers: adminKey ? { 'X-Admin-Key': adminKey } : {},
+      });
       if (res.status === 410) { setState('deleted'); return; }
       if (res.status === 404) { setState('not-found'); return; }
       if (!res.ok) { setState('error'); return; }
@@ -111,7 +130,7 @@ export default function DrawPage() {
     } catch {
       setState('error');
     }
-  }, [id, router.query.key, router.basePath]);
+  }, [id, adminKey, router.basePath]);
 
   useEffect(() => {
     loadDraw();

@@ -9,10 +9,10 @@ There are no accounts. Access comes from three random UUIDs, each carried in a l
 | Secret | Link | Unlocks |
 |---|---|---|
 | **Draw ID** | `/draw/<id>` (the shareable link) | Participant names only |
-| **Admin key** | `/draw/<id>?key=<adminKey>` (the organizer's link) | Everything about the draw: matches, email addresses, groups, every personal reveal link, per-person email status; sending and resending emails, Edit & Redraw, deleting |
+| **Admin key** | `/draw/<id>#key=<adminKey>` (the organizer's link) | Everything about the draw: matches, email addresses, groups, every personal reveal link, per-person email status; sending and resending emails, Edit & Redraw, deleting |
 | **Reveal token** | `/reveal/<token>` (one per participant) | That one person's own match, the draw date and, once emails are sent, the organizer's name. Nothing about anyone else |
 
-The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It is never shown to anyone else, so losing it means losing admin access. Old draws with no stored admin key (`admin_key` is NULL) can't be managed at all.
+The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It travels in the URL fragment, which browsers never send to the server; the draw page reads it there and sends it to `get-draw` in an `X-Admin-Key` header (and in the JSON body to `send-emails` and `delete-draw`), so it never appears in a query string or request log. Organizer links from before this used `?key=`; the page still accepts them and rewrites the address to `#key=`. It is never shown to anyone else, so losing it means losing admin access. Old draws with no stored admin key (`admin_key` is NULL) can't be managed at all.
 
 ## Draw lifecycle
 
