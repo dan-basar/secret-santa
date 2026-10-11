@@ -161,12 +161,13 @@ src/
       send-emails.ts  # POST: CAPTCHA + daily cap + per-person claimed send / resend
       delete-draw.ts  # POST: soft-delete
       health.ts       # GET: DB health check
-    _app.tsx          # App wrapper: global styles, icons and the Turnstile script
+    _app.tsx          # App wrapper: global styles and icons
     index.tsx         # Home page — participant form
     draw/[id].tsx     # Results page — names for everyone; matches, personal links, email, admin actions for the organizer
     reveal/[token].tsx  # Participant's private tap-to-reveal page
   components/
-    draw/             # The results page's sections (share bar, matches table, personal links, email, delete); state stays in the page
+    draw/             # The results page's sections (share bar, matches table, personal links, email, delete); state stays in the page.
+                      # TurnstileWidget.tsx loads the CAPTCHA script, only where the send/resend form renders
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
   styles/             # globals.css design tokens + CSS Modules per page
   types/
