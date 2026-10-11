@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -35,53 +35,12 @@ export default function DrawPage() {
   const [deleteError, setDeleteError] = useState('');
 
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-
-  const turnstileContainerRef = useRef<HTMLDivElement>(null);
-  const turnstileWidgetId = useRef<string | null>(null);
+  // Bumped after each send to remount the CAPTCHA: a Turnstile token works once
+  const [turnstileKey, setTurnstileKey] = useState(0);
 
   // People with an email address who haven't been sent one: everyone before the
   // first send, and anyone whose email failed after it
   const unsentCount = draw?.isAdmin ? draw.participants.filter((p) => p.email && !p.email_sent_at).length : 0;
-
-  // Explicitly render the Turnstile widget once the Send or Resend button is visible.
-  // We cannot rely on Turnstile's auto-scan (which only fires once on script load)
-  // because the .cf-turnstile container doesn't exist yet when the script first executes —
-  // the page is still in "loading" state at that point.
-  useEffect(() => {
-    if (state !== 'loaded' || !draw?.isAdmin || (draw.emails_sent_at && unsentCount === 0)) return;
-
-    let scriptEl: HTMLScriptElement | null = null;
-
-    const render = () => {
-      if (!turnstileContainerRef.current || !window.turnstile) return;
-      if (turnstileWidgetId.current !== null) return; // already rendered
-      turnstileWidgetId.current = window.turnstile.render(turnstileContainerRef.current, {
-        sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!,
-        callback: (token: string) => setTurnstileToken(token),
-      });
-    };
-
-    if (window.turnstile) {
-      render();
-    } else {
-      // Script is still loading — fire render once it finishes.
-      scriptEl = document.querySelector('script[src*="turnstile"]') as HTMLScriptElement | null;
-      if (scriptEl) {
-        scriptEl.addEventListener('load', render, { once: true });
-        // Fallback: if the script finished loading between our window.turnstile
-        // check above and attaching the listener, the load event won't fire again.
-        if (window.turnstile) render();
-      }
-    }
-
-    return () => {
-      if (scriptEl) scriptEl.removeEventListener('load', render);
-      if (turnstileWidgetId.current !== null && window.turnstile) {
-        window.turnstile.remove(turnstileWidgetId.current);
-        turnstileWidgetId.current = null;
-      }
-    };
-  }, [state, draw?.isAdmin, draw?.emails_sent_at, unsentCount]);
 
   useEffect(() => {
     if (!router.isReady || typeof id !== 'string') return;
@@ -144,7 +103,7 @@ export default function DrawPage() {
       setEmailError('Network error. Please try again.');
     } finally {
       // A Turnstile token works once, so get a fresh one for any next attempt
-      if (turnstileWidgetId.current !== null && window.turnstile) window.turnstile.reset(turnstileWidgetId.current);
+      setTurnstileKey((k) => k + 1);
       setTurnstileToken(null);
       setEmailLoading(false);
     }
@@ -217,7 +176,7 @@ export default function DrawPage() {
         <div className={styles.centered}>
           <div className={`card ${styles.messageCard}`}>
             <span className={styles.bigIcon}>🚫</span>
-            <h2>This draw is no longer available</h2>
+            <h1>This draw is no longer available</h1>
             <p className={styles.muted}>The person who created it has deleted the results.</p>
             <Link href="/" className="btn btn-secondary" style={{ marginTop: 16 }}>
               Start a new draw
@@ -235,7 +194,7 @@ export default function DrawPage() {
         <div className={styles.centered}>
           <div className={`card ${styles.messageCard}`}>
             <span className={styles.bigIcon}>🔍</span>
-            <h2>Draw not found</h2>
+            <h1>Draw not found</h1>
             <p className={styles.muted}>This link may be invalid or expired.</p>
             <Link href="/" className="btn btn-secondary" style={{ marginTop: 16 }}>
               Start a new draw
@@ -276,11 +235,14 @@ export default function DrawPage() {
         </header>
 
         <main className={styles.main}>
+          {/* The header already names the app; this gives the page its one top-level heading */}
+          <h1 className="visually-hidden">Secret Santa draw results</h1>
           <ShareBar url={shareableUrl} />
 
           {admin ? (
             <>
               <MatchesTable
+                participants={admin.participants}
                 matches={admin.matches}
                 emailsSent={!!admin.emails_sent_at}
                 onEditAndRedraw={handleEditAndRedraw}
@@ -299,7 +261,8 @@ export default function DrawPage() {
                 onOrganizerEmailChange={setOrganizerEmail}
                 loading={emailLoading}
                 error={emailError}
-                turnstileRef={turnstileContainerRef}
+                turnstileKey={turnstileKey}
+                onTurnstileToken={setTurnstileToken}
                 hasTurnstileToken={!!turnstileToken}
                 onSend={handleSendEmails}
               />

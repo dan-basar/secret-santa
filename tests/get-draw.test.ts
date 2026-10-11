@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-// No database in tests: queries become inert values and the transaction
-// resolves to the rows queued below
+// No database in tests: each query becomes its bound values and the
+// transaction resolves to the rows queued below
 vi.mock('@/lib/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/db')>();
-  const sql = Object.assign(vi.fn(() => ({})), { transaction: vi.fn(async () => [] as unknown[]) });
+  const sql = Object.assign(
+    vi.fn((_strings: TemplateStringsArray, ...values: unknown[]) => ({ values })),
+    { transaction: vi.fn(async () => [] as unknown[]) },
+  );
   return { ...actual, sql };
 });
 
@@ -24,19 +27,21 @@ const drawRow = {
   admin_key: ADMIN_KEY,
 };
 
+// Positions with gaps, so the test shows matches map by position, not by row number
 const participantRows = [
-  { name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_token: '11111111-1111-4111-8111-111111111111', email_sent_at: new Date('2026-10-02T09:00:00.000Z') },
-  { name: 'Sam', email: 'sam@example.com', group_name: null, reveal_token: '22222222-2222-4222-8222-222222222222', email_sent_at: null },
-  { name: 'Jo', email: null, group_name: 'Smiths', reveal_token: '33333333-3333-4333-8333-333333333333', email_sent_at: null },
+  { position: 10, name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_token: '11111111-1111-4111-8111-111111111111', email_sent_at: new Date('2026-10-02T09:00:00.000Z') },
+  { position: 20, name: 'Sam', email: 'sam@example.com', group_name: null, reveal_token: '22222222-2222-4222-8222-222222222222', email_sent_at: null },
+  { position: 30, name: 'Jo', email: null, group_name: 'Smiths', reveal_token: '33333333-3333-4333-8333-333333333333', email_sent_at: null },
 ];
 
+// Alex -> Sam -> Jo -> Alex
 const matchRows = [
-  { giver_name: 'Alex', giver_email: 'alex@example.com', giver_group: 'Smiths', receiver_name: 'Sam', receiver_group: null },
-  { giver_name: 'Sam', giver_email: 'sam@example.com', giver_group: null, receiver_name: 'Jo', receiver_group: 'Smiths' },
-  { giver_name: 'Jo', giver_email: null, giver_group: 'Smiths', receiver_name: 'Alex', receiver_group: 'Smiths' },
+  { giver_position: 10, receiver_position: 20 },
+  { giver_position: 20, receiver_position: 30 },
+  { giver_position: 30, receiver_position: 10 },
 ];
 
-async function get(query: Record<string, unknown>, headers: Record<string, string> = {}) {
+async function get(query: Record<string, unknown>, headers: Record<string, string> = {}, method = 'GET') {
   const res = {
     statusCode: 0,
     body: undefined as unknown,
@@ -56,13 +61,24 @@ async function get(query: Record<string, unknown>, headers: Record<string, strin
       return this;
     },
   };
-  await handler({ method: 'GET', query, headers } as unknown as NextApiRequest, res as unknown as NextApiResponse);
+  await handler({ method, query, headers } as unknown as NextApiRequest, res as unknown as NextApiResponse);
   return res;
+}
+
+// Answers only the queries the handler sends, like the database would
+function queueRows(draw: Record<string, unknown>) {
+  vi.mocked(sql.transaction).mockImplementation((async (queries: unknown[]) =>
+    [[draw], participantRows, matchRows].slice(0, queries.length)) as never);
+}
+
+// The queries passed to the transaction, each with its bound values
+function sentQueries() {
+  return vi.mocked(sql.transaction).mock.calls[0][0] as unknown as { values: unknown[] }[];
 }
 
 beforeEach(() => {
   vi.mocked(sql.transaction).mockReset();
-  vi.mocked(sql.transaction).mockResolvedValue([[drawRow], participantRows, matchRows]);
+  queueRows(drawRow);
 });
 
 describe('GET /api/get-draw', () => {
@@ -93,13 +109,28 @@ describe('GET /api/get-draw', () => {
   it('gives the organizer the matches, every personal reveal token and each email status', async () => {
     const res = await get({ id: DRAW_ID }, { 'x-admin-key': ADMIN_KEY });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toMatchObject({
+    expect(res.body).toEqual({
+      id: DRAW_ID,
+      created_at: '2026-10-01T12:00:00.000Z',
+      emails_sent_at: null,
       isAdmin: true,
-      participantsWithEmailCount: 2,
-      participants: participantRows.map(p => ({ ...p, email_sent_at: p.email_sent_at?.toISOString() ?? null })),
-      matches: matchRows,
+      participants: participantRows.map(({ position: _position, ...p }) => ({ ...p, email_sent_at: p.email_sent_at?.toISOString() ?? null })),
+      // Indexes into participants, which already carry each email and group
+      matches: [{ giver: 0, receiver: 1 }, { giver: 1, receiver: 2 }, { giver: 2, receiver: 0 }],
     });
     expect(JSON.stringify(res.body)).not.toContain(ADMIN_KEY);
+  });
+
+  it('skips the matches query on the shared link', async () => {
+    await get({ id: DRAW_ID });
+    expect(sentQueries()).toHaveLength(2);
+  });
+
+  it('only returns match rows for the draw\'s own admin key', async () => {
+    await get({ id: DRAW_ID }, { 'x-admin-key': ADMIN_KEY });
+    const queries = sentQueries();
+    expect(queries).toHaveLength(3);
+    expect(queries[2].values).toEqual([DRAW_ID, ADMIN_KEY]);
   });
 
   it('ignores an admin key in the query string', async () => {
@@ -115,9 +146,26 @@ describe('GET /api/get-draw', () => {
   });
 
   it('returns 410 for a deleted draw', async () => {
-    vi.mocked(sql.transaction).mockResolvedValue([[{ ...drawRow, deleted_at: new Date('2026-10-03T12:00:00.000Z') }], participantRows, matchRows]);
+    queueRows({ ...drawRow, deleted_at: new Date('2026-10-03T12:00:00.000Z') });
     const res = await get({ id: DRAW_ID }, { 'x-admin-key': ADMIN_KEY });
     expect(res.statusCode).toBe(410);
+    expect(res.body).toEqual({ error: 'This draw has been deleted.' });
+  });
+
+  it('returns 400 with an error for a missing id', async () => {
+    for (const query of [{}, { id: [DRAW_ID, DRAW_ID] }]) {
+      const res = await get(query);
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'A draw id is required.' });
+    }
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
+  it('answers a wrong method with 405, an Allow header and an error', async () => {
+    const res = await get({ id: DRAW_ID }, {}, 'POST');
+    expect(res.statusCode).toBe(405);
+    expect(res.headers.Allow).toBe('GET');
+    expect(res.body).toEqual({ error: 'Method not allowed.' });
   });
 
   it('returns 404 for a malformed id without querying', async () => {

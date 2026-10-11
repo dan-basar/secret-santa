@@ -1,7 +1,10 @@
+// Shared with src/lib/site.ts (BASE_PATH), so the prefix is defined once
+const { basePath } = require('./src/lib/base-path.json');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  basePath: '/secret-santa',
+  basePath,
   async headers() {
     const security = [
       { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },

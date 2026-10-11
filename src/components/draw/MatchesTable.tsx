@@ -1,7 +1,8 @@
-import type { AdminMatch } from '@/types/api';
+import type { AdminMatch, AdminParticipant } from '@/types/api';
 import styles from '@/styles/Draw.module.css';
 
 interface Props {
+  participants: AdminParticipant[];
   matches: AdminMatch[];
   emailsSent: boolean;
   onEditAndRedraw: () => void;
@@ -9,18 +10,19 @@ interface Props {
 
 // The organizer's matches table, with Edit & Redraw. Group columns appear only
 // when someone is in a group
-export default function MatchesTable({ matches, emailsSent, onEditAndRedraw }: Props) {
-  const hasGroups = matches.some((m) => m.giver_group || m.receiver_group);
+export default function MatchesTable({ participants, matches, emailsSent, onEditAndRedraw }: Props) {
+  const pairs = matches.map((m) => ({ giver: participants[m.giver], receiver: participants[m.receiver] }));
+  const hasGroups = participants.some((p) => p.group_name);
 
   // Grouped people first, by group, then by giver name
-  const sorted = [...matches].sort((a, b) => {
-    const aGroup = a.giver_group || '';
-    const bGroup = b.giver_group || '';
+  const sorted = pairs.sort((a, b) => {
+    const aGroup = a.giver.group_name || '';
+    const bGroup = b.giver.group_name || '';
     if (aGroup && !bGroup) return -1;
     if (!aGroup && bGroup) return 1;
     const groupCmp = aGroup.localeCompare(bGroup);
     if (groupCmp !== 0) return groupCmp;
-    return a.giver_name.localeCompare(b.giver_name);
+    return a.giver.name.localeCompare(b.giver.name);
   });
 
   return (
@@ -76,31 +78,31 @@ export default function MatchesTable({ matches, emailsSent, onEditAndRedraw }: P
           {sorted.map((m, i) => (
             <tr key={i}>
               <td className={styles.nameCell}>
-                <span className={styles.name}>{m.giver_name}</span>
+                <span className={styles.name}>{m.giver.name}</span>
                 {hasGroups && (
                   <span className={styles.mobileGroup}>
-                    <GroupBadge group={m.giver_group} labelled />
+                    <GroupBadge group={m.giver.group_name} labelled />
                   </span>
                 )}
-                {m.giver_email && <span className={styles.email}>{m.giver_email}</span>}
+                {m.giver.email && <span className={styles.email}>{m.giver.email}</span>}
               </td>
               {hasGroups && (
                 <td className={styles.groupCol}>
-                  <GroupBadge group={m.giver_group} />
+                  <GroupBadge group={m.giver.group_name} />
                 </td>
               )}
               {hasGroups && <td className={styles.spacerCol} />}
               <td className={styles.nameCell}>
-                <span className={styles.name}>{m.receiver_name}</span>
+                <span className={styles.name}>{m.receiver.name}</span>
                 {hasGroups && (
                   <span className={styles.mobileGroup}>
-                    <GroupBadge group={m.receiver_group} labelled />
+                    <GroupBadge group={m.receiver.group_name} labelled />
                   </span>
                 )}
               </td>
               {hasGroups && (
                 <td className={styles.groupCol}>
-                  <GroupBadge group={m.receiver_group} />
+                  <GroupBadge group={m.receiver.group_name} />
                 </td>
               )}
             </tr>

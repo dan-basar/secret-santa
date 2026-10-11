@@ -1,5 +1,6 @@
-import type { RefObject } from 'react';
 import type { AdminDraw } from '@/types/api';
+import { isValidEmail } from '@/lib/email-address';
+import TurnstileWidget from '@/components/draw/TurnstileWidget';
 import styles from '@/styles/Draw.module.css';
 
 interface Props {
@@ -12,8 +13,9 @@ interface Props {
   onOrganizerEmailChange: (value: string) => void;
   loading: boolean;
   error: string;
-  // The page renders the Turnstile widget into this; it sits in whichever form is showing
-  turnstileRef: RefObject<HTMLDivElement>;
+  // Changes after each send, so the CAPTCHA remounts with a fresh token
+  turnstileKey: number;
+  onTurnstileToken: (token: string) => void;
   hasTurnstileToken: boolean;
   onSend: (retryFailed: boolean) => void;
 }
@@ -49,13 +51,13 @@ export default function EmailSection(props: Props) {
 
 function FirstSendForm({
   draw, organizerName, organizerEmail, onOrganizerNameChange, onOrganizerEmailChange,
-  loading, error, turnstileRef, hasTurnstileToken, onSend,
+  loading, error, turnstileKey, onTurnstileToken, hasTurnstileToken, onSend,
 }: Props) {
-  const emailCount = draw.participantsWithEmailCount;
+  const emailCount = draw.participants.filter((p) => p.email).length;
   const hasEmails = emailCount > 0;
   const name = organizerName.trim();
   const email = organizerEmail.trim();
-  const emailInvalid = email.length > 0 && !/\S+@\S+\.\S+/.test(email);
+  const emailInvalid = email.length > 0 && !isValidEmail(email);
   const canSend = hasEmails && name.length > 0 && email.length > 0 && !emailInvalid;
 
   return (
@@ -101,7 +103,7 @@ function FirstSendForm({
       )}
       {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-        <div ref={turnstileRef} />
+        <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />
         <button
           className="btn btn-success"
           onClick={() => onSend(false)}
@@ -115,8 +117,8 @@ function FirstSendForm({
   );
 }
 
-function ResendForm({ draw, unsentCount, loading, error, turnstileRef, hasTurnstileToken, onSend }: Props) {
-  const emailCount = draw.participantsWithEmailCount;
+function ResendForm({ draw, unsentCount, loading, error, turnstileKey, onTurnstileToken, hasTurnstileToken, onSend }: Props) {
+  const emailCount = draw.participants.filter((p) => p.email).length;
   const notDelivered = draw.participants.filter((p) => p.email && !p.email_sent_at).map((p) => p.name);
 
   return (
@@ -130,7 +132,7 @@ function ResendForm({ draw, unsentCount, loading, error, turnstileRef, hasTurnst
       </p>
       {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-        <div ref={turnstileRef} />
+        <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />
         <button
           className="btn btn-success"
           onClick={() => onSend(true)}

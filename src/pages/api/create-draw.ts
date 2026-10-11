@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { sql, isUuid } from '@/lib/db';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
 import { hasHtmlTag } from '@/lib/sanitize';
+import { isValidEmail } from '@/lib/email-address';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
 
 // The draw being replaced by Edit & Redraw
@@ -19,7 +20,10 @@ interface OldDrawRow {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<CreateDrawResponse | ApiError>) {
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Method not allowed.' });
+  }
 
   // The body is untrusted JSON: check its shape before touching any field, so a
   // malformed request gets a 400 instead of crashing on .length or .trim()
@@ -78,9 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(400).json({ error: 'Names and groups cannot contain HTML.' });
   }
 
-  // Validate email format if provided
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const invalidEmails = participants.filter(p => p.email && !emailRegex.test(p.email));
+  const invalidEmails = participants.filter(p => p.email && !isValidEmail(p.email));
   if (invalidEmails.length > 0) {
     return res.status(400).json({
       error: `Invalid email address for: ${invalidEmails.map(p => p.name).join(', ')}`,

@@ -20,7 +20,7 @@ npm run dev        # Start dev server on http://localhost:3000/secret-santa
 npm run build      # Production build
 npm run start      # Serve production build
 npm run typecheck  # tsc --noEmit
-npm test           # Vitest unit tests (tests/)
+npm test           # Vitest tests (tests/)
 ```
 
 **Always prefix `npm run dev` with the appropriate `cd` command:**
@@ -29,7 +29,7 @@ npm test           # Vitest unit tests (tests/)
 cd /home/user/secret-santa && npm run dev
 ```
 
-Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR. There is no linter configured beyond TypeScript strict mode.
+Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). Page tests (`tests/home.test.tsx`) use React Testing Library and start with `// @vitest-environment jsdom`. CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR. There is no linter configured beyond TypeScript strict mode.
 
 ## Environment and Data Safety
 
@@ -53,7 +53,7 @@ Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next
 
 ### API
 - Keep routes focused: validate input → query DB → return response. Each route file starts with a short comment giving its contract; keep it current
-- Error responses always use `{ error: string }` JSON, with status codes 400 (bad input), 403 (wrong admin key), 404 (not found), 409 (conflict), 410 (deleted), 422 (unprocessable), 429 (rate limited, from `src/proxy.ts`), 500 (server error)
+- Error responses always use `{ error: string }` JSON, with status codes 400 (bad input), 403 (wrong admin key), 404 (not found), 405 (wrong method, with an `Allow` header), 409 (conflict), 410 (deleted), 422 (unprocessable), 429 (rate limited, from `src/proxy.ts`), 500 (server error)
 - Anything that reveals matches, emails or reveal tokens, or changes a draw, requires the draw's admin key
 - Response shapes live in `src/types/api.ts`: routes type their `res` with them (`NextApiResponse<RevealResponse | ApiError>`) and pages import the same types, so a shape is written once
 
@@ -92,5 +92,5 @@ Core business logic — handle carefully:
 
 ## Deployment Cautions
 
-- `next.config.js` `basePath: '/secret-santa'` affects all internal Next.js links and API calls — do not remove this. Public URLs outside Next.js routing (emails, meta tags) go through `siteUrl()` in `src/lib/site.ts`
+- `next.config.js` `basePath` (`/secret-santa`) affects all internal Next.js links and API calls — do not remove this. Its one definition is `src/lib/base-path.json`, read by `next.config.js` and by `BASE_PATH` in `src/lib/site.ts` (used by `src/proxy.ts`); pages use `router.basePath`. Never hard-code the prefix. Public URLs outside Next.js routing (emails, meta tags) go through `siteUrl()`
 - `vercel.json` has one entry per API route file, setting max duration to 10s (60s for send-emails, so a 50-person draw has time to send) and region `cle1`. It is the only place timeouts are set (no `export const config` in routes). A new route needs its own entry and must stay inside 10s; `tests/vercel-config.test.ts` checks every route has exactly one
