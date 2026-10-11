@@ -36,12 +36,11 @@ export interface AdminParticipant {
   email_sent_at: string | null;
 }
 
+// Indexes into AdminDraw.participants, which holds each person's name, email
+// and group, so they aren't repeated here
 export interface AdminMatch {
-  giver_name: string;
-  giver_email: string | null;
-  giver_group: string | null;
-  receiver_name: string;
-  receiver_group: string | null;
+  giver: number;
+  receiver: number;
 }
 
 export interface AdminDraw {
@@ -49,7 +48,6 @@ export interface AdminDraw {
   created_at: string;
   emails_sent_at: string | null;
   isAdmin: true;
-  participantsWithEmailCount: number;
   participants: AdminParticipant[];
   matches: AdminMatch[];
 }

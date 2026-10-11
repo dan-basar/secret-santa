@@ -52,7 +52,7 @@ function FirstSendForm({
   draw, organizerName, organizerEmail, onOrganizerNameChange, onOrganizerEmailChange,
   loading, error, turnstileRef, hasTurnstileToken, onSend,
 }: Props) {
-  const emailCount = draw.participantsWithEmailCount;
+  const emailCount = draw.participants.filter((p) => p.email).length;
   const hasEmails = emailCount > 0;
   const name = organizerName.trim();
   const email = organizerEmail.trim();
@@ -117,7 +117,7 @@ function FirstSendForm({
 }
 
 function ResendForm({ draw, unsentCount, loading, error, turnstileRef, hasTurnstileToken, onSend }: Props) {
-  const emailCount = draw.participantsWithEmailCount;
+  const emailCount = draw.participants.filter((p) => p.email).length;
   const notDelivered = draw.participants.filter((p) => p.email && !p.email_sent_at).map((p) => p.name);
 
   return (

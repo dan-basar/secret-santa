@@ -281,6 +281,7 @@ export default function DrawPage() {
           {admin ? (
             <>
               <MatchesTable
+                participants={admin.participants}
                 matches={admin.matches}
                 emailsSent={!!admin.emails_sent_at}
                 onEditAndRedraw={handleEditAndRedraw}
