@@ -90,4 +90,4 @@ Core business logic — handle carefully:
 ## Deployment Cautions
 
 - `next.config.js` `basePath: '/secret-santa'` affects all internal Next.js links and API calls — do not remove this. Public URLs outside Next.js routing (emails, meta tags) go through `siteUrl()` in `src/lib/site.ts`
-- `vercel.json` sets function max duration to 10s (60s for send-emails, so a 50-person draw has time to send) and deploys to region `cle1`; keep new routes inside 10s
+- `vercel.json` has one entry per API route file, setting max duration to 10s (60s for send-emails, so a 50-person draw has time to send) and region `cle1`. It is the only place timeouts are set (no `export const config` in routes). A new route needs its own entry and must stay inside 10s; `tests/vercel-config.test.ts` checks every route has exactly one
