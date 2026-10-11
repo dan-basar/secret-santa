@@ -1,3 +1,5 @@
+<p align="center"><img src="public/logo.svg" alt="Secret Santa Picker logo" width="120" height="140"></p>
+
 # Secret Santa Picker
 
 A full-stack web application for running Secret Santa gift exchanges. Create a draw, assign participants to groups to prevent unwanted pairings, share a results link, and optionally send everyone an email revealing their match.
@@ -174,7 +176,7 @@ src/
     api.ts            # JSON response types, shared by the API routes and the pages
     turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
 tests/                # Vitest tests: lib, every API route, and the home form (React Testing Library, jsdom)
-public/               # Favicon, icons and link-preview image
+public/               # Logo, favicons, app icons and link-preview image
 sql/
   setup.sql           # Database schema (Postgres)
   migrations/         # One-off schema changes for existing databases, each with a _check.sql
