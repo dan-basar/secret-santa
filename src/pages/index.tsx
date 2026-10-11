@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { siteUrl } from '@/lib/site';
+import { isValidEmail } from '@/lib/email-address';
 import { FormGroup, FormParticipant, groupNameFor, newId } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
@@ -102,7 +103,7 @@ export default function Home() {
 
     const filled = participants.filter((p) => p.name.trim() || p.email.trim());
     const invalid = filled.filter(
-      (p) => !p.name.trim() || (p.email.trim() && !/\S+@\S+\.\S+/.test(p.email))
+      (p) => !p.name.trim() || (p.email.trim() && !isValidEmail(p.email.trim()))
     );
 
     if (filled.length < 2) {

@@ -9,6 +9,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
 import { sendMatchEmail } from '@/lib/email';
 import { hasHtmlTag } from '@/lib/sanitize';
+import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
 import type { SendEmailsError, SendEmailsResponse } from '@/types/api';
 
@@ -65,9 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (hasHtmlTag(safeOrganizerName)) return res.status(400).json({ error: 'Organizer name cannot contain HTML.' });
 
-    // Also rejects "<", ">" and quotes, which have no place in an address shown in the email
-    const emailRegex = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
-    if (!emailRegex.test(safeOrganizerEmail)) return res.status(400).json({ error: 'Invalid organizer email format.' });
+    if (!isValidEmail(safeOrganizerEmail)) return res.status(400).json({ error: 'Invalid organizer email format.' });
   }
 
   // Every email carries a reveal link built from this; an email can't be taken

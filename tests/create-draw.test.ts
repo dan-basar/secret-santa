@@ -232,6 +232,15 @@ describe('POST /api/create-draw', () => {
     expect(sql.transaction).not.toHaveBeenCalled();
   });
 
+  it('rejects participant emails with angle brackets or quotes, as send-emails does', async () => {
+    for (const email of ['<alex@example.com>', '"alex"@example.com']) {
+      const res = await post([{ name: 'Alex', email, group: '' }, person('B')]);
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Invalid email address for: Alex' });
+    }
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
   it('accepts a 200-character name and a 320-character email', async () => {
     const email = `${'x'.repeat(308)}@example.com`;
     const res = await post([{ name: 'x'.repeat(200), email, group: '' }, person('B')]);

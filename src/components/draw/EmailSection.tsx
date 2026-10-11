@@ -1,5 +1,6 @@
 import type { RefObject } from 'react';
 import type { AdminDraw } from '@/types/api';
+import { isValidEmail } from '@/lib/email-address';
 import styles from '@/styles/Draw.module.css';
 
 interface Props {
@@ -55,7 +56,7 @@ function FirstSendForm({
   const hasEmails = emailCount > 0;
   const name = organizerName.trim();
   const email = organizerEmail.trim();
-  const emailInvalid = email.length > 0 && !/\S+@\S+\.\S+/.test(email);
+  const emailInvalid = email.length > 0 && !isValidEmail(email);
   const canSend = hasEmails && name.length > 0 && email.length > 0 && !emailInvalid;
 
   return (

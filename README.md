@@ -147,6 +147,7 @@ src/
     db.ts             # Neon serverless SQL client, isUuid()
     matching.ts       # Matching algorithm (shuffle + feasibility-checked fallback)
     email.ts          # Nodemailer email service
+    email-address.ts  # isValidEmail(): the one address check, used by the forms and the API
     sanitize.ts       # HTML tag check and escaping for emails
     site.ts           # siteUrl(): public URLs with the /secret-santa basePath
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws

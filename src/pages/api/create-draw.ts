@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { sql, isUuid } from '@/lib/db';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
 import { hasHtmlTag } from '@/lib/sanitize';
+import { isValidEmail } from '@/lib/email-address';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
 
 // The draw being replaced by Edit & Redraw
@@ -81,9 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(400).json({ error: 'Names and groups cannot contain HTML.' });
   }
 
-  // Validate email format if provided
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const invalidEmails = participants.filter(p => p.email && !emailRegex.test(p.email));
+  const invalidEmails = participants.filter(p => p.email && !isValidEmail(p.email));
   if (invalidEmails.length > 0) {
     return res.status(400).json({
       error: `Invalid email address for: ${invalidEmails.map(p => p.name).join(', ')}`,
