@@ -59,12 +59,13 @@ Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next
 
 ### Code Style
 - TypeScript strict mode — no `any` unless truly unavoidable
-- Use `@/lib/...`, `@/types/...` and `@/styles/...` path aliases (configured in `tsconfig.json`)
+- Use `@/lib/...`, `@/types/...`, `@/components/...` and `@/styles/...` path aliases (configured in `tsconfig.json`)
 - No unnecessary abstractions — three similar lines is fine; don't extract prematurely
 - Do not add error handling for impossible scenarios; trust Next.js and Neon driver guarantees at internal boundaries
 
 ### Frontend
 - **State management**: local React hooks only (`useState`, `useEffect`, `useCallback`, `useRef`) — no Redux or Context
+- **Components**: a page's sections live in `src/components/<page>/`, one per file (e.g. `src/components/draw/`). Fetching, effects and shared state stay in the page and go down as props and callbacks; a component keeps only its own UI state (a "Copied" flash, a confirm step) and uses its page's CSS module
 - **Styling**: CSS Modules per page + `globals.css` for design tokens (CSS custom properties on `:root`, e.g. `--ink`, `--accent`, `--success`, `--error`)
 - **Typography**: Libre Baskerville (headings) + DM Sans (body)
 - **Forms**: client-side validation before API calls; errors displayed inline

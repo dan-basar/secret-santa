@@ -163,6 +163,8 @@ src/
     index.tsx         # Home page — participant form
     draw/[id].tsx     # Results page — names for everyone; matches, personal links, email, admin actions for the organizer
     reveal/[token].tsx  # Participant's private tap-to-reveal page
+  components/
+    draw/             # The results page's sections (share bar, matches table, personal links, email, delete); state stays in the page
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
   styles/             # globals.css design tokens + CSS Modules per page
   types/
