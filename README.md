@@ -4,6 +4,10 @@ A full-stack web application for running Secret Santa gift exchanges. Create a d
 
 Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Vercel**.
 
+More detail:
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — which link unlocks what, the draw lifecycle, the request path, tables and the data we keep
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) — runbook: migrations, environment variables, key rotation, email trouble, rollback, health check
+
 ---
 
 ## Features
@@ -12,9 +16,10 @@ Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Ver
 - **Up to 50 participants** across up to 20 groups per draw
 - **Private reveal links** — each participant gets a personal link that shows only who they drew, behind a tap-to-reveal
 - **Shareable link** — public view lists participant names only; pairings stay private
-- **Email notifications** — one-click emails to all participants, protected by Cloudflare Turnstile CAPTCHA
-- **Admin access** — the creator gets a private link to view emails, delete the draw, or edit and redraw
+- **Email notifications** — one-click emails to all participants, protected by Cloudflare Turnstile CAPTCHA; anyone whose email failed can be resent to later
+- **Admin access** — the creator gets a private link to see matches, emails and personal links, send emails, delete the draw, or edit and redraw
 - **Soft-delete** — draws are hidden, not destroyed
+- **Rate limiting** — per-IP hourly limits on creating, emailing and deleting draws
 
 ---
 
@@ -27,6 +32,7 @@ Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Ver
 | Email | Nodemailer + Gmail SMTP |
 | CAPTCHA | Cloudflare Turnstile |
 | Deployment | Vercel |
+| Tests | Vitest |
 
 ---
 
@@ -34,7 +40,7 @@ Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Ver
 
 ### Prerequisites
 
-- Node.js LTS and npm
+- Node.js 24 and npm
 - A [Neon](https://neon.tech) Postgres database (on Vercel, connect it through the Neon integration so `DATABASE_URL` is set for you)
 - A Gmail account with an [app-specific password](https://support.google.com/accounts/answer/185833)
 - A [Cloudflare Turnstile](https://www.cloudflare.com/products/turnstile/) site/secret key pair
@@ -54,6 +60,9 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
 
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=your-site-key
 TURNSTILE_SECRET_KEY=your-secret-key
+
+# Optional: comma-separated IPs that are never rate limited
+RATE_LIMIT_IP_WHITELIST=
 ```
 
 **Local development never uses the production database.** Point `DATABASE_URL` in `.env.local` at the Neon `dev` branch (an empty copy of the schema, with no real participants); the production connection string lives only in Vercel. `vercel env pull` writes the production value, so swap `DATABASE_URL` back to the dev branch after running it.
@@ -73,11 +82,17 @@ Run the schema script once to create all required tables (`Draws`, `Participants
 psql "$DATABASE_URL" -f sql/setup.sql
 ```
 
-An existing database created before reveal links needs `sql/migrations/002_reveal_tokens.sql` once; `setup.sql` already includes it. A database created before shared rate limits needs `sql/migrations/003_rate_limits.sql` once.
+You can also paste the script into the SQL Editor in the Neon console. See [`sql/setup.sql`](sql/setup.sql) for the full schema.
 
-You can also paste the script into the SQL Editor in the Neon console.
+`setup.sql` already includes every migration, so a new database needs nothing else. [`sql/migrations/`](sql/migrations) holds the one-off changes for databases created before them, each with a read-only `_check.sql` to run afterwards:
 
-See [`sql/setup.sql`](sql/setup.sql) for the full schema.
+| Migration | Adds |
+|---|---|
+| `002_reveal_tokens.sql` | `Participants.reveal_token`, for personal reveal links |
+| `003_rate_limits.sql` | The `RateLimits` table |
+| `004_email_status.sql` | `Participants.email_sent_at`, for per-person email tracking and resend |
+
+Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 
 [`scripts/copy-azure-to-neon.ts`](scripts/copy-azure-to-neon.ts) is a one-off script that copies the original Azure SQL data into Neon; see the comment at the top of the file for usage.
 
@@ -85,9 +100,13 @@ See [`sql/setup.sql`](sql/setup.sql) for the full schema.
 
 ```bash
 npm install
-npm run dev      # → http://localhost:3000/secret-santa
+npm run dev        # → http://localhost:3000/secret-santa
+npm run typecheck  # tsc --noEmit
+npm test           # Vitest unit tests in tests/
 npm run build && npm start  # production
 ```
+
+CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every pull request.
 
 ---
 
@@ -95,7 +114,7 @@ npm run build && npm start  # production
 
 ### Matching Algorithm
 
-No participant can draw themselves or anyone in their group. Before writing to the DB, the algorithm checks feasibility: if any single group holds more than 50% of participants, a valid assignment is impossible and the draw is rejected.
+No participant can draw themselves or anyone in their group. Group names are compared trimmed and case-insensitively, so "Family" and "family " are one group. Before writing to the DB, the algorithm checks feasibility: if any single group holds more than 50% of participants, a valid assignment is impossible and the draw is rejected.
 
 Matching runs in two phases:
 1. **Random shuffle** — up to 1,000 attempts pairing givers with a uniformly shuffled receiver list
@@ -103,11 +122,19 @@ Matching runs in two phases:
 
 ### Email Flow
 
-Emails are one-shot and idempotent. The organizer provides their name and email, completes a Turnstile CAPTCHA, and triggers sends. A daily cap of 495 emails is enforced via `DailyEmailLog` to stay within Gmail SMTP limits. Once sent, re-sending is rejected with `409 Conflict`.
+The organizer provides their name and email, completes a Turnstile CAPTCHA, and sends. Each participant with an email address gets their match and their personal reveal link.
+
+Sending is tracked per person in `Participants.email_sent_at`. Each person is claimed in the database before their email goes out, so two clicks can never email anyone twice; if their email fails, the claim is released. The organizer then sees who wasn't reached and can **resend to just those people** (`retryFailed: true`), or share their personal links another way. A second full send is rejected with `409 Conflict`. If every email in a first send fails, the draw is reopened so the organizer can start over.
+
+A daily cap of 495 emails across all draws is enforced via `DailyEmailLog` to stay within Gmail SMTP limits.
 
 ### Admin Access
 
-Draw creation returns a `drawId` and a random `adminKey`. The creator is redirected to `/draw/<id>?key=<adminKey>`. Anyone with just the draw ID gets a read-only view with emails hidden; the admin key unlocks email addresses, deletion, and the edit-and-redraw flow.
+Draw creation returns a `drawId` and a random `adminKey`. The creator is redirected to `/draw/<id>?key=<adminKey>`. Anyone with just the draw ID sees participant names only. The admin key unlocks the matches, email addresses, groups and personal reveal links, plus sending emails, deletion and the edit-and-redraw flow. Pairings are visible only to the organizer and, one at a time, to each person through their own reveal link. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
+
+### Rate Limiting
+
+[`src/proxy.ts`](src/proxy.ts) limits each IP per hour: 10 for `create-draw`, 5 for `send-emails` and 10 for `delete-draw`; over the limit it returns `429`. Counts live in the Neon `RateLimits` table, so every Vercel instance shares them: one row per SHA-256 hash of IP + route per hour (raw IPs are never stored). Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails, the request is allowed through (fails open). IPs in `RATE_LIMIT_IP_WHITELIST` are never limited.
 
 ---
 
@@ -116,41 +143,51 @@ Draw creation returns a `drawId` and a random `adminKey`. The creator is redirec
 ```
 src/
   lib/
-    db.ts             # Neon serverless SQL client
-    matching.ts       # Matching algorithm (shuffle + backtracking)
+    db.ts             # Neon serverless SQL client, isUuid()
+    matching.ts       # Matching algorithm (shuffle + feasibility-checked fallback)
     email.ts          # Nodemailer email service
     sanitize.ts       # HTML tag check and escaping for emails
+    site.ts           # siteUrl(): public URLs with the /secret-santa basePath
+    groups.ts         # Home page form state: groups by id, Edit & Redraw draft
   pages/
     api/
       create-draw.ts  # POST: validate, match, persist in a transaction
       get-draw.ts     # GET: fetch draw; matches and reveal links for the organizer only
       reveal.ts       # GET: one participant's own match, by reveal token
-      send-emails.ts  # POST: CAPTCHA + rate-limit + idempotent send
+      send-emails.ts  # POST: CAPTCHA + daily cap + per-person claimed send / resend
       delete-draw.ts  # POST: soft-delete
       health.ts       # GET: DB health check
+    _app.tsx          # App wrapper: global styles, icons and the Turnstile script
     index.tsx         # Home page — participant form
     draw/[id].tsx     # Results page — names for everyone; matches, personal links, email, admin actions for the organizer
     reveal/[token].tsx  # Participant's private tap-to-reveal page
+  proxy.ts            # Per-IP hourly rate limits (RateLimits table)
+  styles/             # globals.css design tokens + CSS Modules per page
+  types/
+    turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
+tests/                # Vitest unit tests
+public/               # Favicon, icons and link-preview image
 sql/
   setup.sql           # Database schema (Postgres)
-  migrations/         # One-off schema changes for existing databases
+  migrations/         # One-off schema changes for existing databases, each with a _check.sql
 scripts/
   copy-azure-to-neon.ts  # One-off Azure SQL -> Neon data copy
+docs/                 # Architecture and operations notes
 ```
 
 ---
 
 ## API Reference
 
-All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "<message>" }`.
+All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "<message>" }`. Routes marked *rate limited* return `429` when an IP goes over its hourly limit.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/create-draw` | Validate participants, generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. |
-| `GET` | `/api/get-draw?id=<uuid>[&key=<adminKey>]` | Fetch a draw. Without a valid admin key: participant names only. With it: emails, groups, reveal tokens and matches. `410` for deleted draws. |
+| `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`), generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
+| `GET` | `/api/get-draw?id=<uuid>[&key=<adminKey>]` | Fetch a draw. Without a valid admin key: participant names only. With it: emails, groups, reveal tokens, per-person email status and matches. `410` for deleted draws. |
 | `GET` | `/api/reveal?token=<uuid>` | One participant's name, their match, the draw date and the organizer (once emails are sent). `404` for unknown tokens, `410` for deleted draws. |
-| `POST` | `/api/send-emails` | Verify CAPTCHA, check daily limit, send match emails. Returns `409` if already sent. |
-| `POST` | `/api/delete-draw` | Soft-delete a draw. Idempotent. |
+| `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail }`, or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Returns `{ success, totalSent, totalFailed, failedNames }`. `403` wrong key or failed CAPTCHA, `409` already sent (or nothing to resend), `410` deleted, `503` daily cap reached. |
+| `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ id, key }`. Soft-delete a draw. Idempotent. `403` wrong key. |
 | `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503` otherwise. |
 
 ---
@@ -162,7 +199,9 @@ Import the repository into Vercel and add all environment variables under **Proj
 Key configuration notes:
 - All routes are served under `/secret-santa` (`basePath` in `next.config.js`) — do not remove this
 - `DATABASE_URL` is provided by the Neon integration on Vercel
-- `vercel.json` sets a 10s function timeout and the `cle1` region for API functions
+- `vercel.json` runs API functions in the `cle1` region with a 10s timeout, except `send-emails`, which gets 60s so a 50-person draw has time to send
+
+Day-to-day operations (migrations, key rotation, rollback) are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ---
 

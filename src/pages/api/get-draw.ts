@@ -1,3 +1,8 @@
+// GET /api/get-draw?id=<uuid>[&key=<adminKey>]: one draw. Anyone may call it.
+// Without the admin key: participant names only. With it: emails, groups, reveal
+// tokens, per-person email status and matches.
+// Returns 200; 404 unknown draw; 410 { deleted: true } for a deleted draw.
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
 

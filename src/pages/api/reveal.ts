@@ -1,3 +1,8 @@
+// GET /api/reveal?token=<uuid>: one participant's own match, for their personal
+// link. The reveal token is the only credential and unlocks nothing else.
+// Returns 200 { name, match_name, created_at, organizer_name }; 404 unknown
+// token; 410 deleted draw.
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
 

@@ -39,7 +39,7 @@ function constraintKeys(participants: Participant[]): number[] {
  *
  * Each group member needs a receiver from outside the group and a giver from
  * outside the group, so a valid matching exists exactly when no group holds
- * more than half the participants (Hall's theorem; see backtrackMatch()).
+ * more than half the participants (Hall's theorem; see assignWithFeasibilityCheck()).
  * Groups are compared case-insensitively, the same way createMatches() does.
  */
 export function isMatchingPossible(participants: Participant[]): {
@@ -102,8 +102,8 @@ export function createMatches(participants: Participant[]): Match[] | null {
     if (receivers.every((ri, gi) => keys[ri] !== keys[gi])) return toMatches(receivers);
   }
 
-  // Phase 2: randomized backtracking with a feasibility check
-  const receivers = backtrackMatch(keys);
+  // Phase 2: randomized assignment with a feasibility check
+  const receivers = assignWithFeasibilityCheck(keys);
   return receivers && toMatches(receivers);
 }
 
@@ -118,7 +118,7 @@ export function createMatches(participants: Participant[]): Match[] | null {
  * end and runs in polynomial time instead of backtracking exponentially.
  * Candidates are tried in shuffled order so the result is still random.
  */
-function backtrackMatch(keys: number[]): number[] | null {
+function assignWithFeasibilityCheck(keys: number[]): number[] | null {
   const n = keys.length;
   const giversLeft = new Map<number, number>();
   const receiversLeft = new Map<number, number>();

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import { formFromParticipants } from '@/lib/groups';
 import styles from '@/styles/Draw.module.css';
 
 interface Match {
@@ -195,15 +196,13 @@ export default function DrawPage() {
 
     // This draw stays live until create-draw saves its replacement, so leaving
     // the form without submitting keeps the original links working
-    const groups = Array.from(new Set(draw.participants.map((p) => p.group_name).filter((g): g is string => !!g)));
-    const participants = draw.participants.map((p) => ({
-      id: Math.random().toString(36).slice(2),
+    const { groups, participants } = formFromParticipants(draw.participants.map((p) => ({
       name: p.name ?? '',
       email: p.email ?? '',
       group: p.group_name ?? '',
-    }));
+    })));
     sessionStorage.setItem('editDraftData', JSON.stringify({
-      groups: groups.length > 0 ? groups : [''],
+      groups,
       participants,
       replacesDrawId: draw.id,
       replacesKey: adminKey,

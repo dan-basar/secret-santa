@@ -4,120 +4,71 @@ This file provides guidance for AI assistants working in this codebase.
 
 ## Project Overview
 
-A full-stack Secret Santa draw application built with Next.js and TypeScript, backed by Neon Postgres. Users create draws by defining participant groups, the app generates conflict-free matches, and sends email notifications via Gmail SMTP.
+A Secret Santa draw app: Next.js (pages router, TypeScript) on Vercel, Neon Postgres, Gmail SMTP for emails, Cloudflare Turnstile on sends. Organizers create a draw with optional groups, the app generates conflict-free matches, and each person sees their own match by email or personal link. Everything is served under the `/secret-santa` path prefix.
 
-Deployed on Vercel at the `/secret-santa` path prefix.
+How the app works lives in one place; read it there rather than duplicating it here:
+- [README.md](README.md) — features, setup, environment variables, project structure, API reference
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — which secret unlocks what, draw lifecycle, request path, tables, data kept
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) — migrations, env vars, key rotation, Gmail trouble, rollback, health check
 
-## Tech Stack
-
-- **Framework**: Next.js (pages router, React 18, TypeScript 5)
-- **Database**: Neon Postgres via `@neondatabase/serverless` (HTTP driver, no connection pool)
-- **Email**: Nodemailer with Gmail SMTP
-- **Deployment**: Vercel (region: `cle1`, timeout: 10s per function, 60s for send-emails)
-- **Hosting path**: All routes are under `/secret-santa` (set via `next.config.js` `basePath`)
-
-## Repository Structure
-
-```
-src/
-  lib/
-    db.ts           # Neon serverless SQL client
-    matching.ts     # Secret Santa matching algorithm with constraint validation
-    email.ts        # Nodemailer email service
-  pages/
-    api/
-      create-draw.ts   # POST: create draw + participants + matches in a transaction
-      get-draw.ts      # GET: retrieve draw; matches + reveal tokens for admins only
-      reveal.ts        # GET: one participant's own match, by reveal token
-      send-emails.ts   # POST: send match emails; claims each person first, so nobody is emailed twice
-      delete-draw.ts   # POST: soft-delete a draw
-      health.ts        # GET: DB health check
-    _app.tsx           # App wrapper
-    index.tsx          # Home page — draw creation form
-    draw/[id].tsx      # Draw results page
-    reveal/[token].tsx # Participant's private tap-to-reveal page
-  proxy.ts             # Per-IP hourly rate limits for create-draw, send-emails, delete-draw (RateLimits table)
-  styles/
-    globals.css        # Design tokens (CSS custom properties), resets
-    Home.module.css
-    Draw.module.css
-    Reveal.module.css
-sql/
-  setup.sql            # Database schema (Draws, Participants, Matches, DailyEmailLog, RateLimits tables)
-  migrations/          # One-off schema changes for existing databases (run manually)
-scripts/
-  copy-azure-to-neon.ts  # One-off Azure SQL -> Neon data copy (run manually)
-next.config.js
-vercel.json
-tsconfig.json
-```
+When you change behavior those documents describe (routes, status codes, schema, limits), update them in the same change.
 
 ## Development Commands
 
 ```bash
-npm run dev      # Start dev server on http://localhost:3000/secret-santa
-npm run build    # Production build
-npm run start    # Serve production build
+npm run dev        # Start dev server on http://localhost:3000/secret-santa
+npm run build      # Production build
+npm run start      # Serve production build
 npm run typecheck  # tsc --noEmit
-npm test         # Vitest unit tests (tests/)
+npm test           # Vitest unit tests (tests/)
 ```
 
 **Always prefix `npm run dev` with the appropriate `cd` command:**
 
 ```bash
-cd /home/user/secret-santa-app && npm run dev
+cd /home/user/secret-santa && npm run dev
 ```
 
 Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR. There is no linter configured beyond TypeScript strict mode.
 
-## Environment Variables
+## Environment and Data Safety
 
-All required except `RATE_LIMIT_IP_WHITELIST` — no defaults. Store in `.env.local` locally.
+- **Local `DATABASE_URL` points at the Neon `dev` branch, never production.** The production connection string lives only in Vercel; never run queries, scripts or the dev server against it. `vercel env pull` writes the production value, so switch it back to dev immediately.
+- `.env.development.local` holds Cloudflare's always-pass Turnstile test keys so emails can be sent from `npm run dev` (the real keys reject `localhost`). Never put real keys there.
+- **Only send email for draws you create, to addresses you were given.**
+- Schema changes go in a new `sql/migrations/NNN_name.sql` with a read-only `NNN_name_check.sql`, and are folded into `sql/setup.sql`. Never apply them to production yourself; the runbook is in docs/OPERATIONS.md.
+- All env vars are required except `RATE_LIMIT_IP_WHITELIST`; there are no defaults. The list is in the README.
 
-**Local `DATABASE_URL` points at the Neon `dev` branch, never production.** The production connection string lives only in Vercel; never run queries, scripts or the dev server against it. `.env.development.local` holds Cloudflare's always-pass Turnstile test keys so emails can be sent from `npm run dev` (the real keys reject `localhost`). Only send email for draws you create, to addresses you were given.
+## Conventions
 
-| Variable             | Purpose                           |
-|----------------------|-----------------------------------|
-| `DATABASE_URL`       | Neon Postgres connection string (set by the Neon integration on Vercel; `vercel env pull .env.local` locally) |
-| `GMAIL_USER`         | Gmail address for outbound email  |
-| `GMAIL_APP_PASSWORD` | Gmail app-specific password       |
-| `NEXT_PUBLIC_BASE_URL` | Site origin for reveal links in emails, without the `/secret-santa` basePath |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key for the send-emails widget |
-| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key; `send-emails` verifies the widget token with it |
-| `RATE_LIMIT_IP_WHITELIST` | Optional. Comma-separated IPs that `src/proxy.ts` never rate limits |
-
-## Database Schema
-
-Tables (see `sql/setup.sql`):
-
-- **Draws** — one row per draw session; `id` is a `uuid`; soft-delete via `deleted_at`
-- **Participants** — name, optional email, optional group, `position` (1..n order within the draw), `email_sent_at` (NULL until their email goes out); FK to `draw_id`
-- **Matches** — giver/receiver pairs; FKs to both `draw_id` and `Participants`
-- **DailyEmailLog** — one row per UTC date counting emails sent (daily cap)
-- **RateLimits** — one hit counter per SHA-256-hashed IP + route per hour, shared by every Vercel instance; `src/proxy.ts` upserts it and fails open if the query errors
-
-### Conventions
+### Database
 - Column names: `snake_case`
-- Public IDs: `uuid`
+- Public IDs: `uuid`; `isUuid()` (`src/lib/db.ts`) guards route inputs, because Postgres raises an error on malformed uuid strings
 - Internal join keys: `integer GENERATED ALWAYS AS IDENTITY`
 - Soft deletes only — never hard-delete rows. The one exception is `RateLimits`: its rows are counters, not people's data, so `src/proxy.ts` deletes rows older than 2 days on about 1 in 100 limited requests
 - Always use parameterized queries: the `sql` tagged template sends `${...}` values as bind parameters; never build SQL text with string concatenation
 - Multi-step writes use `sql.transaction([...])`, which runs all statements in one transaction and rolls back on error
+- `src/lib/db.ts` exports a single `sql` client from `neon(process.env.DATABASE_URL!)`; each query is one HTTPS request. No pool, retry wrapper or warm-up
 
-## API Conventions
+### API
+- Keep routes focused: validate input → query DB → return response. Each route file starts with a short comment giving its contract; keep it current
+- Error responses always use `{ error: string }` JSON, with status codes 400 (bad input), 403 (wrong admin key), 404 (not found), 409 (conflict), 410 (deleted), 422 (unprocessable), 429 (rate limited, from `src/proxy.ts`), 500 (server error)
+- Anything that reveals matches, emails or reveal tokens, or changes a draw, requires the draw's admin key
 
-All endpoints live under `/api/`:
+### Code Style
+- TypeScript strict mode — no `any` unless truly unavoidable
+- Use `@/lib/...` and `@/styles/...` path aliases (configured in `tsconfig.json`)
+- No unnecessary abstractions — three similar lines is fine; don't extract prematurely
+- Do not add error handling for impossible scenarios; trust Next.js and Neon driver guarantees at internal boundaries
 
-| Method | Path            | Notes                                          |
-|--------|-----------------|------------------------------------------------|
-| POST   | `/api/create-draw`  | Validates 2–50 participants before DB write    |
-| GET    | `/api/get-draw`     | `?id=UUID`; names only unless `key` is the admin key; 410 for deleted draws |
-| GET    | `/api/reveal`       | `?token=UUID`; one participant's own match; 404 unknown, 410 deleted |
-| POST   | `/api/send-emails`  | Rejects a second full send (409); `retryFailed: true` resends only to people whose email failed |
-| POST   | `/api/delete-draw`  | Idempotent soft-delete                         |
-| GET    | `/api/health`       | Returns 503 if DB unreachable                  |
-
-Error responses always use `{ error: string }` JSON. Use appropriate HTTP status codes: 400 (bad input), 404 (not found), 409 (conflict), 410 (deleted), 422 (unprocessable), 500 (server error).
+### Frontend
+- **State management**: local React hooks only (`useState`, `useEffect`, `useCallback`, `useRef`) — no Redux or Context
+- **Styling**: CSS Modules per page + `globals.css` for design tokens (CSS custom properties on `:root`, e.g. `--ink`, `--accent`, `--success`, `--error`)
+- **Typography**: Libre Baskerville (headings) + DM Sans (body)
+- **Forms**: client-side validation before API calls; errors displayed inline
+- **Groups on the home page** are referenced by a stable id (`src/lib/groups.ts`), never by name, so renaming a group keeps its members
+- **Session storage**: key `editDraftData` passes the form state from the draw page back to the home page for "Edit & Redraw"
+- Participants limit: 50 max; groups limit: 20 max
 
 ## Matching Algorithm (`src/lib/matching.ts`)
 
@@ -126,32 +77,8 @@ Core business logic — handle carefully:
 1. **Constraint**: participants in the same `group_name` cannot be matched together; group names are compared trimmed and case-insensitively (`normalizeGroup()`)
 2. **Validation**: if any single group contains >50% of participants, matching is mathematically impossible — reject early
 3. **Phase 1**: uniform Fisher-Yates shuffle with up to 1000 attempts
-4. **Phase 2**: randomized assignment with a Hall's-condition feasibility check if Phase 1 fails; never dead-ends, so large-group draws stay fast
+4. **Phase 2**: `assignWithFeasibilityCheck()`, a randomized assignment with a Hall's-condition feasibility check if Phase 1 fails; never dead-ends, so large-group draws stay fast
 5. No self-matches, no same-group matches; participants are compared by position, so duplicate names are fine
-
-## Database Connection (`src/lib/db.ts`)
-
-- Exports a single `sql` client from `neon(process.env.DATABASE_URL!)`; each query is one HTTPS request
-- No pool, retry wrapper or warm-up: there is no long-lived connection to go stale
-- `isUuid()` guards route inputs, because Postgres raises an error on malformed uuid strings
-
-## Frontend Conventions
-
-- **State management**: local React hooks only (`useState`, `useEffect`, `useCallback`, `useRef`) — no Redux or Context
-- **Styling**: CSS Modules per page + `globals.css` for design tokens
-- **Design tokens**: defined as CSS custom properties on `:root` in `globals.css` (e.g., `--ink`, `--accent`, `--success`, `--error`)
-- **Typography**: Libre Baskerville (headings) + DM Sans (body)
-- **Forms**: client-side validation before API calls; errors displayed inline
-- **Session storage**: used to pass participant data back to the home page for "edit and redraw" flow
-- Participants limit: 50 max; groups limit: 20 max
-
-## Code Style
-
-- TypeScript strict mode — no `any` unless truly unavoidable
-- Use `@/lib/...` and `@/styles/...` path aliases (configured in `tsconfig.json`)
-- Keep API routes focused: validate input → query DB → return response
-- No unnecessary abstractions — three similar lines is fine; don't extract prematurely
-- Do not add error handling for impossible scenarios; trust Next.js and Neon driver guarantees at internal boundaries
 
 ## Branch Strategy
 
@@ -160,8 +87,7 @@ Core business logic — handle carefully:
 - **AI-created branches must be prefixed with `titan/`**, not `claude/` (e.g., `titan/add-feature-XYZ`)
 - Current development branch for Claude agents: see task instructions
 
-## Deployment Notes
+## Deployment Cautions
 
-- `vercel.json` sets function max duration to 10s (60s for send-emails, so a 50-person draw has time to send) and deploys to region `cle1`
-- `next.config.js` `basePath: '/secret-santa'` affects all internal Next.js links and API calls — do not remove this
-- `DATABASE_URL` comes from the Neon integration on the Vercel project (Free plan, AWS US East 2)
+- `next.config.js` `basePath: '/secret-santa'` affects all internal Next.js links and API calls — do not remove this. Public URLs outside Next.js routing (emails, meta tags) go through `siteUrl()` in `src/lib/site.ts`
+- `vercel.json` sets function max duration to 10s (60s for send-emails, so a 50-person draw has time to send) and deploys to region `cle1`; keep new routes inside 10s
