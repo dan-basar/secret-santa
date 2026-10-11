@@ -76,6 +76,4 @@ export interface SendEmailsError extends ApiError {
 }
 
 // GET /api/health
-export interface HealthResponse {
-  ok: boolean;
-}
+export type HealthResponse = { ok: true } | { ok: false; error: string };
