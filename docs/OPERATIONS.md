@@ -71,4 +71,4 @@ A rollback does not touch the database. If the bad deploy came with a migration,
 GET <site>/secret-santa/api/health
 ```
 
-`200 { "ok": true }` means the function runs and Neon answered `SELECT 1`; `503 { "ok": false }` means the database is unreachable. It isn't rate limited and can be pointed at by an uptime monitor. If it fails, check Neon's status page and the project in the Neon console (a project over its Free plan limits also fails here), then the Vercel function logs.
+`200 { "ok": true }` means the function runs and Neon answered `SELECT 1`; `503 { "ok": false, "error": "Database unreachable." }` means the database is unreachable. It isn't rate limited and can be pointed at by an uptime monitor. If it fails, check Neon's status page and the project in the Neon console (a project over its Free plan limits also fails here), then the Vercel function logs.

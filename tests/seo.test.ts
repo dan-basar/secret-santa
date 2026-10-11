@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import nextConfig from '../next.config.js';
-import { siteUrl } from '@/lib/site';
+import { BASE_PATH, siteUrl } from '@/lib/site';
 
 const originalBaseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
@@ -15,6 +15,13 @@ describe('siteUrl', () => {
       expect(siteUrl()).toBe('https://baseworkshop.app/secret-santa');
       expect(siteUrl('/og-image.png')).toBe('https://baseworkshop.app/secret-santa/og-image.png');
     }
+  });
+});
+
+describe('base path', () => {
+  it('is the same value in next.config.js and site.ts', () => {
+    expect(BASE_PATH).toBe('/secret-santa');
+    expect(nextConfig.basePath).toBe(BASE_PATH);
   });
 });
 

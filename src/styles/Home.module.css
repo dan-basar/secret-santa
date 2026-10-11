@@ -198,9 +198,9 @@
     grid-template-rows: auto auto auto;
   }
 
-  .participantRow input:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .participantRow input[type="text"] { grid-column: 1; grid-row: 1; }
   .participantRow select { grid-column: 1; grid-row: 2; margin-left: var(--mobile-indent); width: calc(100% - var(--mobile-indent)); }
-  .participantRow input:nth-child(3) { grid-column: 1; grid-row: 3; margin-left: var(--mobile-indent); width: calc(100% - var(--mobile-indent)); }
+  .participantRow input[type="email"] { grid-column: 1; grid-row: 3; margin-left: var(--mobile-indent); width: calc(100% - var(--mobile-indent)); }
   .participantRow button { grid-column: 2; grid-row: 1; align-self: start; }
 }
 

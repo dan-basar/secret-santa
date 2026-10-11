@@ -1,7 +1,7 @@
 // POST /api/delete-draw: soft-deletes a draw (sets deleted_at). Idempotent.
 // Admin key required. Body: { id, key }.
-// Returns 200 { success: true }, also when already deleted; 403 wrong key;
-// 404 unknown draw.
+// Returns 200 { success: true }, also when already deleted; 400 missing id;
+// 403 wrong key; 404 unknown draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
@@ -14,10 +14,13 @@ interface DrawRow {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<DeleteDrawResponse | ApiError>) {
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Method not allowed.' });
+  }
 
   const { id, key } = req.body;
-  if (!id || typeof id !== 'string') return res.status(400).end();
+  if (!id || typeof id !== 'string') return res.status(400).json({ error: 'A draw id is required.' });
   if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
   if (!key || typeof key !== 'string') return res.status(403).json({ error: 'Only the organizer can delete this draw.' });
 

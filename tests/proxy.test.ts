@@ -9,9 +9,10 @@ vi.mock('@/lib/db', async (importOriginal) => {
 
 import { proxy } from '@/proxy';
 import { sql } from '@/lib/db';
+import { BASE_PATH } from '@/lib/site';
 
 function request(path: string, ip = '203.0.113.7') {
-  return new NextRequest(`http://localhost/secret-santa${path}`, {
+  return new NextRequest(`http://localhost${BASE_PATH}${path}`, {
     method: 'POST',
     headers: { 'x-forwarded-for': `${ip}, 10.0.0.1` },
   });

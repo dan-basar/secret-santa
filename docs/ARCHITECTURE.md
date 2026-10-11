@@ -35,7 +35,7 @@ stateDiagram-v2
 
 ```
 Browser
-  │  /secret-santa/...   (basePath in next.config.js)
+  │  /secret-santa/...   (basePath from src/lib/base-path.json)
   ▼
 Vercel (region cle1)
   │
