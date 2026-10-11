@@ -8,6 +8,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
 import { sendMatchEmail } from '@/lib/email';
 import { hasHtmlTag } from '@/lib/sanitize';
+import { verifyTurnstile } from '@/lib/turnstile';
 
 // Gmail's free SMTP plan allows ~500 emails/day; 495 gives a 5-email safety margin
 const DAILY_EMAIL_LIMIT = 495;
@@ -53,26 +54,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Emails are not configured on this server. Please contact the site owner.' });
   }
 
-  // Verify Turnstile token
-  if (!turnstileToken) {
+  if (!turnstileToken || typeof turnstileToken !== 'string') {
     return res.status(400).json({ error: 'CAPTCHA verification required.' });
   }
 
-  const turnstileResponse = await fetch(
-    'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        secret: process.env.TURNSTILE_SECRET_KEY,
-        response: turnstileToken,
-      }),
-    }
-  );
-
-  const turnstileResult = await turnstileResponse.json();
-
-  if (!turnstileResult.success) {
+  // Also false when Cloudflare can't be reached; the organizer just tries again
+  if (!(await verifyTurnstile(turnstileToken))) {
     return res.status(403).json({ error: 'CAPTCHA verification failed.' });
   }
 

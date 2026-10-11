@@ -149,6 +149,7 @@ src/
     email.ts          # Nodemailer email service
     sanitize.ts       # HTML tag check and escaping for emails
     site.ts           # siteUrl(): public URLs with the /secret-santa basePath
+    turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
     groups.ts         # Home page form state: groups by id, Edit & Redraw draft
   pages/
     api/
@@ -187,7 +188,7 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 | `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`), generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
 | `GET` | `/api/get-draw?id=<uuid>[&key=<adminKey>]` | Fetch a draw. Without a valid admin key: participant names only. With it: emails, groups, reveal tokens, per-person email status and matches. `410` for deleted draws. |
 | `GET` | `/api/reveal?token=<uuid>` | One participant's name, their match, the draw date and the organizer (once emails are sent). `404` for unknown tokens, `410` for deleted draws. |
-| `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail }`, or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Returns `{ success, totalSent, totalFailed, failedNames }`. `403` wrong key or failed CAPTCHA, `409` already sent (or nothing to resend), `410` deleted, `503` daily cap reached. |
+| `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail }`, or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Returns `{ success, totalSent, totalFailed, failedNames }`. `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `409` already sent (or nothing to resend), `410` deleted, `503` daily cap reached. |
 | `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ id, key }`. Soft-delete a draw. Idempotent. `403` wrong key. |
 | `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503` otherwise. |
 

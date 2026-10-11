@@ -276,6 +276,29 @@ describe('POST /api/send-emails', () => {
     expect(sendMatchEmail).not.toHaveBeenCalled();
   });
 
+  it('rejects a CAPTCHA token that is not a string with 400', async () => {
+    const res = await post({ ...firstSend, turnstileToken: { token: 'x' } });
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('CAPTCHA verification required.');
+  });
+
+  it('answers 403 with an error, not a crash, when Cloudflare cannot be reached', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'CAPTCHA verification failed.' });
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+    expect(db.draw.emails_sent_at).toBeNull();
+  });
+
+  it('answers 403 with an error, not a crash, when Cloudflare replies with something other than JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => { throw new SyntaxError('Unexpected token <'); } })));
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'CAPTCHA verification failed.' });
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+  });
+
   it('still counts a resend against the daily cap', async () => {
     failFor('sam@example.com');
     await post(firstSend);
