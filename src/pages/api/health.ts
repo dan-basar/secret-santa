@@ -1,3 +1,6 @@
+// GET /api/health: database liveness check. Anyone may call it.
+// Returns 200 { ok: true }, or 503 { ok: false } when the database is unreachable.
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql } from '@/lib/db';
 

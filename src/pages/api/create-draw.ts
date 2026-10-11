@@ -1,3 +1,9 @@
+// POST /api/create-draw: validates 2-50 participants ({ name, email?, group? }),
+// draws matches and saves the draw, participants and matches in one transaction.
+// Anyone may call it. Returns 200 { drawId, adminKey }; 400 bad input; 422 no
+// valid matching. Edit & Redraw also sends replacesDrawId + replacesKey (that
+// draw's admin key): 403 wrong key, 409 emails already sent, 410 already deleted.
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'crypto';
 import { sql, isUuid } from '@/lib/db';

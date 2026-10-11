@@ -1,3 +1,8 @@
+// POST /api/delete-draw: soft-deletes a draw (sets deleted_at). Idempotent.
+// Admin key required. Body: { id, key }.
+// Returns 200 { success: true }, also when already deleted; 403 wrong key;
+// 404 unknown draw.
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
 

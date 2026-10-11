@@ -1,3 +1,9 @@
+// POST /api/send-emails: emails each participant their match and reveal link.
+// Admin key required. Body: { id, key, turnstileToken } plus organizerName and
+// organizerEmail on the first send, or retryFailed: true to resend only the failed.
+// Returns 200 { success, totalSent, totalFailed, failedNames }; 403 wrong key or
+// CAPTCHA; 409 already sent / nothing to resend; 410 deleted; 503 daily cap hit.
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
 import { sendMatchEmail } from '@/lib/email';
