@@ -3,8 +3,9 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql } from '@/lib/db';
+import type { HealthResponse } from '@/types/api';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse<HealthResponse>) {
   try {
     await sql`SELECT 1`;
     res.status(200).json({ ok: true });

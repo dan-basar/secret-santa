@@ -49,15 +49,17 @@ Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next
 - Always use parameterized queries: the `sql` tagged template sends `${...}` values as bind parameters; never build SQL text with string concatenation
 - Multi-step writes use `sql.transaction([...])`, which runs all statements in one transaction and rolls back on error
 - `src/lib/db.ts` exports a single `sql` client from `neon(process.env.DATABASE_URL!)`; each query is one HTTPS request. No pool, retry wrapper or warm-up
+- The driver returns rows untyped. Each route declares a small row interface for what its query selects and casts once at the query (`as DrawRow[]`). `timestamptz` columns arrive as `Date`, so routes call `.toISOString()` when putting them in a response
 
 ### API
 - Keep routes focused: validate input → query DB → return response. Each route file starts with a short comment giving its contract; keep it current
 - Error responses always use `{ error: string }` JSON, with status codes 400 (bad input), 403 (wrong admin key), 404 (not found), 409 (conflict), 410 (deleted), 422 (unprocessable), 429 (rate limited, from `src/proxy.ts`), 500 (server error)
 - Anything that reveals matches, emails or reveal tokens, or changes a draw, requires the draw's admin key
+- Response shapes live in `src/types/api.ts`: routes type their `res` with them (`NextApiResponse<RevealResponse | ApiError>`) and pages import the same types, so a shape is written once
 
 ### Code Style
 - TypeScript strict mode — no `any` unless truly unavoidable
-- Use `@/lib/...` and `@/styles/...` path aliases (configured in `tsconfig.json`)
+- Use `@/lib/...`, `@/types/...` and `@/styles/...` path aliases (configured in `tsconfig.json`)
 - No unnecessary abstractions — three similar lines is fine; don't extract prematurely
 - Do not add error handling for impossible scenarios; trust Next.js and Neon driver guarantees at internal boundaries
 

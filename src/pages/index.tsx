@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { siteUrl } from '@/lib/site';
 import { FormGroup, FormParticipant, groupNameFor, newId } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
+import type { ApiError, CreateDrawResponse } from '@/types/api';
 
 const MAX_PARTICIPANTS = 50;
 const MAX_GROUPS = 20;
@@ -136,9 +137,8 @@ export default function Home() {
         }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
+        const data: ApiError = await res.json();
         // The earlier draw is gone, so there is nothing left to replace;
         // submitting again creates a plain new draw
         if (res.status === 410) setReplaces(null);
@@ -146,6 +146,7 @@ export default function Home() {
         return;
       }
 
+      const data: CreateDrawResponse = await res.json();
       // In the fragment, never the query string, so the key stays out of server logs
       router.push(`/draw/${data.drawId}#key=${encodeURIComponent(data.adminKey)}`);
     } catch {

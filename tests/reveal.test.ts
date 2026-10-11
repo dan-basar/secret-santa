@@ -12,11 +12,12 @@ import { sql } from '@/lib/db';
 
 const TOKEN = '3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90';
 
+// The driver returns timestamptz columns as Date objects
 const row = {
   giver_name: 'Alex',
   receiver_name: 'Sam',
-  created_at: '2026-10-01T12:00:00.000Z',
-  emails_sent_at: '2026-10-02T12:00:00.000Z',
+  created_at: new Date('2026-10-01T12:00:00.000Z'),
+  emails_sent_at: new Date('2026-10-02T12:00:00.000Z'),
   organizer_name: 'Pat',
   deleted_at: null,
 };

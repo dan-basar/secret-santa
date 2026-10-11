@@ -6,8 +6,25 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
+import type { AdminMatch, ApiError, GetDrawDeleted, GetDrawResponse } from '@/types/api';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+interface DrawRow {
+  id: string;
+  created_at: Date;
+  emails_sent_at: Date | null;
+  deleted_at: Date | null;
+  admin_key: string | null;
+}
+
+interface ParticipantRow {
+  name: string;
+  email: string | null;
+  group_name: string | null;
+  reveal_token: string;
+  email_sent_at: Date | null;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<GetDrawResponse | GetDrawDeleted | ApiError>) {
   if (req.method !== 'GET') return res.status(405).end();
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
 
@@ -18,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     // All three reads in one round trip and one consistent snapshot
-    const [drawRows, participantRows, matchRows] = await sql.transaction([
+    const [drawRows, participantRows, matchRows] = (await sql.transaction([
       sql`
         SELECT
              id
@@ -53,7 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         WHERE matches.draw_id = ${id}::uuid
         ORDER BY givers.position
       `,
-    ], { readOnly: true });
+    ], { readOnly: true })) as [DrawRow[], ParticipantRow[], AdminMatch[]];
 
     if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
 
@@ -66,9 +83,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const base = {
       id: draw.id,
-      created_at: draw.created_at,
-      emails_sent_at: draw.emails_sent_at,
-      isAdmin,
+      created_at: draw.created_at.toISOString(),
+      emails_sent_at: draw.emails_sent_at?.toISOString() ?? null,
     };
 
     // Pairings stay private on the shared link: each participant sees their
@@ -76,14 +92,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!isAdmin) {
       return res.status(200).json({
         ...base,
+        isAdmin,
         participants: participantRows.map(p => ({ name: p.name })),
       });
     }
 
     return res.status(200).json({
       ...base,
+      isAdmin,
       participantsWithEmailCount,
-      participants: participantRows,
+      participants: participantRows.map(p => ({ ...p, email_sent_at: p.email_sent_at?.toISOString() ?? null })),
       matches: matchRows,
     });
   } catch (err) {

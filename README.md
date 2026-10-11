@@ -166,6 +166,7 @@ src/
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
   styles/             # globals.css design tokens + CSS Modules per page
   types/
+    api.ts            # JSON response types, shared by the API routes and the pages
     turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
 tests/                # Vitest unit tests
 public/               # Favicon, icons and link-preview image

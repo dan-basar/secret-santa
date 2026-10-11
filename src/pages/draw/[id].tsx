@@ -4,26 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { formFromParticipants } from '@/lib/groups';
 import styles from '@/styles/Draw.module.css';
-
-interface Match {
-  giver_name: string;
-  giver_email?: string;
-  giver_group: string | null;
-  receiver_name: string;
-  receiver_group: string | null;
-}
-
-// The shared link gets participant names only; email, group_name, reveal_token,
-// email_sent_at, participantsWithEmailCount and matches come back for the organizer alone
-interface DrawData {
-  id: string;
-  created_at: string;
-  emails_sent_at: string | null;
-  isAdmin: boolean;
-  participantsWithEmailCount?: number;
-  participants: Array<{ name: string; email?: string | null; group_name?: string | null; reveal_token?: string; email_sent_at?: string | null }>;
-  matches?: Match[];
-}
+import type { ApiError, GetDrawResponse, SendEmailsError } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
 
@@ -36,7 +17,7 @@ export default function DrawPage() {
   const [adminKey, setAdminKey] = useState<string | null>(null);
 
   const [state, setState] = useState<PageState>('loading');
-  const [draw, setDraw] = useState<DrawData | null>(null);
+  const [draw, setDraw] = useState<GetDrawResponse | null>(null);
 
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
@@ -57,7 +38,7 @@ export default function DrawPage() {
 
   // People with an email address who haven't been sent one: everyone before the
   // first send, and anyone whose email failed after it
-  const unsentCount = draw?.participants.filter((p) => p.email && !p.email_sent_at).length ?? 0;
+  const unsentCount = draw?.isAdmin ? draw.participants.filter((p) => p.email && !p.email_sent_at).length : 0;
 
   // Explicitly render the Turnstile widget once the Send or Resend button is visible.
   // We cannot rely on Turnstile's auto-scan (which only fires once on script load)
@@ -124,7 +105,7 @@ export default function DrawPage() {
       if (res.status === 410) { setState('deleted'); return; }
       if (res.status === 404) { setState('not-found'); return; }
       if (!res.ok) { setState('error'); return; }
-      const data = await res.json();
+      const data: GetDrawResponse = await res.json();
       setDraw(data);
       setState('loaded');
     } catch {
@@ -150,8 +131,10 @@ export default function DrawPage() {
           ? { id: draw.id, key: adminKey, turnstileToken, retryFailed: true }
           : { id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(), turnstileToken }),
       });
-      const data = await res.json();
-      if (!res.ok) setEmailError(data.error || 'Failed to send emails.');
+      if (!res.ok) {
+        const data: SendEmailsError = await res.json();
+        setEmailError(data.error || 'Failed to send emails.');
+      }
       // Reload for each person's sent status rather than guessing it from the response
       await loadDraw();
     } catch {
@@ -177,7 +160,7 @@ export default function DrawPage() {
       if (res.ok) {
         setDeleted(true);
       } else {
-        const data = await res.json().catch(() => ({}));
+        const data: Partial<ApiError> = await res.json().catch(() => ({}));
         setDeleteError(data.error || 'Failed to delete the draw. Please try again.');
       }
     } catch {
@@ -211,7 +194,7 @@ export default function DrawPage() {
   const handleEditAndRedraw = () => {
     // Emails can't be taken back, so a redraw after sending would leave people
     // holding the wrong match; the button is disabled in that case too
-    if (!draw || draw.emails_sent_at) return;
+    if (!draw?.isAdmin || draw.emails_sent_at) return;
 
     // This draw stays live until create-draw saves its replacement, so leaving
     // the form without submitting keeps the original links working
@@ -291,7 +274,9 @@ export default function DrawPage() {
       })
     : null;
 
-  const matches = draw.isAdmin ? draw.matches ?? [] : null;
+  // The organizer's view of the draw; null on the shared link
+  const admin = draw.isAdmin ? draw : null;
+  const matches = admin ? admin.matches : null;
 
   return (
     <>
@@ -444,14 +429,14 @@ export default function DrawPage() {
           </section>}
 
           {/* Personal reveal links (organizer only) */}
-          {matches && <section className={`card ${styles.section}`}>
+          {admin && <section className={`card ${styles.section}`}>
             <h2 className={styles.sectionTitle}>Personal links</h2>
             <p className={styles.sectionDesc}>
               Each link shows one person only who they drew. Send each person their own link by text or chat.
               {draw.emails_sent_at ? ' Everyone the emails reached already has theirs.' : ' The emails below include these links too.'}
             </p>
             <ul className={styles.personalLinks}>
-              {draw.participants.map((p, i) => p.reveal_token && (
+              {admin.participants.map((p, i) => p.reveal_token && (
                 <li key={i} className={styles.personalLinkRow}>
                   <div className={styles.personalLinkText}>
                     <span className={styles.name}>{p.name}</span>
