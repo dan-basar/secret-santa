@@ -2,9 +2,11 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import Image from 'next/image';
 import { siteUrl } from '@/lib/site';
 import { FormGroup, FormParticipant, groupNameFor, newId } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
+import logo from '../../public/logo.svg';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
 
 const MAX_PARTICIPANTS = 50;
@@ -184,11 +186,12 @@ export default function Home() {
       <div className={styles.page}>
         <header className={styles.header}>
           <div className={styles.headerInner}>
-            <span className={styles.icon}>🎅🎁</span>
+            <Image src={logo} alt="Secret Santa Picker logo" width={55} height={64} className={styles.logo} priority />
             <div>
               <h1 className={styles.title}>Secret Santa Picker App</h1>
               <p className={styles.subtitle}>Enter your groups and participants, then draw matches.</p>
             </div>
+            <Image src={logo} alt="" width={55} height={64} className={`${styles.logo} ${styles.logoRight}`} priority />
           </div>
         </header>
 

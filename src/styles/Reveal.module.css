@@ -23,6 +23,10 @@
   margin-bottom: 8px;
 }
 
+.logo {
+  margin-bottom: 8px;
+}
+
 .muted {
   color: var(--ink-faint);
   font-size: 14px;

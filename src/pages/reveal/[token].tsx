@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import Image from 'next/image';
 import styles from '@/styles/Reveal.module.css';
+import logo from '../../../public/logo.svg';
 import type { RevealResponse } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
@@ -79,7 +81,7 @@ export default function RevealPage() {
       {head}
       <div className={styles.centered}>
         <div className={`card ${styles.card}`}>
-          <span className={styles.bigIcon}>🎁</span>
+          <Image src={logo} alt="" width={55} height={64} className={styles.logo} />
           <h1 style={{ fontSize: 26 }}>Hi {data.name},</h1>
           <p className={styles.lead}>you&rsquo;re the Secret Santa for&hellip;</p>
 

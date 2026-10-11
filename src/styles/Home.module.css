@@ -18,9 +18,8 @@
   gap: 16px;
 }
 
-.icon {
-  font-size: 48px;
-  line-height: 1;
+.logo {
+  flex-shrink: 0;
 }
 
 .title {
@@ -184,6 +183,10 @@
     align-items: center;
     gap: 8px;
     text-align: center;
+  }
+
+  .logoRight {
+    display: none;
   }
 
   .participantHeader {

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import Image from 'next/image';
 import { formFromParticipants } from '@/lib/groups';
 import ShareBar from '@/components/draw/ShareBar';
 import ParticipantList from '@/components/draw/ParticipantList';
@@ -10,6 +11,7 @@ import PersonalLinks from '@/components/draw/PersonalLinks';
 import EmailSection from '@/components/draw/EmailSection';
 import DeleteSection from '@/components/draw/DeleteSection';
 import styles from '@/styles/Draw.module.css';
+import logo from '../../../public/logo.svg';
 import type { ApiError, GetDrawResponse, SendEmailsError } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
@@ -270,7 +272,10 @@ export default function DrawPage() {
       <div className={styles.page}>
         <header className={styles.header}>
           <div className={styles.headerInner}>
-            <Link href="/" className={styles.homeLink}>🎅🎁 Secret Santa Picker App</Link>
+            <Link href="/" className={styles.homeLink}>
+              <Image src={logo} alt="" width={24} height={28} />
+              Secret Santa Picker App
+            </Link>
             <span className={styles.headerMeta}>Draw created {createdDate}</span>
           </div>
         </header>
