@@ -184,7 +184,7 @@ docs/                 # Architecture and operations notes
 
 ## API Reference
 
-All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "<message>" }`. Routes marked *rate limited* return `429` when an IP goes over its hourly limit.
+All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "<message>" }`: `400` for a missing draw id, `405` (with an `Allow` header) for a wrong HTTP method, and the codes listed per route. Routes marked *rate limited* return `429` when an IP goes over its hourly limit.
 
 | Method | Path | Description |
 |---|---|---|

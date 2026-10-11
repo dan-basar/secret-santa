@@ -19,7 +19,10 @@ interface OldDrawRow {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<CreateDrawResponse | ApiError>) {
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Method not allowed.' });
+  }
 
   // The body is untrusted JSON: check its shape before touching any field, so a
   // malformed request gets a 400 instead of crashing on .length or .trim()

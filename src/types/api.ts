@@ -2,8 +2,7 @@
 // Timestamps are ISO 8601 strings: the database driver returns them as Date
 // objects, and the routes convert them when building the response.
 
-// Every 4xx and 5xx with a body, including 429 from src/proxy.ts. The one
-// exception is get-draw's 410, which is GetDrawDeleted
+// Every 4xx and 5xx, including 405 for a wrong method and 429 from src/proxy.ts
 export interface ApiError {
   error: string;
 }
@@ -56,11 +55,6 @@ export interface AdminDraw {
 }
 
 export type GetDrawResponse = SharedDraw | AdminDraw;
-
-// get-draw's 410 for a deleted draw
-export interface GetDrawDeleted {
-  deleted: true;
-}
 
 // GET /api/reveal
 export interface RevealResponse {

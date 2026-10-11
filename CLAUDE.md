@@ -53,7 +53,7 @@ Unit tests use Vitest and live in `tests/` (never under `src/pages/`, where Next
 
 ### API
 - Keep routes focused: validate input → query DB → return response. Each route file starts with a short comment giving its contract; keep it current
-- Error responses always use `{ error: string }` JSON, with status codes 400 (bad input), 403 (wrong admin key), 404 (not found), 409 (conflict), 410 (deleted), 422 (unprocessable), 429 (rate limited, from `src/proxy.ts`), 500 (server error)
+- Error responses always use `{ error: string }` JSON, with status codes 400 (bad input), 403 (wrong admin key), 404 (not found), 405 (wrong method, with an `Allow` header), 409 (conflict), 410 (deleted), 422 (unprocessable), 429 (rate limited, from `src/proxy.ts`), 500 (server error)
 - Anything that reveals matches, emails or reveal tokens, or changes a draw, requires the draw's admin key
 - Response shapes live in `src/types/api.ts`: routes type their `res` with them (`NextApiResponse<RevealResponse | ApiError>`) and pages import the same types, so a shape is written once
 

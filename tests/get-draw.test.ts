@@ -36,7 +36,7 @@ const matchRows = [
   { giver_name: 'Jo', giver_email: null, giver_group: 'Smiths', receiver_name: 'Alex', receiver_group: 'Smiths' },
 ];
 
-async function get(query: Record<string, unknown>, headers: Record<string, string> = {}) {
+async function get(query: Record<string, unknown>, headers: Record<string, string> = {}, method = 'GET') {
   const res = {
     statusCode: 0,
     body: undefined as unknown,
@@ -56,7 +56,7 @@ async function get(query: Record<string, unknown>, headers: Record<string, strin
       return this;
     },
   };
-  await handler({ method: 'GET', query, headers } as unknown as NextApiRequest, res as unknown as NextApiResponse);
+  await handler({ method, query, headers } as unknown as NextApiRequest, res as unknown as NextApiResponse);
   return res;
 }
 
@@ -118,6 +118,23 @@ describe('GET /api/get-draw', () => {
     vi.mocked(sql.transaction).mockResolvedValue([[{ ...drawRow, deleted_at: new Date('2026-10-03T12:00:00.000Z') }], participantRows, matchRows]);
     const res = await get({ id: DRAW_ID }, { 'x-admin-key': ADMIN_KEY });
     expect(res.statusCode).toBe(410);
+    expect(res.body).toEqual({ error: 'This draw has been deleted.' });
+  });
+
+  it('returns 400 with an error for a missing id', async () => {
+    for (const query of [{}, { id: [DRAW_ID, DRAW_ID] }]) {
+      const res = await get(query);
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'A draw id is required.' });
+    }
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
+  it('answers a wrong method with 405, an Allow header and an error', async () => {
+    const res = await get({ id: DRAW_ID }, {}, 'POST');
+    expect(res.statusCode).toBe(405);
+    expect(res.headers.Allow).toBe('GET');
+    expect(res.body).toEqual({ error: 'Method not allowed.' });
   });
 
   it('returns 404 for a malformed id without querying', async () => {

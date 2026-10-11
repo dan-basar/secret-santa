@@ -2,11 +2,11 @@
 // any, comes in the X-Admin-Key header, never the query string, so it stays out
 // of request logs. Without it: participant names only. With it: emails, groups,
 // reveal tokens, per-person email status and matches.
-// Returns 200; 404 unknown draw; 410 { deleted: true } for a deleted draw.
+// Returns 200; 400 missing id; 404 unknown draw; 410 deleted draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
-import type { AdminMatch, ApiError, GetDrawDeleted, GetDrawResponse } from '@/types/api';
+import type { AdminMatch, ApiError, GetDrawResponse } from '@/types/api';
 
 interface DrawRow {
   id: string;
@@ -24,13 +24,16 @@ interface ParticipantRow {
   email_sent_at: Date | null;
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse<GetDrawResponse | GetDrawDeleted | ApiError>) {
-  if (req.method !== 'GET') return res.status(405).end();
+export default async function handler(req: NextApiRequest, res: NextApiResponse<GetDrawResponse | ApiError>) {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed.' });
+  }
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
 
   const { id } = req.query;
   const key = req.headers['x-admin-key'];
-  if (!id || typeof id !== 'string') return res.status(400).end();
+  if (!id || typeof id !== 'string') return res.status(400).json({ error: 'A draw id is required.' });
   if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
 
   try {
@@ -76,7 +79,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     const draw = drawRows[0];
 
-    if (draw.deleted_at) return res.status(410).json({ deleted: true });
+    if (draw.deleted_at) return res.status(410).json({ error: 'This draw has been deleted.' });
 
     const isAdmin = typeof key === 'string' && key === draw.admin_key;
     const participantsWithEmailCount = participantRows.filter(p => p.email).length;

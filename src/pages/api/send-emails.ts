@@ -1,8 +1,9 @@
 // POST /api/send-emails: emails each participant their match and reveal link.
 // Admin key required. Body: { id, key, turnstileToken } plus organizerName and
 // organizerEmail on the first send, or retryFailed: true to resend only the failed.
-// Returns 200 { success, totalSent, totalFailed, failedNames }; 403 wrong key or
-// CAPTCHA; 409 already sent / nothing to resend; 410 deleted; 503 daily cap hit.
+// Returns 200 { success, totalSent, totalFailed, failedNames }; 400 bad input;
+// 403 wrong key or CAPTCHA; 409 already sent / nothing to resend; 410 deleted;
+// 503 daily cap hit.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
@@ -38,10 +39,13 @@ interface MatchRow {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<SendEmailsResponse | SendEmailsError>) {
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Method not allowed.' });
+  }
 
   const { id, key, organizerName, organizerEmail, turnstileToken, retryFailed } = req.body;
-  if (!id || typeof id !== 'string') return res.status(400).end();
+  if (!id || typeof id !== 'string') return res.status(400).json({ error: 'A draw id is required.' });
   if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
   if (!key || typeof key !== 'string') return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
   if (retryFailed !== undefined && typeof retryFailed !== 'boolean') return res.status(400).json({ error: 'retryFailed must be true or false.' });

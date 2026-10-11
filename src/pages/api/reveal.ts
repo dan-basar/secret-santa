@@ -17,7 +17,10 @@ interface RevealRow {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<RevealResponse | ApiError>) {
-  if (req.method !== 'GET') return res.status(405).end();
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed.' });
+  }
 
   // The token is the only secret guarding a match, so keep responses out of caches and search
   res.setHeader('Cache-Control', 'no-store');
