@@ -3,36 +3,27 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { siteUrl } from '@/lib/site';
+import { FormGroup, FormParticipant, groupNameFor, newId } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
 
-interface Participant {
-  id: string;
-  name: string;
-  email: string;
-  group: string;
-}
-
 const MAX_PARTICIPANTS = 50;
+const MAX_GROUPS = 20;
 
 const TITLE = 'Secret Santa Picker';
 const DESCRIPTION = 'Draw Secret Santa matches and notify everyone by email.';
 
-function generateId() {
-  return Math.random().toString(36).slice(2);
-}
-
-function emptyParticipant(): Participant {
-  return { id: generateId(), name: '', email: '', group: '' };
+function emptyParticipant(): FormParticipant {
+  return { id: newId(), name: '', email: '', groupId: '' };
 }
 
 export default function Home() {
   const router = useRouter();
 
   // Groups
-  const [groups, setGroups] = useState<string[]>(['']);
+  const [groups, setGroups] = useState<FormGroup[]>([{ id: newId(), name: '' }]);
 
   // Participants
-  const [participants, setParticipants] = useState<Participant[]>([
+  const [participants, setParticipants] = useState<FormParticipant[]>([
     emptyParticipant(),
     emptyParticipant(),
   ]);
@@ -51,6 +42,9 @@ export default function Home() {
       sessionStorage.removeItem('editDraftData');
       try {
         const { groups: g, participants: p, replacesDrawId, replacesKey } = JSON.parse(draft);
+        // Built by formFromParticipants() on the draw page; skip anything else
+        if (!Array.isArray(g) || !g.every((group) => typeof group?.name === 'string')) return;
+        if (!Array.isArray(p) || !p.every((person) => typeof person?.groupId === 'string')) return;
         setGroups(g);
         setParticipants(p);
         if (typeof replacesDrawId === 'string' && typeof replacesKey === 'string') {
@@ -64,31 +58,25 @@ export default function Home() {
 
   // --- Group handlers ---
   const addGroup = () => {
-    setGroups((g) => [...g, '']);
+    setGroups((g) => [...g, { id: newId(), name: '' }]);
   };
 
-  const updateGroup = (index: number, value: string) => {
-    setGroups((g) => {
-      const next = [...g];
-      next[index] = value;
-      return next;
-    });
+  // Participants reference groups by id, so a rename carries them along
+  const updateGroup = (id: string, name: string) => {
+    setGroups((g) => g.map((group) => (group.id === id ? { ...group, name } : group)));
   };
 
-  const removeGroup = (index: number) => {
-    const removed = groups[index].trim();
-    setGroups((g) => g.filter((_, i) => i !== index));
+  const removeGroup = (id: string) => {
+    setGroups((g) => g.filter((group) => group.id !== id));
     // Clear any participants referencing this group
-    if (removed) {
-      setParticipants((ps) =>
-        ps.map((p) =>
-          p.group === removed ? { ...p, group: '' } : p
-        )
-      );
-    }
+    setParticipants((ps) =>
+      ps.map((p) => (p.groupId === id ? { ...p, groupId: '' } : p))
+    );
   };
 
-  const validGroups = groups.map((g) => g.trim()).filter(Boolean);
+  // A group with a blank name drops out of the dropdowns until it is named
+  // again; its participants keep their groupId but are sent with no group
+  const namedGroups = groups.filter((g) => g.name.trim());
 
   // --- Participant handlers ---
   const addParticipant = () => {
@@ -96,7 +84,7 @@ export default function Home() {
     setParticipants((ps) => [...ps, emptyParticipant()]);
   };
 
-  const updateParticipant = (id: string, field: keyof Participant, value: string) => {
+  const updateParticipant = (id: string, field: keyof FormParticipant, value: string) => {
     setParticipants((ps) =>
       ps.map((p) => (p.id === id ? { ...p, [field]: value } : p))
     );
@@ -128,7 +116,7 @@ export default function Home() {
     const payload = filled.map((p) => ({
       name: p.name.trim(),
       email: p.email.trim(),
-      group: p.group,
+      group: groupNameFor(groups, p.groupId),
     }));
 
     if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
@@ -166,7 +154,7 @@ export default function Home() {
       setStatusMsg('');
       setLoading(false);
     }
-  }, [participants, replaces, router]);
+  }, [participants, groups, replaces, router]);
 
   const filledCount = participants.filter((p) => p.name.trim()).length;
 
@@ -226,17 +214,17 @@ export default function Home() {
 
             <div className={styles.groupList}>
               {groups.map((g, i) => (
-                <div key={i} className={styles.groupRow}>
+                <div key={g.id} className={styles.groupRow}>
                   <input
                     type="text"
                     placeholder={`Group ${i + 1} name`}
-                    value={g}
-                    onChange={(e) => updateGroup(i, e.target.value)}
+                    value={g.name}
+                    onChange={(e) => updateGroup(g.id, e.target.value)}
                     maxLength={100}
                   />
                   <button
                     className={`btn btn-secondary ${styles.removeBtn}`}
-                    onClick={() => removeGroup(i)}
+                    onClick={() => removeGroup(g.id)}
                     title="Remove group"
                     disabled={groups.length === 1}
                   >
@@ -246,7 +234,7 @@ export default function Home() {
               ))}
             </div>
 
-            <button className={`btn btn-secondary ${styles.addBtn}`} onClick={addGroup} disabled={groups.length >= 20}>
+            <button className={`btn btn-secondary ${styles.addBtn}`} onClick={addGroup} disabled={groups.length >= MAX_GROUPS}>
               + Add group
             </button>
           </section>
@@ -282,12 +270,12 @@ export default function Home() {
                     maxLength={200}
                   />
                   <select
-                    value={p.group}
-                    onChange={(e) => updateParticipant(p.id, 'group', e.target.value)}
+                    value={namedGroups.some((g) => g.id === p.groupId) ? p.groupId : ''}
+                    onChange={(e) => updateParticipant(p.id, 'groupId', e.target.value)}
                   >
                     <option value="">No group</option>
-                    {validGroups.map((g) => (
-                      <option key={g} value={g}>{g}</option>
+                    {namedGroups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name.trim()}</option>
                     ))}
                   </select>
                   <input
