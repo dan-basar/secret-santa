@@ -9,6 +9,7 @@ import { sql, isUuid } from '@/lib/db';
 import { sendMatchEmail } from '@/lib/email';
 import { hasHtmlTag } from '@/lib/sanitize';
 import { verifyTurnstile } from '@/lib/turnstile';
+import type { SendEmailsError, SendEmailsResponse } from '@/types/api';
 
 // Gmail's free SMTP plan allows ~500 emails/day; 495 gives a 5-email safety margin
 const DAILY_EMAIL_LIMIT = 495;
@@ -18,7 +19,25 @@ const DAILY_EMAIL_LIMIT = 495;
 // 60s), so that person can be claimed again
 const CLAIM_EXPIRY_MINUTES = 5;
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+interface DrawRow {
+  id: string;
+  emails_sent_at: Date | null;
+  deleted_at: Date | null;
+  admin_key: string | null;
+  organizer_name: string | null;
+  organizer_email: string | null;
+}
+
+interface MatchRow {
+  giver_id: number;
+  giver_name: string;
+  giver_email: string | null;
+  giver_email_sent_at: Date | null;
+  giver_reveal_token: string;
+  receiver_name: string;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<SendEmailsResponse | SendEmailsError>) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const { id, key, organizerName, organizerEmail, turnstileToken, retryFailed } = req.body;
@@ -64,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const [drawRows, matchRows] = await sql.transaction([
+    const [drawRows, matchRows] = (await sql.transaction([
       sql`
         SELECT
              id
@@ -89,7 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
              INNER JOIN Participants as receivers ON matches.receiver_participant_id = receivers.id
         WHERE matches.draw_id = ${id}::uuid
       `,
-    ], { readOnly: true });
+    ], { readOnly: true })) as [DrawRow[], MatchRow[]];
 
     if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
 
@@ -102,13 +121,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (retryFailed) {
       if (!draw.emails_sent_at) return res.status(409).json({ error: 'Emails haven\'t been sent for this draw yet.' });
-      safeOrganizerName = draw.organizer_name;
-      safeOrganizerEmail = draw.organizer_email;
+      // Saved together with emails_sent_at by the first send, so never null here
+      safeOrganizerName = draw.organizer_name ?? '';
+      safeOrganizerEmail = draw.organizer_email ?? '';
     } else if (draw.emails_sent_at) {
       return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
     }
 
-    const unsent = matchRows.filter(match => match.giver_email && !match.giver_email_sent_at);
+    const unsent = matchRows.filter((match): match is MatchRow & { giver_email: string } => !!match.giver_email && !match.giver_email_sent_at);
 
     if (retryFailed && !unsent.length) return res.status(409).json({ error: 'Everyone has already been sent their email.' });
 
@@ -117,8 +137,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       SELECT COALESCE(emails_sent, 0) as emails_sent
       FROM DailyEmailLog
       WHERE log_date = (now() at time zone 'utc')::date
-    `;
-    const dailyCount: number = capRows[0]?.emails_sent ?? 0;
+    ` as { emails_sent: number }[];
+    const dailyCount = capRows[0]?.emails_sent ?? 0;
 
     if (dailyCount + unsent.length > DAILY_EMAIL_LIMIT) {
       return res.status(503).json({
@@ -158,7 +178,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
            AND email_sent_at IS NULL
            AND (email_claimed_at IS NULL OR email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}))
       RETURNING id
-    `;
+    ` as { id: number }[];
     const claimedIds = new Set(participantClaimRows.map(row => row.id));
     const toSend = unsent.filter(match => claimedIds.has(match.giver_id));
 

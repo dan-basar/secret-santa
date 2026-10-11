@@ -5,8 +5,18 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
+import type { ApiError, RevealResponse } from '@/types/api';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+interface RevealRow {
+  giver_name: string;
+  receiver_name: string;
+  created_at: Date;
+  emails_sent_at: Date | null;
+  organizer_name: string | null;
+  deleted_at: Date | null;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<RevealResponse | ApiError>) {
   if (req.method !== 'GET') return res.status(405).end();
 
   // The token is the only secret guarding a match, so keep responses out of caches and search
@@ -32,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
            INNER JOIN Matches as matches ON matches.giver_participant_id = givers.id
            INNER JOIN Participants as receivers ON matches.receiver_participant_id = receivers.id
       WHERE givers.reveal_token = ${token}::uuid
-    `;
+    ` as RevealRow[];
 
     if (!rows.length) return res.status(404).json({ error: 'This link is not valid.' });
 
@@ -44,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({
       name: row.giver_name,
       match_name: row.receiver_name,
-      created_at: row.created_at,
+      created_at: row.created_at.toISOString(),
       organizer_name: row.emails_sent_at ? row.organizer_name : null,
     });
   } catch (err) {

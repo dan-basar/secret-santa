@@ -15,16 +15,17 @@ import { sql } from '@/lib/db';
 const DRAW_ID = '0b6f1c2a-8d3e-4f5a-9b7c-1d2e3f4a5b6c';
 const ADMIN_KEY = 'admin-key-123';
 
+// The driver returns timestamptz columns as Date objects
 const drawRow = {
   id: DRAW_ID,
-  created_at: '2026-10-01T12:00:00.000Z',
+  created_at: new Date('2026-10-01T12:00:00.000Z'),
   emails_sent_at: null,
   deleted_at: null,
   admin_key: ADMIN_KEY,
 };
 
 const participantRows = [
-  { name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_token: '11111111-1111-4111-8111-111111111111', email_sent_at: '2026-10-02T09:00:00.000Z' },
+  { name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_token: '11111111-1111-4111-8111-111111111111', email_sent_at: new Date('2026-10-02T09:00:00.000Z') },
   { name: 'Sam', email: 'sam@example.com', group_name: null, reveal_token: '22222222-2222-4222-8222-222222222222', email_sent_at: null },
   { name: 'Jo', email: null, group_name: 'Smiths', reveal_token: '33333333-3333-4333-8333-333333333333', email_sent_at: null },
 ];
@@ -71,7 +72,7 @@ describe('GET /api/get-draw', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body).toEqual({
         id: DRAW_ID,
-        created_at: drawRow.created_at,
+        created_at: '2026-10-01T12:00:00.000Z',
         emails_sent_at: null,
         isAdmin: false,
         participants: [{ name: 'Alex' }, { name: 'Sam' }, { name: 'Jo' }],
@@ -95,7 +96,7 @@ describe('GET /api/get-draw', () => {
     expect(res.body).toMatchObject({
       isAdmin: true,
       participantsWithEmailCount: 2,
-      participants: participantRows,
+      participants: participantRows.map(p => ({ ...p, email_sent_at: p.email_sent_at?.toISOString() ?? null })),
       matches: matchRows,
     });
     expect(JSON.stringify(res.body)).not.toContain(ADMIN_KEY);
@@ -114,7 +115,7 @@ describe('GET /api/get-draw', () => {
   });
 
   it('returns 410 for a deleted draw', async () => {
-    vi.mocked(sql.transaction).mockResolvedValue([[{ ...drawRow, deleted_at: '2026-10-03T12:00:00.000Z' }], participantRows, matchRows]);
+    vi.mocked(sql.transaction).mockResolvedValue([[{ ...drawRow, deleted_at: new Date('2026-10-03T12:00:00.000Z') }], participantRows, matchRows]);
     const res = await get({ id: DRAW_ID }, { 'x-admin-key': ADMIN_KEY });
     expect(res.statusCode).toBe(410);
   });

@@ -60,8 +60,8 @@ export async function proxy(request: NextRequest) {
       INSERT INTO RateLimits (bucket, window_start, hits)
       VALUES (${bucket}, date_bin('1 hour', now(), 'epoch'), 1)
       ON CONFLICT (bucket, window_start) DO UPDATE SET hits = RateLimits.hits + 1
-      RETURNING hits`;
-    hits = rows[0].hits as number;
+      RETURNING hits` as { hits: number }[];
+    hits = rows[0].hits;
 
     if (Math.random() < 1 / CLEANUP_ONE_IN) {
       await sql`DELETE FROM RateLimits WHERE window_start < now() - interval '2 days'`;

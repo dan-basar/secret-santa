@@ -9,8 +9,16 @@ import { randomUUID } from 'crypto';
 import { sql, isUuid } from '@/lib/db';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
 import { hasHtmlTag } from '@/lib/sanitize';
+import type { ApiError, CreateDrawResponse } from '@/types/api';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+// The draw being replaced by Edit & Redraw
+interface OldDrawRow {
+  admin_key: string | null;
+  deleted_at: Date | null;
+  emails_sent_at: Date | null;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<CreateDrawResponse | ApiError>) {
   if (req.method !== 'POST') return res.status(405).end();
 
   // The body is untrusted JSON: check its shape before touching any field, so a
@@ -98,7 +106,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             ,emails_sent_at
         FROM Draws
         WHERE id = ${replacesDrawId}::uuid
-      `;
+      ` as OldDrawRow[];
       // Old draws with no stored admin_key never match, as in delete-draw
       if (!oldRows.length || typeof replacesKey !== 'string' || replacesKey !== oldRows[0].admin_key) {
         return res.status(403).json({ error: 'Only the organizer can replace this draw.' });

@@ -3,13 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import styles from '@/styles/Reveal.module.css';
-
-interface RevealData {
-  name: string;
-  match_name: string;
-  created_at: string;
-  organizer_name: string | null;
-}
+import type { RevealResponse } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
 
@@ -18,7 +12,7 @@ export default function RevealPage() {
   const { token } = router.query;
 
   const [state, setState] = useState<PageState>('loading');
-  const [data, setData] = useState<RevealData | null>(null);
+  const [data, setData] = useState<RevealResponse | null>(null);
   // Hidden until tapped, so a glance over someone's shoulder doesn't spoil it
   const [revealed, setRevealed] = useState(false);
 

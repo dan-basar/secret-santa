@@ -42,10 +42,8 @@ function constraintKeys(participants: Participant[]): number[] {
  * more than half the participants (Hall's theorem; see assignWithFeasibilityCheck()).
  * Groups are compared case-insensitively, the same way createMatches() does.
  */
-export function isMatchingPossible(participants: Participant[]): {
-  possible: boolean;
-  reason?: string;
-} {
+export function isMatchingPossible(participants: Participant[]):
+  { possible: true; reason?: undefined } | { possible: false; reason: string } {
   const n = participants.length;
   if (n < 2) {
     return { possible: false, reason: 'At least 2 participants are required.' };

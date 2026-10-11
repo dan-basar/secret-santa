@@ -1,11 +1,27 @@
 {
   "functions": {
-    "src/pages/api/send-emails.ts": {
-      "maxDuration": 60,
+    "src/pages/api/create-draw.ts": {
+      "maxDuration": 10,
       "regions": ["cle1"]
     },
-    "src/pages/api/*.ts": {
+    "src/pages/api/delete-draw.ts": {
       "maxDuration": 10,
+      "regions": ["cle1"]
+    },
+    "src/pages/api/get-draw.ts": {
+      "maxDuration": 10,
+      "regions": ["cle1"]
+    },
+    "src/pages/api/health.ts": {
+      "maxDuration": 10,
+      "regions": ["cle1"]
+    },
+    "src/pages/api/reveal.ts": {
+      "maxDuration": 10,
+      "regions": ["cle1"]
+    },
+    "src/pages/api/send-emails.ts": {
+      "maxDuration": 60,
       "regions": ["cle1"]
     }
   }

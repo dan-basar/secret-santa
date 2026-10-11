@@ -5,8 +5,15 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
+import type { ApiError, DeleteDrawResponse } from '@/types/api';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+interface DrawRow {
+  id: string;
+  deleted_at: Date | null;
+  admin_key: string | null;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<DeleteDrawResponse | ApiError>) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const { id, key } = req.body;
@@ -22,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ,admin_key
       FROM Draws
       WHERE id = ${id}::uuid
-    `;
+    ` as DrawRow[];
 
     if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
 

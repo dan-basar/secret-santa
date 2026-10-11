@@ -163,9 +163,12 @@ src/
     index.tsx         # Home page — participant form
     draw/[id].tsx     # Results page — names for everyone; matches, personal links, email, admin actions for the organizer
     reveal/[token].tsx  # Participant's private tap-to-reveal page
+  components/
+    draw/             # The results page's sections (share bar, matches table, personal links, email, delete); state stays in the page
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
   styles/             # globals.css design tokens + CSS Modules per page
   types/
+    api.ts            # JSON response types, shared by the API routes and the pages
     turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
 tests/                # Vitest unit tests
 public/               # Favicon, icons and link-preview image
@@ -201,7 +204,7 @@ Import the repository into Vercel and add all environment variables under **Proj
 Key configuration notes:
 - All routes are served under `/secret-santa` (`basePath` in `next.config.js`) — do not remove this
 - `DATABASE_URL` is provided by the Neon integration on Vercel
-- `vercel.json` runs API functions in the `cle1` region with a 10s timeout, except `send-emails`, which gets 60s so a 50-person draw has time to send
+- `vercel.json` gives each API route file its own entry (no globs, so no file matches two patterns): all run in the `cle1` region with a 10s timeout, except `send-emails`, which gets 60s so a 50-person draw has time to send. A new API route needs its own entry; `tests/vercel-config.test.ts` fails until it has one
 
 Day-to-day operations (migrations, key rotation, rollback) are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
