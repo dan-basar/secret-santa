@@ -43,6 +43,8 @@ export async function sendMatchEmail(
   const htmlOrganizerName = escapeHtml(organizerName);
   const htmlOrganizerEmail = escapeHtml(organizerEmail);
   const htmlLink = escapeHtml(link);
+  // Hosted rather than attached; the 192px icon keeps it sharp at 96px on high-DPI screens
+  const logoUrl = escapeHtml(siteUrl('/icon-192.png'));
 
   // The match is named a few lines down so a phone's inbox preview, which shows
   // the first line or two of the body, doesn't give it away
@@ -53,6 +55,7 @@ export async function sendMatchEmail(
     text: `Hi ${toName},\n\nThe Secret Santa draw is done, and your match is waiting for you.\n\nYou have drawn ${matchName}'s name for the gift exchange.\n\nView your match any time: ${link}\n\nThis secret message was sent by ${organizerName}. You can contact the organizer at ${organizerEmail} if you need to. Happy Gifting!!`,
     html: `
       <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a;">
+        <img src="${logoUrl}" width="96" height="96" alt="Secret Santa Picker" style="display: block; margin: 0 auto 24px; border: 0;">
         <p style="font-size: 18px; margin-bottom: 24px;">Hi ${htmlToName},</p>
         <p style="font-size: 16px; line-height: 1.6;">The Secret Santa draw is done, and your match is waiting for you.</p>
         <p style="font-size: 16px; line-height: 1.6; margin-top: 32px;">

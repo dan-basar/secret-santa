@@ -54,6 +54,15 @@ describe('sendMatchEmail', () => {
     expect(text).toContain(link);
   });
 
+  it('shows the hosted logo at a fixed size above the greeting', async () => {
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN);
+
+    const { html } = sendMail.mock.calls[0][0];
+
+    expect(html).toContain('<img src="https://baseworkshop.app/secret-santa/icon-192.png" width="96" height="96" alt="Secret Santa Picker"');
+    expect(html.indexOf('<img')).toBeLessThan(html.indexOf('Hi Alex,'));
+  });
+
   it('keeps the match name out of the first lines of the body', async () => {
     await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN);
 
