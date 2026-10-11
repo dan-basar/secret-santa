@@ -176,7 +176,7 @@ export default function DrawPage() {
         <div className={styles.centered}>
           <div className={`card ${styles.messageCard}`}>
             <span className={styles.bigIcon}>🚫</span>
-            <h2>This draw is no longer available</h2>
+            <h1>This draw is no longer available</h1>
             <p className={styles.muted}>The person who created it has deleted the results.</p>
             <Link href="/" className="btn btn-secondary" style={{ marginTop: 16 }}>
               Start a new draw
@@ -194,7 +194,7 @@ export default function DrawPage() {
         <div className={styles.centered}>
           <div className={`card ${styles.messageCard}`}>
             <span className={styles.bigIcon}>🔍</span>
-            <h2>Draw not found</h2>
+            <h1>Draw not found</h1>
             <p className={styles.muted}>This link may be invalid or expired.</p>
             <Link href="/" className="btn btn-secondary" style={{ marginTop: 16 }}>
               Start a new draw
@@ -235,6 +235,8 @@ export default function DrawPage() {
         </header>
 
         <main className={styles.main}>
+          {/* The header already names the app; this gives the page its one top-level heading */}
+          <h1 className="visually-hidden">Secret Santa draw results</h1>
           <ShareBar url={shareableUrl} />
 
           {admin ? (
