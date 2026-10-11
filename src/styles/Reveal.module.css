@@ -23,8 +23,25 @@
   margin-bottom: 8px;
 }
 
+/* Tinted band across the top of the card with the logo, like the app's card on the Base Workshop home page */
+.logoArt {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  height: 160px;
+  margin: -48px -40px 8px;
+  border-radius: 7px 7px 0 0; /* inside the card's 1px border */
+  background:
+    radial-gradient(circle at 50% 120%, white 0, transparent 60%),
+    var(--accent-light);
+}
+
 .logo {
-  margin-bottom: 8px;
+  transition: transform 0.3s ease;
+}
+
+.logoArt:hover .logo {
+  transform: scale(1.08) rotate(-4deg);
 }
 
 .muted {
@@ -62,7 +79,22 @@
     padding: 36px 20px;
   }
 
+  .logoArt {
+    height: 128px;
+    margin: -36px -20px 8px;
+  }
+
   .matchName {
     font-size: 26px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo {
+    transition: none;
+  }
+
+  .logoArt:hover .logo {
+    transform: none;
   }
 }
