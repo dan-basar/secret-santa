@@ -5,11 +5,6 @@ export interface Participant {
   group: string;
 }
 
-export interface Match {
-  giver: Participant;
-  receiver: Participant;
-}
-
 /**
  * Normalizes a group name for comparison: "Family", "family" and " FAMILY "
  * are the same group. An empty result means the participant has no group.
@@ -82,13 +77,12 @@ export function isMatchingPossible(participants: Participant[]):
 /**
  * Creates a valid matching. Participants are compared by position, not by
  * name, so two people with the same name are still matched as two people.
- * The returned matches hold the same object references that were passed in.
- * Returns null only when isMatchingPossible() would return false.
+ * Returns receiver positions by giver position: participants[i] gives to
+ * participants[result[i]]. Returns null only when isMatchingPossible() would
+ * return false.
  */
-export function createMatches(participants: Participant[]): Match[] | null {
+export function createMatches(participants: Participant[]): number[] | null {
   const keys = constraintKeys(participants);
-  const toMatches = (receivers: number[]) =>
-    receivers.map((ri, gi) => ({ giver: participants[gi], receiver: participants[ri] }));
 
   // Phase 1: uniform shuffle-and-verify. When an attempt succeeds the result
   // is uniformly random over all valid matchings. Draws with one large group
@@ -97,12 +91,11 @@ export function createMatches(participants: Participant[]): Match[] | null {
   const indices = Array.from({ length: participants.length }, (_, i) => i);
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const receivers = shuffle(indices);
-    if (receivers.every((ri, gi) => keys[ri] !== keys[gi])) return toMatches(receivers);
+    if (receivers.every((ri, gi) => keys[ri] !== keys[gi])) return receivers;
   }
 
   // Phase 2: randomized assignment with a feasibility check
-  const receivers = assignWithFeasibilityCheck(keys);
-  return receivers && toMatches(receivers);
+  return assignWithFeasibilityCheck(keys);
 }
 
 /**
@@ -157,13 +150,38 @@ function assignWithFeasibilityCheck(keys: number[]): number[] | null {
   return result;
 }
 
+// Random 32-bit values, fetched in batches: one getRandomValues() call per
+// value made the 1000-attempt shuffle phase several times slower
+const randomPool = new Uint32Array(1024);
+let randomPoolIndex = randomPool.length;
+
+/**
+ * Uniform random integer in [0, max), from the Web Crypto API rather than
+ * Math.random(), whose output can be predicted from enough earlier values.
+ * Web Crypto rather than node:crypto because the browser bundle imports this
+ * file too (normalizeGroup). Values from the top end of the 32-bit range that
+ * would favour small results are drawn again.
+ */
+function randomInt(max: number): number {
+  const limit = 2 ** 32 - (2 ** 32 % max);
+  let value: number;
+  do {
+    if (randomPoolIndex === randomPool.length) {
+      crypto.getRandomValues(randomPool);
+      randomPoolIndex = 0;
+    }
+    value = randomPool[randomPoolIndex++];
+  } while (value >= limit);
+  return value % max;
+}
+
 /**
  * Uniform Fisher-Yates shuffle. Returns a new shuffled array.
  */
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = randomInt(i + 1);
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;

@@ -139,6 +139,17 @@ describe('POST /api/create-draw', () => {
     expect(sql.transaction).toHaveBeenCalledOnce();
   });
 
+  it('saves one match per person by position, never within a group', async () => {
+    const participants = [person('Sam', 'A'), person('Sam', 'B'), person('Alex', 'A'), person('Jo', 'B')];
+    const res = await post(participants);
+    expect(res.statusCode).toBe(200);
+    const insert = queries().find(q => q.text.includes('INSERT INTO Matches'))!;
+    const [givers, receivers] = insert.values.slice(1, 3) as [number[], number[]];
+    expect(givers).toEqual([1, 2, 3, 4]);
+    expect([...receivers].sort()).toEqual([1, 2, 3, 4]);
+    receivers.forEach((r, i) => expect(participants[r - 1].group).not.toBe(participants[i].group));
+  });
+
   it('rejects more than 20 groups', async () => {
     const participants = Array.from({ length: 21 }, (_, i) => person(`P${i}`, `Group ${i}`));
     const res = await post(participants);

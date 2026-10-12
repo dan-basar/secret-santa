@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { isMatchingPossible, createMatches, Participant } from '@/lib/matching';
 
 function person(name: string, group = ''): Participant {
@@ -13,17 +13,16 @@ const groupKey = (p: Participant) => p.group.trim().toLowerCase();
 
 // Every participant gives exactly once and receives exactly once, never to
 // themselves and never to someone in their own group (case-insensitive).
-function expectValid(participants: Participant[], matches: ReturnType<typeof createMatches>) {
-  expect(matches).not.toBeNull();
-  expect(matches!).toHaveLength(participants.length);
-  expect(new Set(matches!.map(m => m.giver)).size).toBe(participants.length);
-  expect(new Set(matches!.map(m => m.receiver)).size).toBe(participants.length);
-  for (const { giver, receiver } of matches!) {
-    expect(participants).toContain(giver);
-    expect(participants).toContain(receiver);
-    expect(receiver).not.toBe(giver);
-    if (groupKey(giver)) expect(groupKey(receiver)).not.toBe(groupKey(giver));
-  }
+function expectValid(participants: Participant[], receivers: ReturnType<typeof createMatches>) {
+  expect(receivers).not.toBeNull();
+  expect(receivers!).toHaveLength(participants.length);
+  expect(new Set(receivers!).size).toBe(participants.length);
+  receivers!.forEach((ri, gi) => {
+    expect(Number.isInteger(ri) && ri >= 0 && ri < participants.length).toBe(true);
+    expect(ri).not.toBe(gi);
+    const giverGroup = groupKey(participants[gi]);
+    if (giverGroup) expect(groupKey(participants[ri])).not.toBe(giverGroup);
+  });
 }
 
 describe('isMatchingPossible', () => {
@@ -79,10 +78,9 @@ describe('createMatches', () => {
 
   it('matches two people who share a name', () => {
     const participants = [person('Sam'), person('Sam')];
-    const matches = createMatches(participants);
-    expectValid(participants, matches);
-    expect(matches![0].receiver).toBe(participants[1]);
-    expect(matches![1].receiver).toBe(participants[0]);
+    const receivers = createMatches(participants);
+    expectValid(participants, receivers);
+    expect(receivers).toEqual([1, 0]);
   });
 
   it('matches same-named people in a larger draw', () => {
@@ -90,5 +88,26 @@ describe('createMatches', () => {
     for (let run = 0; run < 200; run++) {
       expectValid(participants, createMatches(participants));
     }
+  });
+});
+
+describe('shuffle randomness', () => {
+  it('never uses Math.random', () => {
+    const mathRandom = vi.spyOn(Math, 'random');
+    for (let run = 0; run < 50; run++) createMatches([...people(10, 'Family'), ...people(10)]);
+    expect(mathRandom).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('gives each of a 3-person draw\'s two valid matchings a fair share', () => {
+    // Only [1, 2, 0] and [2, 0, 1] are valid; a biased shuffle would favour one
+    const counts: Record<string, number> = {};
+    for (let run = 0; run < 2000; run++) {
+      const key = createMatches(people(3))!.join();
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    expect(Object.keys(counts).sort()).toEqual(['1,2,0', '2,0,1']);
+    expect(counts['1,2,0']).toBeGreaterThan(850);
+    expect(counts['1,2,0']).toBeLessThan(1150);
   });
 });
