@@ -14,9 +14,12 @@ CREATE TABLE Draws (
      -- Organizer fields are populated when emails are sent, not at draw creation
     ,organizer_name varchar(200) NULL
     ,organizer_email varchar(320) NULL
-     -- Secret key included in the organizer's URL; required to send emails or delete
-     -- (NOT NULL since migrations/006_match_constraints.sql)
+     -- Secret key in the organizer's /draw#<admin_key> link: 14 letters and digits
+     -- (src/lib/tokens.ts). get-draw finds the draw by it, so it is unique (NOT NULL
+     -- since migrations/006_match_constraints.sql, unique since 008_short_links.sql).
+     -- Draws from before 008 hold a uuid here, which no longer opens anything
     ,admin_key varchar(100) NOT NULL
+    ,CONSTRAINT UQ_Draws_AdminKey UNIQUE (admin_key)
 );
 
 CREATE TABLE Participants (
@@ -30,9 +33,14 @@ CREATE TABLE Participants (
      -- NULL when not provided; the API filters out empty emails before sending
     ,email varchar(320) NULL
     ,group_name varchar(200) NULL
-     -- Secret token in the participant's private /reveal/<token> link; shows only
-     -- their own match (added by migrations/002_reveal_tokens.sql)
+     -- Retired: the uuid that was in personal links before migrations/008_short_links.sql.
+     -- Still filled by its default so code from before 008 keeps working until old
+     -- draws are purged (added by migrations/002_reveal_tokens.sql)
     ,reveal_token uuid NOT NULL DEFAULT gen_random_uuid()
+     -- Secret in the participant's private /reveal/<reveal_code> link: 8 letters and
+     -- digits (src/lib/tokens.ts); shows only their own match. NULL only on draws from
+     -- before migrations/008_short_links.sql
+    ,reveal_code varchar(8) NULL
      -- When this participant's match email went out; NULL = not sent (yet), so the
      -- organizer can resend to just those people (added by migrations/004_email_status.sql)
     ,email_sent_at timestamptz NULL
@@ -42,6 +50,7 @@ CREATE TABLE Participants (
     ,email_claimed_at timestamptz NULL
     ,UNIQUE (draw_id, position)
     ,CONSTRAINT UQ_Participants_RevealToken UNIQUE (reveal_token)
+    ,CONSTRAINT UQ_Participants_RevealCode UNIQUE (reveal_code)
 );
 
 CREATE TABLE Matches (

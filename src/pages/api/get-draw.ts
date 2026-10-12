@@ -1,12 +1,13 @@
-// GET /api/get-draw?id=<uuid>: one draw. Anyone may call it. The admin key, if
-// any, comes in the X-Admin-Key header, never the query string, so it stays out
-// of request logs. Without it: participant names only. With it: emails, groups,
-// reveal tokens, per-person email status and matches (as positions in the
-// participant list, which already carries each person's email and group).
-// Returns 200; 400 missing id; 404 unknown draw; 410 deleted draw.
+// GET /api/get-draw: the organizer's view of one draw, found by its admin key.
+// The key comes in the X-Admin-Key header, never the query string, so it stays
+// out of request logs. Returns the participants with their emails, groups,
+// reveal tokens and per-person email status, and the matches (as positions in
+// the participant list, which already carries each person's email and group).
+// Returns 200; 404 missing, malformed or unknown key; 410 deleted draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { sql, isUuid } from '@/lib/db';
+import { sql } from '@/lib/db';
+import { isAdminKey } from '@/lib/tokens';
 import type { ApiError, GetDrawResponse } from '@/types/api';
 
 interface DrawRow {
@@ -14,7 +15,6 @@ interface DrawRow {
   created_at: Date;
   emails_sent_at: Date | null;
   deleted_at: Date | null;
-  admin_key: string;
 }
 
 interface ParticipantRow {
@@ -37,43 +37,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(405).json({ error: 'Method not allowed.' });
   }
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-  // The organizer's answer holds every email address and reveal token
+  // The answer holds every email address and reveal token
   res.setHeader('Cache-Control', 'private, no-store');
 
-  const { id } = req.query;
   const key = req.headers['x-admin-key'];
-  if (!id || typeof id !== 'string') return res.status(400).json({ error: 'A draw id is required.' });
-  if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
-
-  // The shared link sends no key, so it never runs the matches query
-  const hasKey = typeof key === 'string' && key.length > 0;
+  if (typeof key !== 'string' || !isAdminKey(key)) return res.status(404).json({ error: 'Draw not found.' });
 
   try {
     // All reads in one round trip and one consistent snapshot
-    const [drawRows, participantRows, matchRows = []] = (await sql.transaction([
+    const [drawRows, participantRows, matchRows] = (await sql.transaction([
       sql`
         SELECT
              id
             ,created_at
             ,emails_sent_at
             ,deleted_at
-            ,admin_key
         FROM Draws
-        WHERE id = ${id}::uuid
+        WHERE admin_key = ${key}
       `,
       sql`
         SELECT
-             position
-            ,name
-            ,email
-            ,group_name
-            ,reveal_token
-            ,email_sent_at
-        FROM Participants
-        WHERE draw_id = ${id}::uuid
-        ORDER BY position
+             participants.position
+            ,participants.name
+            ,participants.email
+            ,participants.group_name
+            ,participants.reveal_code as reveal_token
+            ,participants.email_sent_at
+        FROM Participants as participants
+             INNER JOIN Draws as draws ON participants.draw_id = draws.id
+        WHERE draws.admin_key = ${key}
+        ORDER BY participants.position
       `,
-      ...(hasKey ? [sql`
+      sql`
         SELECT
              givers.position as giver_position
             ,receivers.position as receiver_position
@@ -81,11 +76,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
              INNER JOIN Draws as draws ON matches.draw_id = draws.id
              INNER JOIN Participants as givers ON matches.giver_participant_id = givers.id
              INNER JOIN Participants as receivers ON matches.receiver_participant_id = receivers.id
-        WHERE matches.draw_id = ${id}::uuid
-             AND draws.admin_key = ${key} -- a wrong key gets no rows
+        WHERE draws.admin_key = ${key}
         ORDER BY givers.position
-      `] : []),
-    ], { readOnly: true })) as [DrawRow[], ParticipantRow[], MatchRow[]?];
+      `,
+    ], { readOnly: true })) as [DrawRow[], ParticipantRow[], MatchRow[]];
 
     if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
 
@@ -93,29 +87,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (draw.deleted_at) return res.status(410).json({ error: 'This draw has been deleted.' });
 
-    const isAdmin = hasKey && key === draw.admin_key;
-
-    const base = {
-      id: draw.id,
-      created_at: draw.created_at.toISOString(),
-      emails_sent_at: draw.emails_sent_at?.toISOString() ?? null,
-    };
-
-    // Pairings stay private on the shared link: each participant sees their
-    // own match through their personal reveal link instead
-    if (!isAdmin) {
-      return res.status(200).json({
-        ...base,
-        isAdmin,
-        participants: participantRows.map(p => ({ name: p.name })),
-      });
-    }
-
     const indexByPosition = new Map(participantRows.map((p, i) => [p.position, i]));
 
     return res.status(200).json({
-      ...base,
-      isAdmin,
+      id: draw.id,
+      created_at: draw.created_at.toISOString(),
+      emails_sent_at: draw.emails_sent_at?.toISOString() ?? null,
       participants: participantRows.map(p => ({
         name: p.name,
         email: p.email,

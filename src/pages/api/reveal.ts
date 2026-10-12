@@ -1,10 +1,11 @@
-// GET /api/reveal?token=<uuid>: one participant's own match, for their personal
+// GET /api/reveal?token=<token>: one participant's own match, for their personal
 // link. The reveal token is the only credential and unlocks nothing else.
 // Returns 200 { name, match_name, created_at, organizer_name }; 404 unknown
 // token; 410 deleted draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { sql, isUuid } from '@/lib/db';
+import { sql } from '@/lib/db';
+import { isRevealToken } from '@/lib/tokens';
 import type { ApiError, RevealResponse } from '@/types/api';
 
 interface RevealRow {
@@ -27,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   res.setHeader('X-Robots-Tag', 'noindex');
 
   const { token } = req.query;
-  if (!token || typeof token !== 'string' || !isUuid(token)) {
+  if (!token || typeof token !== 'string' || !isRevealToken(token)) {
     return res.status(404).json({ error: 'This link is not valid.' });
   }
 
@@ -44,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
            INNER JOIN Draws as draws ON givers.draw_id = draws.id
            INNER JOIN Matches as matches ON matches.giver_participant_id = givers.id
            INNER JOIN Participants as receivers ON matches.receiver_participant_id = receivers.id
-      WHERE givers.reveal_token = ${token}::uuid
+      WHERE givers.reveal_code = ${token}
     ` as RevealRow[];
 
     if (!rows.length) return res.status(404).json({ error: 'This link is not valid.' });

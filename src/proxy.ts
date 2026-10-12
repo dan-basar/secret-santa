@@ -6,11 +6,15 @@ import { BASE_PATH } from '@/lib/site';
 // against the same numbers. One row per hashed IP + route per hour; a single
 // atomic upsert bumps the count and returns it.
 
-// Hourly limits per IP, per route
+// Hourly limits per IP, per route. get-draw and reveal look a draw up by the
+// short secret in a link, so their limits are what keep guessing those slow;
+// 60 an hour is far more than a household opening its links ever needs
 const RATE_LIMITS: Record<string, number> = {
   '/api/create-draw': 10,
   '/api/send-emails': 5,
   '/api/delete-draw': 10,
+  '/api/get-draw': 60,
+  '/api/reveal': 60,
 };
 
 // Roughly 1 in this many limited requests also deletes counter rows older than

@@ -10,7 +10,7 @@ vi.mock('@/lib/db', async (importOriginal) => {
 import handler from '@/pages/api/reveal';
 import { sql } from '@/lib/db';
 
-const TOKEN = '3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90';
+const TOKEN = 'Qx7bN2kP';
 
 // The driver returns timestamptz columns as Date objects
 const row = {
@@ -86,7 +86,7 @@ describe('GET /api/reveal', () => {
   });
 
   it('returns 404 for a missing or malformed token without querying', async () => {
-    for (const query of [{}, { token: 'not-a-uuid' }, { token: [TOKEN, TOKEN] }]) {
+    for (const query of [{}, { token: 'Qx7bN2k' }, { token: 'Qx7bN2k-' }, { token: '3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90' }, { token: [TOKEN, TOKEN] }]) {
       const res = await get(query);
       expect(res.statusCode).toBe(404);
       expect(res.body).toEqual({ error: 'This link is not valid.' });

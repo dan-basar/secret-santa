@@ -24,7 +24,7 @@ More detail:
 - **Email notifications** — one-click emails to all participants, protected by Cloudflare Turnstile CAPTCHA; anyone whose email failed can be resent to later
 - **Admin access** — the creator gets a private organizer link, shown with a Copy button at the top of their page, to see matches (hidden until they ask, so an organizer who is playing isn't spoiled), emails and personal links, send emails, delete the draw, or edit and redraw
 - **Soft-delete** — draws are hidden, not destroyed
-- **Rate limiting** — per-IP hourly limits on creating, emailing and deleting draws
+- **Rate limiting** — per-IP hourly limits on creating, emailing and deleting draws, and on opening organizer and personal links (which keeps their short secrets from being guessed)
 
 ---
 
@@ -87,6 +87,7 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 | `005_email_claims.sql` | `Participants.email_claimed_at`, so a send that dies midway leaves nobody wrongly marked as emailed |
 | `006_match_constraints.sql` | `Draws.admin_key` becomes `NOT NULL`; `UNIQUE` on each of `Matches.giver_participant_id` and `receiver_participant_id` |
 | `007_email_send_log.sql` | The `EmailSendLog` table, for the rolling 24-hour email cap (replaces `DailyEmailLog`, which is no longer read) |
+| `008_short_links.sql` | `Participants.reveal_code`, the 8-character personal link token (the uuid `reveal_token` is retired), and `UNIQUE` on `Draws.admin_key`, which get-draw now looks draws up by |
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 
@@ -124,11 +125,11 @@ A cap of 495 emails in any 24 hours, across all draws, is enforced via `EmailSen
 
 ### Admin Access
 
-Draw creation returns a `drawId` and a random `adminKey`. The creator is redirected to `/draw/<id>#key=<adminKey>`. The key sits in the URL fragment, which browsers never send to the server, and the page passes it to `get-draw` in an `X-Admin-Key` header, so it stays out of request logs. The organizer page shows this link in a box with a Copy button, warning that it shows everyone's matches and is the only way back. The page no longer offers a names-only link to share, though anyone with just the draw ID still sees participant names only; if the link has a `#key=` that doesn't match (say it was cut off when copied), the page says so above that names-only view instead of looking as if the matches were gone. The admin key unlocks the matches, email addresses, groups and personal reveal links, plus sending emails, deletion and the edit-and-redraw flow. Pairings are visible only to the organizer and, one at a time, to each person through their own reveal link. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
+Draw creation returns a random 14-character `adminKey` (letters and digits, [`src/lib/tokens.ts`](src/lib/tokens.ts)), and the creator is redirected to their organizer link, `/draw#<adminKey>`. The key sits in the URL fragment, which browsers never send to the server, and the page passes it to `get-draw` in an `X-Admin-Key` header, so it stays out of request logs. The draw is found by the key alone; there is no other link to a draw. The organizer page shows this link in a box with a Copy button, warning that it shows everyone's matches and is the only way back. A key cut short when pasted gets "This link looks incomplete". The admin key unlocks the matches, email addresses, groups and personal reveal links, plus sending emails, deletion and the edit-and-redraw flow. Pairings are visible only to the organizer and, one at a time, to each person through their own 8-character personal link, `/reveal/<token>`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
 
 ### Rate Limiting
 
-[`src/proxy.ts`](src/proxy.ts) limits each IP per hour: 10 for `create-draw`, 5 for `send-emails` and 10 for `delete-draw`; over the limit it returns `429`. Counts live in the Neon `RateLimits` table, so every Vercel instance shares them: one row per SHA-256 hash of IP + route per hour (raw IPs are never stored). Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails, the request is allowed through (fails open). IPs in `RATE_LIMIT_IP_WHITELIST` are never limited.
+[`src/proxy.ts`](src/proxy.ts) limits each IP per hour: 10 for `create-draw`, 5 for `send-emails`, 10 for `delete-draw`, and 60 each for `get-draw` and `reveal`, the lookups behind organizer and personal links; over the limit it returns `429`. Counts live in the Neon `RateLimits` table, so every Vercel instance shares them: one row per SHA-256 hash of IP + route per hour (raw IPs are never stored). Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails, the request is allowed through (fails open). IPs in `RATE_LIMIT_IP_WHITELIST` are never limited.
 
 ---
 
@@ -138,7 +139,8 @@ Draw creation returns a `drawId` and a random `adminKey`. The creator is redirec
 src/
   lib/
     db.ts             # Neon serverless SQL client (re-exports isUuid())
-    uuid.ts           # isUuid(): id shape check, shared by the routes and the pages
+    uuid.ts           # isUuid(): draw id shape check for the routes
+    tokens.ts         # Organizer keys (14 characters) and personal link tokens (8): generation and shape checks
     matching.ts       # Matching algorithm (shuffle + feasibility-checked fallback)
     email.ts          # Nodemailer email service
     email-address.ts  # isValidEmail(): the one address check, used by the forms and the API
@@ -151,7 +153,7 @@ src/
   pages/
     api/
       create-draw.ts  # POST: validate, match, persist in a transaction
-      get-draw.ts     # GET: fetch draw; matches and reveal links for the organizer only
+      get-draw.ts     # GET: the organizer's view of a draw, found by its admin key
       reveal.ts       # GET: one participant's own match, by reveal token
       send-emails.ts  # POST: CAPTCHA + 24-hour cap + per-person claimed send / resend
       delete-draw.ts  # POST: soft-delete
@@ -159,10 +161,10 @@ src/
     _app.tsx          # App wrapper: global styles and icons
     _document.tsx     # Sets <html lang="en">
     index.tsx         # Home page — participant form
-    draw/[id].tsx     # Results page — names for everyone; matches, personal links, email, admin actions for the organizer
+    draw.tsx          # Organizer page (/draw#<adminKey>) — organizer link, matches, personal links, email, admin actions
     reveal/[token].tsx  # Participant's private tap-to-reveal page
   components/
-    draw/             # The results page's sections (share bar, matches table, personal links, email, delete); state stays in the page.
+    draw/             # The results page's sections (organizer link, matches table, personal links, email, delete); state stays in the page.
                       # TurnstileWidget.tsx loads the CAPTCHA script, only where the send/resend form renders
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
   styles/             # globals.css design tokens + CSS Modules per page
@@ -186,9 +188,9 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`; names may not contain HTML or a web address, since they go into the emails, and must differ ignoring case and spaces, so each person can tell who they drew), generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
-| `GET` | `/api/get-draw?id=<uuid>` | Fetch a draw. Optional header `X-Admin-Key: <adminKey>` (a `key` in the query string is ignored). Without a valid admin key: participant names only. With it: emails, groups, reveal tokens, per-person email status and matches, each match as `{ giver, receiver }` indexes into `participants`. Requests without a key never run the matches query. `404` for unknown or malformed ids, `410` for deleted draws. |
-| `GET` | `/api/reveal?token=<uuid>` | One participant's name, their match, the draw date and the organizer (once emails are sent). `404` for unknown or malformed tokens, `410` for deleted draws. |
+| `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`; names may not contain HTML or a web address, since they go into the emails, and must differ ignoring case and spaces, so each person can tell who they drew), generate matches, persist in a transaction. Returns `{ adminKey }`, retrying with fresh tokens in the rare case one repeats a saved one. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
+| `GET` | `/api/get-draw` | *Rate limited (60/h).* The organizer's view of a draw, found by the header `X-Admin-Key: <adminKey>` (never the query string): its id, participants with emails, groups, reveal tokens and per-person email status, and matches, each as `{ giver, receiver }` indexes into `participants`. `404` for a missing, malformed or unknown key, `410` for deleted draws. |
+| `GET` | `/api/reveal?token=<token>` | *Rate limited (60/h).* One participant's name, their match, the draw date and the organizer (once emails are sent). `404` for unknown or malformed tokens, `410` for deleted draws. |
 | `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail }`, or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Returns `{ success, totalSent, totalFailed, failedNames }`. `400` bad input (including an organizer name over 200 characters or containing HTML or a web address, or an email over 320), `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `404` unknown or malformed id, `409` already sent (or nothing to resend), `410` deleted, `503` cap of 495 emails in 24 hours reached. |
 | `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ id, key }`. Soft-delete a draw. Idempotent. `403` wrong key, `404` unknown or malformed id. |
 | `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503 { ok: false, error }` otherwise. |

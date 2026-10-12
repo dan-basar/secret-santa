@@ -8,24 +8,14 @@ export interface ApiError {
 }
 
 // POST /api/create-draw
+// adminKey is the secret in the organizer's /draw#<adminKey> link
 export interface CreateDrawResponse {
-  drawId: string;
   adminKey: string;
 }
 
 // POST /api/delete-draw
 export interface DeleteDrawResponse {
   success: true;
-}
-
-// GET /api/get-draw: the shared link sees names only; the organizer, with the
-// admin key, sees everything. isAdmin tells the two apart
-export interface SharedDraw {
-  id: string;
-  created_at: string;
-  emails_sent_at: string | null;
-  isAdmin: false;
-  participants: { name: string }[];
 }
 
 export interface AdminParticipant {
@@ -36,23 +26,21 @@ export interface AdminParticipant {
   email_sent_at: string | null;
 }
 
-// Indexes into AdminDraw.participants, which holds each person's name, email
+// Indexes into GetDrawResponse.participants, which holds each person's name, email
 // and group, so they aren't repeated here
 export interface AdminMatch {
   giver: number;
   receiver: number;
 }
 
-export interface AdminDraw {
+// GET /api/get-draw: the organizer's view of a draw
+export interface GetDrawResponse {
   id: string;
   created_at: string;
   emails_sent_at: string | null;
-  isAdmin: true;
   participants: AdminParticipant[];
   matches: AdminMatch[];
 }
-
-export type GetDrawResponse = SharedDraw | AdminDraw;
 
 // GET /api/reveal
 export interface RevealResponse {

@@ -43,7 +43,8 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 
 ### Database
 - Column names: `snake_case`
-- Public IDs: `uuid`; `isUuid()` (`src/lib/uuid.ts`, re-exported by `src/lib/db.ts`) guards route inputs, because Postgres raises an error on malformed uuid strings; the draw and reveal pages also use it to spot a link cut short
+- Draw ids: `uuid`; `isUuid()` (`src/lib/uuid.ts`, re-exported by `src/lib/db.ts`) guards route inputs, because Postgres raises an error on malformed uuid strings
+- Link secrets: the organizer's admin key (14 characters) and each personal link's reveal code (8) are random letters and digits from `src/lib/tokens.ts`, which also has the shape checks the routes and pages use (and `isCutShort()` to spot a link cut short)
 - Internal join keys: `integer GENERATED ALWAYS AS IDENTITY`
 - Soft deletes only — never hard-delete rows. The one exception is `RateLimits`: its rows are counters, not people's data, so `src/proxy.ts` deletes rows older than 2 days on about 1 in 100 limited requests
 - Always use parameterized queries: the `sql` tagged template sends `${...}` values as bind parameters; never build SQL text with string concatenation

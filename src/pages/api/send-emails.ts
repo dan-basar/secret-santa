@@ -120,7 +120,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             ,givers.name as giver_name
             ,givers.email as giver_email
             ,givers.email_sent_at as giver_email_sent_at
-            ,givers.reveal_token as giver_reveal_token
+            ,givers.reveal_code as giver_reveal_token
             ,receivers.name as receiver_name
         FROM Matches as matches
              INNER JOIN Participants as givers ON matches.giver_participant_id = givers.id
