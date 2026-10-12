@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { siteUrl } from '@/lib/site';
 import { isValidEmail } from '@/lib/email-address';
 import { hasLink } from '@/lib/sanitize';
+import { duplicateNames, duplicateNamesMessage } from '@/lib/names';
 import { FormGroup, FormParticipant, groupNameFor, newId } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
 import logo from '../../public/logo.svg';
@@ -115,6 +116,11 @@ export default function Home() {
     }
     if (invalid.length > 0) {
       setError('Please make sure every participant has a valid name and email address.');
+      return;
+    }
+    const duplicates = duplicateNames(filled.map((p) => p.name));
+    if (duplicates.length > 0) {
+      setError(duplicateNamesMessage(duplicates));
       return;
     }
     // Names go into the match emails, so the server refuses web addresses in them
@@ -333,8 +339,8 @@ export default function Home() {
             )}
           </section>
 
-          {statusMsg && <p className="status-msg fade-in">{statusMsg}</p>}
-          {error && <p className="error-msg fade-in">{error}</p>}
+          {statusMsg && <p className="status-msg fade-in" role="status">{statusMsg}</p>}
+          {error && <p className="error-msg fade-in" role="alert">{error}</p>}
 
           <div className={styles.submitRow}>
             <button

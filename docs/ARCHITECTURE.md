@@ -67,7 +67,7 @@ RateLimits (bucket, window_start)     — hits per hashed IP + route per hour
 
 - **Draws** — one row per draw: admin key, timestamps (`emails_sent_at`, `deleted_at` double as flags), organizer name/email once emails are sent.
 - **Participants** — one row per person: name, optional email, optional group name, position in the draw, their reveal token, when their email went out, and a short-lived claim while it is being sent.
-- **Matches** — one row per giver → receiver pair, pointing at two Participants rows. Pairs are linked by position, so duplicate names are fine. Each participant appears once as a giver and once as a receiver (`UNIQUE` on both columns).
+- **Matches** — one row per giver → receiver pair, pointing at two Participants rows. Pairs are linked by position, not by name (create-draw separately refuses names that match ignoring case and spaces, so people can tell who they drew). Each participant appears once as a giver and once as a receiver (`UNIQUE` on both columns).
 - **EmailSendLog** and **RateLimits** are counters, not tied to any draw.
 
 The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).

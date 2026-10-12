@@ -106,4 +106,13 @@ describe('home form', () => {
     expect(screen.getByText('Please enter at least 2 participants.')).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('blocks names that only differ in case or spaces, and says why', () => {
+    render(<Home />);
+    type('Person 1 name', 'Sam');
+    type('Person 2 name', ' sam');
+    fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
+    expect(screen.getByRole('alert').textContent).toMatch(/Names must be distinguishable.*: Sam\./);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

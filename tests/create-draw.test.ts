@@ -137,7 +137,7 @@ describe('POST /api/create-draw', () => {
   });
 
   it('saves one match per person by position, never within a group', async () => {
-    const participants = [person('Sam', 'A'), person('Sam', 'B'), person('Alex', 'A'), person('Jo', 'B')];
+    const participants = [person('Sam', 'A'), person('Kim', 'B'), person('Alex', 'A'), person('Jo', 'B')];
     const res = await post(participants);
     expect(res.statusCode).toBe(200);
     const insert = queries().find(q => q.text.includes('INSERT INTO Matches'))!;
@@ -145,6 +145,15 @@ describe('POST /api/create-draw', () => {
     expect(givers).toEqual([1, 2, 3, 4]);
     expect([...receivers].sort()).toEqual([1, 2, 3, 4]);
     receivers.forEach((r, i) => expect(participants[r - 1].group).not.toBe(participants[i].group));
+  });
+
+  it('rejects names that match ignoring case and spaces, naming each once', async () => {
+    const res = await post([person('Sam'), person(' sam '), person('Mary Ann'), person('maryann'), person('SAM')]);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      error: 'Names must be distinguishable. Each of these is used more than once: Sam, Mary Ann. Add a last initial or nickname, like "Sam L."',
+    });
+    expect(sql.transaction).not.toHaveBeenCalled();
   });
 
   it('rejects more than 20 groups', async () => {

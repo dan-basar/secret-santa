@@ -10,6 +10,8 @@
   --ink: #1a1714;
   --ink-light: #6b6560;
   --ink-faint: #b8b3ae;
+  /* Placeholders stand in for labels on phones, so they need readable contrast (about 4.9:1 on white) */
+  --ink-placeholder: #777069;
   --paper: #faf8f5;
   --paper-warm: #f2ede6;
   --accent: #c84b2f;
@@ -71,13 +73,26 @@ input, select {
   width: 100%;
 }
 
+/* Inputs, selects and buttons drop the browser outline above; keyboard users get this one instead */
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Safari on iPhone zooms in on any field with text under 16px */
+@media (max-width: 600px) {
+  input, select {
+    font-size: 16px;
+  }
+}
+
 input:focus, select:focus {
   border-color: var(--ink-light);
   box-shadow: 0 0 0 3px rgba(26,23,20,0.06);
 }
 
 input::placeholder {
-  color: var(--ink-faint);
+  color: var(--ink-placeholder);
 }
 
 .btn {
