@@ -3,7 +3,7 @@
 // organizerEmail on the first send, or retryFailed: true to resend only the failed.
 // Returns 200 { success, totalSent, totalFailed, failedNames }; 400 bad input;
 // 403 wrong key or CAPTCHA; 409 already sent / nothing to resend; 410 deleted;
-// 503 daily cap hit.
+// 503 daily cap hit (495 emails in any 24 hours, across all draws).
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
@@ -13,8 +13,12 @@ import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
 import type { SendEmailsError, SendEmailsResponse } from '@/types/api';
 
-// Gmail's free SMTP plan allows ~500 emails/day; 495 gives a 5-email safety margin
+// Gmail's free SMTP plan allows ~500 emails in a rolling 24 hours; 495 gives a
+// 5-email safety margin
 const DAILY_EMAIL_LIMIT = 495;
+
+// Any fixed number: the advisory lock that makes cap reservations take turns
+const EMAIL_CAP_LOCK_ID = 495;
 
 // A participant's claim normally lasts only as long as their own send. One older
 // than this belongs to a request that was killed mid-send (the function limit is
@@ -25,7 +29,7 @@ interface DrawRow {
   id: string;
   emails_sent_at: Date | null;
   deleted_at: Date | null;
-  admin_key: string | null;
+  admin_key: string;
   organizer_name: string | null;
   organizer_email: string | null;
 }
@@ -117,7 +121,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     const draw = drawRows[0];
 
-    // Old draws with no stored admin_key never match, so they can't send
     if (key !== draw.admin_key) return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
 
     if (draw.deleted_at) return res.status(410).json({ error: 'This draw has been deleted.' });
@@ -135,19 +138,52 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (retryFailed && !unsent.length) return res.status(409).json({ error: 'Everyone has already been sent their email.' });
 
-    // Step 1: Check global daily email cap
-    const capRows = await sql`
-      SELECT COALESCE(emails_sent, 0) as emails_sent
-      FROM DailyEmailLog
-      WHERE log_date = (now() at time zone 'utc')::date
-    ` as { emails_sent: number }[];
-    const dailyCount = capRows[0]?.emails_sent ?? 0;
+    // Step 1: Reserve room under the email cap BEFORE sending.
+    //
+    // Sends are counted in hourly rows, and the cap covers every row that can
+    // hold a send from the last 24 hours (so up to 25 hours, erring on the safe
+    // side), matching Gmail's rolling limit rather than the calendar day. The
+    // advisory lock makes concurrent requests reserve one at a time, so two big
+    // sends can't both pass the check; the INSERT adds this request's count only
+    // when it fits, and returns no row when it doesn't. Whatever ends up not
+    // being sent is given back below; a request that dies keeps its reservation,
+    // since some of those emails may have gone out.
+    const [, reservedRows] = await sql.transaction([
+      sql`SELECT pg_advisory_xact_lock(${EMAIL_CAP_LOCK_ID})`,
+      sql`
+        INSERT INTO EmailSendLog (hour_start, emails_sent)
+        SELECT date_trunc('hour', now()), ${unsent.length}
+        WHERE (
+             SELECT COALESCE(SUM(emailSendLog.emails_sent), 0)
+             FROM EmailSendLog as emailSendLog
+             WHERE emailSendLog.hour_start > now() - interval '25 hours'
+        ) + ${unsent.length} <= ${DAILY_EMAIL_LIMIT}
+        ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
+        RETURNING hour_start
+      `,
+    ]) as [unknown, { hour_start: Date }[]];
 
-    if (dailyCount + unsent.length > DAILY_EMAIL_LIMIT) {
+    if (!reservedRows.length) {
       return res.status(503).json({
         error: `The daily email limit of ${DAILY_EMAIL_LIMIT} has been reached. Please try again tomorrow.`,
       });
     }
+
+    // Hands back reserved emails that won't be sent. A failure here only leaves
+    // the cap counting too many for a day, so it never fails the request
+    const reservedHour = reservedRows[0].hour_start;
+    const releaseReserved = async (count: number) => {
+      if (count <= 0) return;
+      try {
+        await sql`
+          UPDATE EmailSendLog
+          SET emails_sent = emails_sent - ${count}
+          WHERE hour_start = ${reservedHour}::timestamptz
+        `;
+      } catch (err) {
+        console.error(err);
+      }
+    };
 
     // Step 2: On the first send, claim the draw BEFORE sending.
     //
@@ -164,6 +200,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       `;
 
       if (!drawClaimRows.length) {
+        await releaseReserved(unsent.length);
         return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
       }
     }
@@ -184,6 +221,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     ` as { id: number }[];
     const claimedIds = new Set(participantClaimRows.map(row => row.id));
     const toSend = unsent.filter(match => claimedIds.has(match.giver_id));
+    await releaseReserved(unsent.length - toSend.length);
 
     if (retryFailed && !toSend.length) return res.status(409).json({ error: 'These emails are already being sent.' });
 
@@ -202,21 +240,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
       try {
         if (ok) {
-          // Marked sent and counted against the daily cap together. ON CONFLICT
-          // makes the upsert atomic: if two requests on the same UTC date both
-          // try to insert, the second one updates the existing row instead.
-          await sql.transaction([
-            sql`
-              UPDATE Participants
-              SET email_sent_at = now(), email_claimed_at = NULL
-              WHERE id = ${match.giver_id}
-            `,
-            sql`
-              INSERT INTO DailyEmailLog (log_date, emails_sent)
-              VALUES ((now() at time zone 'utc')::date, 1)
-              ON CONFLICT (log_date) DO UPDATE SET emails_sent = DailyEmailLog.emails_sent + EXCLUDED.emails_sent
-            `,
-          ]);
+          // Already counted against the cap by the reservation in step 1
+          await sql`
+            UPDATE Participants
+            SET email_sent_at = now(), email_claimed_at = NULL
+            WHERE id = ${match.giver_id}
+          `;
         } else {
           // Release the claim so a resend can reach them straight away
           await sql`
@@ -236,6 +265,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const failed = toSend.filter((_, i) => !delivered[i]);
     const failedNames: string[] = failed.map(match => match.giver_name);
     const actualSent = toSend.length - failed.length;
+    await releaseReserved(failed.length);
 
     const allFailed = failed.length > 0 && failed.length === toSend.length;
 

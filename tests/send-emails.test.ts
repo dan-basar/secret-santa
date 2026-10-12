@@ -4,15 +4,24 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 // A tiny in-memory stand-in for the tables send-emails touches. Each sql`...`
 // call is answered by matching its text, and runs synchronously, so a single
 // UPDATE ... WHERE email_sent_at IS NULL is atomic just as it is in Postgres.
-// Claim times are milliseconds on a fake clock, db.now, so tests can age them.
+// Claim times and email-log hours are milliseconds on a fake clock, db.now, so
+// tests can age them.
 interface FakeParticipant { id: number; name: string; email: string | null; email_sent_at: string | null; email_claimed_at: number | null }
 const db = vi.hoisted(() => ({
   now: 0,
   draw: {} as { id: string; admin_key: string; deleted_at: string | null; emails_sent_at: string | null; organizer_name: string | null; organizer_email: string | null },
   participants: [] as FakeParticipant[],
   receiverOf: {} as Record<number, number>,
-  dailySent: 0,
+  emailLog: [] as { hour: number; sent: number }[],
 }));
+
+const { HOUR, hourOf, emailsCounted } = vi.hoisted(() => {
+  const HOUR = 3_600_000;
+  const hourOf = (ms: number) => Math.floor(ms / HOUR) * HOUR;
+  // What the cap counts: every hourly row that can hold a send from the last 24 hours
+  const emailsCounted = () => db.emailLog.filter(r => r.hour > db.now - 25 * HOUR).reduce((sum, r) => sum + r.sent, 0);
+  return { HOUR, hourOf, emailsCounted };
+});
 
 vi.mock('@/lib/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/db')>();
@@ -29,7 +38,21 @@ vi.mock('@/lib/db', async (importOriginal) => {
         receiver_name: db.participants.find(p => p.id === db.receiverOf[giver.id])!.name,
       }));
     }
-    if (text.includes('FROM DailyEmailLog')) return db.dailySent ? [{ emails_sent: db.dailySent }] : [];
+    if (text.includes('pg_advisory_xact_lock')) return [{}];
+    if (text.includes('INSERT INTO EmailSendLog')) {
+      const [count, , limit] = values as [number, number, number];
+      if (emailsCounted() + count > limit) return [];
+      const hour = hourOf(db.now);
+      const row = db.emailLog.find(r => r.hour === hour);
+      if (row) row.sent += count;
+      else db.emailLog.push({ hour, sent: count });
+      return [{ hour_start: new Date(hour) }];
+    }
+    if (text.includes('UPDATE EmailSendLog')) {
+      const [count, hour] = values as [number, Date];
+      db.emailLog.find(r => r.hour === hour.getTime())!.sent -= count;
+      return [];
+    }
     if (text.includes('UPDATE Draws') && text.includes('emails_sent_at = now()')) {
       if (db.draw.emails_sent_at) return [];
       db.draw.emails_sent_at = 'now';
@@ -56,10 +79,6 @@ vi.mock('@/lib/db', async (importOriginal) => {
     }
     if (text.includes('UPDATE Participants') && text.includes('SET email_claimed_at = NULL')) {
       db.participants.find(p => p.id === values[0])!.email_claimed_at = null;
-      return [];
-    }
-    if (text.includes('INSERT INTO DailyEmailLog') && text.includes(', 1)')) {
-      db.dailySent += 1;
       return [];
     }
     throw new Error(`Unexpected query: ${text}`);
@@ -137,7 +156,7 @@ beforeEach(() => {
     { id: 4, name: 'Lee', email: null, email_sent_at: null, email_claimed_at: null },
   ];
   db.receiverOf = { 1: 2, 2: 3, 3: 4, 4: 1 };
-  db.dailySent = 0;
+  db.emailLog = [];
   db.now = Date.UTC(2026, 11, 1);
   sendMatchEmail.mockReset();
   failFor();
@@ -160,7 +179,7 @@ describe('POST /api/send-emails', () => {
     expect(emailed().sort()).toEqual(['alex@example.com', 'jo@example.com', 'sam@example.com']);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(db.draw.emails_sent_at).not.toBeNull();
-    expect(db.dailySent).toBe(3);
+    expect(emailsCounted()).toBe(3);
   });
 
   it('leaves the people whose email failed unsent and names them', async () => {
@@ -170,7 +189,7 @@ describe('POST /api/send-emails', () => {
     expect(res.body).toEqual({ success: true, totalSent: 2, totalFailed: 1, failedNames: ['Sam'] });
     expect(sentNames()).toEqual(['Alex', 'Jo']);
     expect(db.draw.emails_sent_at).not.toBeNull();
-    expect(db.dailySent).toBe(2);
+    expect(emailsCounted()).toBe(2);
   });
 
   it('reopens the draw when every email on the first send fails', async () => {
@@ -179,7 +198,7 @@ describe('POST /api/send-emails', () => {
     expect(res.statusCode).toBe(500);
     expect(sentNames()).toEqual([]);
     expect(db.draw.emails_sent_at).toBeNull();
-    expect(db.dailySent).toBe(0);
+    expect(emailsCounted()).toBe(0);
   });
 
   it('still refuses a second full send with 409', async () => {
@@ -202,7 +221,7 @@ describe('POST /api/send-emails', () => {
     expect(emailed()).toEqual(['sam@example.com']);
     expect(sendMatchEmail.mock.calls[0].slice(3, 5)).toEqual(['Pat', 'pat@example.com']);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
-    expect(db.dailySent).toBe(3);
+    expect(emailsCounted()).toBe(3);
   });
 
   it('keeps someone unsent when their resend fails again', async () => {
@@ -304,24 +323,54 @@ describe('POST /api/send-emails', () => {
     await post(firstSend);
     sendMatchEmail.mockClear();
 
-    db.dailySent = 495;
+    db.emailLog[0].sent = 495;
     const res = await post(resend);
     expect(res.statusCode).toBe(503);
     expect(sendMatchEmail).not.toHaveBeenCalled();
     expect(sentNames()).toEqual(['Alex', 'Jo']);
   });
 
-  it('records each email and its daily count as soon as that email goes out', async () => {
+  it('counts the last 24 hours, not the calendar day', async () => {
+    // 493 sent at 23:30 UTC; ten minutes past midnight they still count
+    db.now = Date.UTC(2026, 11, 2, 0, 10);
+    db.emailLog = [{ hour: Date.UTC(2026, 11, 1, 23), sent: 493 }];
+    const blocked = await post(firstSend);
+    expect(blocked.statusCode).toBe(503);
+    expect(blocked.body.error).toBe('The daily email limit of 495 has been reached. Please try again tomorrow.');
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+    expect(db.draw.emails_sent_at).toBeNull();
+
+    // A day later that hour has rolled out of the window
+    db.now += 24 * HOUR;
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(200);
+    expect(emailsCounted()).toBe(3);
+  });
+
+  it('sends right up to the cap and no further', async () => {
+    db.emailLog = [{ hour: hourOf(db.now) - 5 * HOUR, sent: 492 }];
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(200);
+    expect(emailsCounted()).toBe(495);
+  });
+
+  it('gives back the reservation when a second first send is refused', async () => {
+    sendMatchEmail.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 10)));
+    await Promise.all([post(firstSend), post(firstSend)]);
+    expect(emailsCounted()).toBe(3);
+  });
+
+  it('reserves the cap before sending and records each email as soon as it goes out', async () => {
     const pending: Record<string, () => void> = {};
     sendMatchEmail.mockImplementation((_name: string, email: string) => new Promise<void>(resolve => { pending[email] = resolve; }));
     const sending = post(firstSend);
     await vi.waitFor(() => expect(Object.keys(pending)).toHaveLength(3));
     expect(claimedNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(sentNames()).toEqual([]);
+    expect(emailsCounted()).toBe(3);
 
     pending['sam@example.com']();
     await vi.waitFor(() => expect(sentNames()).toEqual(['Sam']));
-    expect(db.dailySent).toBe(1);
     expect(claimedNames()).toEqual(['Alex', 'Jo']);
 
     pending['alex@example.com']();
@@ -329,7 +378,7 @@ describe('POST /api/send-emails', () => {
     expect((await sending).statusCode).toBe(200);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(claimedNames()).toEqual([]);
-    expect(db.dailySent).toBe(3);
+    expect(emailsCounted()).toBe(3);
   });
 
   it('releases the claim on someone whose email failed', async () => {
@@ -346,7 +395,8 @@ describe('POST /api/send-emails', () => {
     });
     void post(firstSend);
     await vi.waitFor(() => expect(sentNames()).toEqual(['Alex', 'Sam']));
-    expect(db.dailySent).toBe(2);
+    // Jo's email may have gone out, so the cap keeps counting it
+    expect(emailsCounted()).toBe(3);
     expect(claimedNames()).toEqual(['Jo']);
 
     // Jo shows as not delivered, and once the claim expires a resend reaches them
@@ -357,7 +407,7 @@ describe('POST /api/send-emails', () => {
     expect(res.statusCode).toBe(200);
     expect(emailed()).toEqual(['jo@example.com']);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
-    expect(db.dailySent).toBe(3);
+    expect(emailsCounted()).toBe(4);
   });
 
   it('lets a claim older than 5 minutes be taken again, but not a fresh one', async () => {
