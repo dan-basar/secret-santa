@@ -42,9 +42,13 @@ Variables are read when a deployment is built or a function starts, so **changin
 
 Never put real keys in `.env.development.local`; it keeps the test keys.
 
+**Rate-limit hash secret** (`RATE_LIMIT_HASH_SECRET`)
+1. Generate a new random value (`openssl rand -hex 32`), replace it in Vercel and redeploy.
+2. Every bucket gets a new hash, so current hourly counts start again from zero; the old rows are deleted after 2 days as usual. If the variable is missing, rate limiting is skipped (the proxy fails open and logs an error), so set it before deploying.
+
 ## When Gmail stops sending
 
-Symptoms: `send-emails` reports failures (`failedNames`), or `503` "daily email limit reached".
+Symptoms: `send-emails` reports failures (`failedNames`), or `503` "The site's email limit is reached for now".
 
 - **Our daily cap.** `send-emails` refuses a send that would take the last 24 hours past **495** (`DAILY_EMAIL_LIMIT`), counted per hour in `EmailSendLog`. A send reserves a count for everyone it claimed, in the same transaction as the claims, before emailing anyone, and gives back the emails that failed; a request that died mid-send keeps its reservation, so the count can run a little high. The count the cap sees right now:
   ```sql

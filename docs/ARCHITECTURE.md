@@ -62,7 +62,7 @@ Draws (id uuid)
   └──< Matches (draw_id) ──────────────┘
 
 EmailSendLog (hour_start)             — emails sent per hour, all draws
-RateLimits (bucket, window_start)     — hits per hashed IP + route per hour
+RateLimits (bucket, window_start)     — hits per hashed client (IPv4 or IPv6 /64) + route per hour
 ```
 
 - **Draws** — one row per draw: admin key, timestamps (`emails_sent_at`, `deleted_at` double as flags), organizer name/email once emails are sent.
@@ -80,7 +80,7 @@ The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 | Who drew whom | Matches | Kept with the draw |
 | Organizer name and email | Draws, set on first send | Kept with the draw |
 | Admin key, reveal tokens | Draws, Participants | Kept with the draw |
-| Hashed IP + route hit counts | RateLimits (SHA-256; raw IPs never stored) | About 2 days, then hard-deleted by `src/proxy.ts` |
+| Hashed IP + route hit counts | RateLimits (HMAC-SHA-256 with a secret key; raw IPs never stored) | About 2 days, then hard-deleted by `src/proxy.ts` |
 | Emails sent per hour | EmailSendLog (a count only) | Kept |
 
 Draws are only ever soft-deleted: deleting hides a draw from every link but keeps the rows. Participant and organizer email addresses are kept too, by decision for now; there is no purge job. Emails themselves are sent through the Gmail account in `GMAIL_USER`, so copies also sit in its Sent folder.

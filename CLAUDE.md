@@ -37,7 +37,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 - `.env.development.local` holds Cloudflare's always-pass Turnstile test keys so emails can be sent from `npm run dev` (the real keys reject `localhost`). Never put real keys there.
 - **Only send email for draws you create, to addresses you were given.**
 - Schema changes go in a new `sql/migrations/NNN_name.sql` with a read-only `NNN_name_check.sql`, and are folded into `sql/setup.sql`. Never apply them to production yourself; the runbook is in docs/OPERATIONS.md.
-- All env vars are required except `RATE_LIMIT_IP_WHITELIST`; there are no defaults. The list, with placeholders, is in `.env.example`.
+- All env vars are required except `RATE_LIMIT_IP_WHITELIST`; there are no defaults. A missing `RATE_LIMIT_HASH_SECRET` makes the proxy skip rate limiting (it fails open and logs). The list, with placeholders, is in `.env.example`.
 
 ## Conventions
 
@@ -67,7 +67,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 - **State management**: local React hooks only (`useState`, `useEffect`, `useCallback`, `useRef`) — no Redux or Context
 - **Components**: a page's sections live in `src/components/<page>/`, one per file (e.g. `src/components/draw/`). Fetching, effects and shared state stay in the page and go down as props and callbacks; a component keeps only its own UI state (a "Copied" flash, a confirm step) and uses its page's CSS module
 - **Styling**: CSS Modules per page + `globals.css` for design tokens (CSS custom properties on `:root`, e.g. `--ink`, `--accent`, `--success`, `--error`)
-- **Typography**: Libre Baskerville (headings) + DM Sans (body)
+- **Typography**: Libre Baskerville (headings) + DM Sans (body), loaded with `next/font/google` in `_app.tsx` (downloaded at build time and served from this site), feeding `--font-serif` / `--font-sans`
 - **Forms**: client-side validation before API calls; errors displayed inline
 - **Groups on the home page** are referenced by a stable id (`src/lib/groups.ts`), never by name, so renaming a group keeps its members
 - **Session storage**: key `editDraftData` passes the form state from the draw page back to the home page for "Edit & Redraw"

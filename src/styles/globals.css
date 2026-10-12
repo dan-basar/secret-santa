@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
-
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -20,8 +18,9 @@
   --success-light: #e8f5ee;
   --border: #e4dfd9;
   --radius: 4px;
-  --font-serif: 'Libre Baskerville', Georgia, serif;
-  --font-sans: 'DM Sans', system-ui, sans-serif;
+  /* The font families come from next/font in _app.tsx */
+  --font-serif: var(--font-libre-baskerville), Georgia, serif;
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
   --shadow: 0 1px 3px rgba(26,23,20,0.08), 0 4px 16px rgba(26,23,20,0.04);
   --shadow-lg: 0 2px 8px rgba(26,23,20,0.1), 0 12px 40px rgba(26,23,20,0.08);
 }

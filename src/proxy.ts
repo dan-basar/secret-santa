@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { BASE_PATH } from '@/lib/site';
+import { rateLimitClient } from '@/lib/ip-prefix';
 
 // Rate limiter backed by the RateLimits table, so every Vercel instance counts
-// against the same numbers. One row per hashed IP + route per hour; a single
+// against the same numbers. One row per hashed client + route per hour; a single
 // atomic upsert bumps the count and returns it.
 
 // Hourly limits per IP, per route
@@ -24,9 +25,15 @@ const WHITELISTED_IPS = new Set(
   (process.env.RATE_LIMIT_IP_WHITELIST ?? '').split(',').map(s => s.trim()).filter(Boolean)
 );
 
-// SHA-256 hex of the IP and route, so raw IPs are never stored
+// HMAC-SHA-256 hex of the client (IPv4 address or IPv6 /64) and route, keyed
+// with RATE_LIMIT_HASH_SECRET. A plain hash of an IPv4 address could be reversed
+// by trying all 4 billion of them; without the secret it can't. A missing secret
+// throws, and the request fails open like any other rate-limit error
 async function bucketFor(ip: string, apiPath: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip}:${apiPath}`));
+  const secret = process.env.RATE_LIMIT_HASH_SECRET;
+  if (!secret) throw new Error('RATE_LIMIT_HASH_SECRET is not set');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${rateLimitClient(ip)}:${apiPath}`));
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 }
 
