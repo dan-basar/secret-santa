@@ -7,13 +7,13 @@ interface Props {
   error: string;
 }
 
-// Soft-deletes the draw after a confirm step
+// Soft-deletes the draw; the button stays off until the organizer ticks the checkbox
 export default function DeleteSection({ onDelete, loading, error }: Props) {
-  const [confirming, setConfirming] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
 
-  const handleConfirm = async () => {
+  const handleDelete = async () => {
     await onDelete();
-    setConfirming(false);
+    setConfirmed(false);
   };
 
   return (
@@ -25,30 +25,17 @@ export default function DeleteSection({ onDelete, loading, error }: Props) {
       </p>
       {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
 
-      {!confirming ? (
-        <button className="btn btn-danger" onClick={() => setConfirming(true)}>
-          Delete draw
-        </button>
-      ) : (
-        <div className={styles.confirmRow}>
-          <p className={styles.confirmText}>Are you sure? This cannot be undone.</p>
-          <div className={styles.confirmBtns}>
-            <button
-              className="btn btn-danger"
-              onClick={handleConfirm}
-              disabled={loading}
-            >
-              {loading ? 'Deleting…' : 'Yes, delete'}
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setConfirming(false)}
-            >
-              Cancel
-            </button>
-          </div>
+      <div className={styles.confirmRow}>
+        <label className={styles.confirmCheck}>
+          <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+          I understand this draw and all its links will stop working.
+        </label>
+        <div>
+          <button className="btn btn-danger" onClick={handleDelete} disabled={!confirmed || loading}>
+            {loading ? 'Deleting…' : 'Delete draw'}
+          </button>
         </div>
-      )}
+      </div>
     </section>
   );
 }

@@ -232,6 +232,7 @@ export default function DrawPage() {
             <Link href="/" className={styles.homeLink}>
               <Image src={logo} alt="" width={24} height={28} />
               Secret Santa Picker App
+              <Image src={logo} alt="" width={24} height={28} />
             </Link>
             <span className={styles.headerMeta}>Draw created {createdDate}</span>
           </div>
@@ -278,6 +279,8 @@ export default function DrawPage() {
 
         <footer className={styles.footer}>
           <Link href="/">← Start a new draw</Link>
+          {/* The policy lives on the root site, outside this app's base path */}
+          <a href="/privacy">Privacy policy</a>
         </footer>
       </div>
     </>
