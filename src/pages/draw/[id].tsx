@@ -250,11 +250,6 @@ export default function DrawPage() {
                 emailsSent={!!admin.emails_sent_at}
                 onEditAndRedraw={handleEditAndRedraw}
               />
-              <PersonalLinks
-                participants={admin.participants}
-                emailsSent={!!admin.emails_sent_at}
-                linkFor={personalUrl}
-              />
               <EmailSection
                 draw={admin}
                 unsentCount={unsentCount}
@@ -268,6 +263,11 @@ export default function DrawPage() {
                 onTurnstileToken={setTurnstileToken}
                 hasTurnstileToken={!!turnstileToken}
                 onSend={handleSendEmails}
+              />
+              <PersonalLinks
+                participants={admin.participants}
+                emailsSent={!!admin.emails_sent_at}
+                linkFor={personalUrl}
               />
               <DeleteSection onDelete={handleDelete} loading={deleteLoading} error={deleteError} />
             </>

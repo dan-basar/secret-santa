@@ -46,7 +46,7 @@ Never put real keys in `.env.development.local`; it keeps the test keys.
 
 Symptoms: `send-emails` reports failures (`failedNames`), or `503` "daily email limit reached".
 
-- **Our daily cap.** `send-emails` refuses a send that would take the last 24 hours past **495** (`DAILY_EMAIL_LIMIT`), counted per hour in `EmailSendLog`. A send reserves its whole count before emailing anyone and gives back what it didn't send; a request that died mid-send keeps its reservation, so the count can run a little high. The count the cap sees right now:
+- **Our daily cap.** `send-emails` refuses a send that would take the last 24 hours past **495** (`DAILY_EMAIL_LIMIT`), counted per hour in `EmailSendLog`. A send reserves a count for everyone it claimed, in the same transaction as the claims, before emailing anyone, and gives back the emails that failed; a request that died mid-send keeps its reservation, so the count can run a little high. The count the cap sees right now:
   ```sql
   SELECT
        COALESCE(SUM(emailSendLog.emails_sent), 0) as emailsInLast24Hours

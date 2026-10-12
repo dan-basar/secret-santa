@@ -13,6 +13,8 @@ const db = vi.hoisted(() => ({
   participants: [] as FakeParticipant[],
   receiverOf: {} as Record<number, number>,
   emailLog: [] as { hour: number; sent: number }[],
+  // Each awaited query or transaction is one HTTPS request to Neon
+  roundTrips: 0,
 }));
 
 const { HOUR, hourOf, emailsCounted } = vi.hoisted(() => {
@@ -27,6 +29,33 @@ vi.mock('@/lib/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/db')>();
 
   function run(text: string, values: unknown[]): unknown[] {
+    // The one statement that checks the cap, claims the draw and participants,
+    // and reserves the cap for whoever was claimed
+    if (text.includes('WITH cap AS')) {
+      const [count, limit, organizerName, organizerEmail, , retryFailed, ids, expiryMinutes] =
+        values as [number, number, string, string, string, boolean, number[], number];
+      const capOk = emailsCounted() + count <= limit;
+      const drawClaimed = capOk && !retryFailed && !db.draw.emails_sent_at;
+      if (drawClaimed) {
+        db.draw.emails_sent_at = 'now';
+        db.draw.organizer_name = organizerName;
+        db.draw.organizer_email = organizerEmail;
+      }
+      const claimed = capOk && (retryFailed || drawClaimed)
+        ? db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at
+          && (p.email_claimed_at === null || p.email_claimed_at < db.now - expiryMinutes * 60_000))
+        : [];
+      for (const p of claimed) p.email_claimed_at = db.now;
+      let reservedHour: Date | null = null;
+      if (claimed.length) {
+        const hour = hourOf(db.now);
+        const row = db.emailLog.find(r => r.hour === hour);
+        if (row) row.sent += claimed.length;
+        else db.emailLog.push({ hour, sent: claimed.length });
+        reservedHour = new Date(hour);
+      }
+      return [{ cap_ok: capOk, draw_claimed: drawClaimed, claimed_ids: claimed.map(p => p.id), reserved_hour: reservedHour }];
+    }
     if (text.includes('FROM Draws')) return [{ ...db.draw }];
     if (text.includes('FROM Matches')) {
       return db.participants.map(giver => ({
@@ -39,37 +68,14 @@ vi.mock('@/lib/db', async (importOriginal) => {
       }));
     }
     if (text.includes('pg_advisory_xact_lock')) return [{}];
-    if (text.includes('INSERT INTO EmailSendLog')) {
-      const [count, , limit] = values as [number, number, number];
-      if (emailsCounted() + count > limit) return [];
-      const hour = hourOf(db.now);
-      const row = db.emailLog.find(r => r.hour === hour);
-      if (row) row.sent += count;
-      else db.emailLog.push({ hour, sent: count });
-      return [{ hour_start: new Date(hour) }];
-    }
     if (text.includes('UPDATE EmailSendLog')) {
       const [count, hour] = values as [number, Date];
       db.emailLog.find(r => r.hour === hour.getTime())!.sent -= count;
       return [];
     }
-    if (text.includes('UPDATE Draws') && text.includes('emails_sent_at = now()')) {
-      if (db.draw.emails_sent_at) return [];
-      db.draw.emails_sent_at = 'now';
-      db.draw.organizer_name = values[0] as string;
-      db.draw.organizer_email = values[1] as string;
-      return [{ id: db.draw.id }];
-    }
     if (text.includes('UPDATE Draws') && text.includes('emails_sent_at = NULL')) {
       db.draw.emails_sent_at = null;
       return [];
-    }
-    if (text.includes('UPDATE Participants') && text.includes('SET email_claimed_at = now()')) {
-      const [ids, expiryMinutes] = values as [number[], number];
-      const claimed = db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at
-        && (p.email_claimed_at === null || p.email_claimed_at < db.now - expiryMinutes * 60_000));
-      for (const p of claimed) p.email_claimed_at = db.now;
-      return claimed.map(p => ({ id: p.id }));
     }
     if (text.includes('UPDATE Participants') && text.includes('SET email_sent_at = now(), email_claimed_at = NULL')) {
       const p = db.participants.find(p => p.id === values[0])!;
@@ -88,10 +94,14 @@ vi.mock('@/lib/db', async (importOriginal) => {
     vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = strings.join('$');
       return { text, values, then: (resolve: (rows: unknown[]) => void, reject: (err: unknown) => void) => {
+        db.roundTrips++;
         try { resolve(run(text, values)); } catch (err) { reject(err); }
       } };
     }),
-    { transaction: vi.fn(async (queries: Array<{ text: string; values: unknown[] }>) => queries.map(q => run(q.text, q.values))) }
+    { transaction: vi.fn(async (queries: Array<{ text: string; values: unknown[] }>) => {
+      db.roundTrips++;
+      return queries.map(q => run(q.text, q.values));
+    }) }
   );
   return { ...actual, sql };
 });
@@ -158,6 +168,7 @@ beforeEach(() => {
   db.receiverOf = { 1: 2, 2: 3, 3: 4, 4: 1 };
   db.emailLog = [];
   db.now = Date.UTC(2026, 11, 1);
+  db.roundTrips = 0;
   sendMatchEmail.mockReset();
   failFor();
   vi.stubEnv('NEXT_PUBLIC_BASE_URL', 'https://baseworkshop.app');
@@ -354,7 +365,7 @@ describe('POST /api/send-emails', () => {
     expect(emailsCounted()).toBe(495);
   });
 
-  it('gives back the reservation when a second first send is refused', async () => {
+  it('reserves nothing for a second first send that is refused', async () => {
     sendMatchEmail.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 10)));
     await Promise.all([post(firstSend), post(firstSend)]);
     expect(emailsCounted()).toBe(3);
@@ -379,6 +390,17 @@ describe('POST /api/send-emails', () => {
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(claimedNames()).toEqual([]);
     expect(emailsCounted()).toBe(3);
+  });
+
+  it('makes two database round trips before the first email goes out', async () => {
+    let tripsBeforeSending = -1;
+    sendMatchEmail.mockImplementation(async () => {
+      if (tripsBeforeSending < 0) tripsBeforeSending = db.roundTrips;
+    });
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(200);
+    // The read, then the cap check, claims and reservation together
+    expect(tripsBeforeSending).toBe(2);
   });
 
   it('releases the claim on someone whose email failed', async () => {

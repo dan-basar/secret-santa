@@ -67,7 +67,9 @@ function FirstSendForm({
           ? `Send each participant an email revealing who they drew. This can only be done once. ${emailCount} of ${draw.participants.length} participant${draw.participants.length !== 1 ? 's' : ''} have an email address.`
           : 'No participants have an email address. Add emails to participants to enable this feature.'}
       </p>
-      <div className={styles.organizerFields}>
+      {/* Without anyone to email, the form stays visible but inactive, and the
+          CAPTCHA isn't loaded at all */}
+      <div className={`${styles.organizerFields} ${hasEmails ? '' : styles.inactive}`}>
         <div className={styles.organizerField}>
           <label className={styles.organizerLabel} htmlFor="organizerName">Organizer Name</label>
           <input
@@ -77,7 +79,7 @@ function FirstSendForm({
             value={organizerName}
             onChange={(e) => onOrganizerNameChange(e.target.value)}
             placeholder="Your name"
-            disabled={loading}
+            disabled={loading || !hasEmails}
           />
         </div>
         <div className={styles.organizerField}>
@@ -89,7 +91,7 @@ function FirstSendForm({
             value={organizerEmail}
             onChange={(e) => onOrganizerEmailChange(e.target.value)}
             placeholder="your@email.com"
-            disabled={loading}
+            disabled={loading || !hasEmails}
           />
           {emailInvalid && (
             <p className={styles.organizerFieldError}>Please enter a valid email address.</p>
@@ -103,7 +105,7 @@ function FirstSendForm({
       )}
       {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-        <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />
+        {hasEmails && <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />}
         <button
           className="btn btn-success"
           onClick={() => onSend(false)}
@@ -128,7 +130,7 @@ function ResendForm({ draw, unsentCount, loading, error, turnstileKey, onTurnsti
       </p>
       <p className={styles.sectionDesc}>
         Resend tries again for just {unsentCount === 1 ? 'this person' : 'these people'}. Everyone else already has their email.
-        You can also send {unsentCount === 1 ? 'them their' : 'each of them their'} personal link above.
+        You can also send {unsentCount === 1 ? 'them their' : 'each of them their'} personal link below.
       </p>
       {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>

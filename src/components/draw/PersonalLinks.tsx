@@ -10,6 +10,7 @@ interface Props {
 
 // Each participant's personal reveal link, for the organizer to send by text or chat
 export default function PersonalLinks({ participants, emailsSent, linkFor }: Props) {
+  const hasEmails = participants.some((p) => p.email);
   // The row whose copy button last settled, and whether the write worked
   const [copied, setCopied] = useState<{ token: string; ok: boolean } | null>(null);
 
@@ -30,7 +31,7 @@ export default function PersonalLinks({ participants, emailsSent, linkFor }: Pro
       <h2 className={styles.sectionTitle}>Personal links</h2>
       <p className={styles.sectionDesc}>
         Each link shows one person only who they drew. Send each person their own link by text or chat.
-        {emailsSent ? ' Everyone the emails reached already has theirs.' : ' The emails below include these links too.'}
+        {emailsSent ? ' Everyone the emails reached already has theirs.' : hasEmails ? ' The emails above include these links too.' : ''}
       </p>
       <ul className={styles.personalLinks}>
         {participants.map((p, i) => (

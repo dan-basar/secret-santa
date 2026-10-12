@@ -121,7 +121,7 @@ The organizer provides their name and email, completes a Turnstile CAPTCHA, and 
 
 Sending is tracked per person. Each person is claimed in the database (`Participants.email_claimed_at`) before their email goes out, so two clicks can never email anyone twice. As soon as their own email settles, `email_sent_at` is set and the daily count goes up if it went out, or the claim is released if it failed. A request that dies midway (the function's time limit, or a stalled SMTP connection) leaves only the emails still in flight claimed; a claim older than 5 minutes can be taken again, so those people show as not delivered and can be resent to. SMTP connect, greeting and socket timeouts are 15 seconds, so a stalled send fails well within the 60-second function limit. The organizer then sees who wasn't reached and can **resend to just those people** (`retryFailed: true`), or share their personal links another way. A second full send is rejected with `409 Conflict`. If every email in a first send fails, the draw is reopened so the organizer can start over.
 
-A cap of 495 emails in any 24 hours, across all draws, is enforced via `EmailSendLog` to stay within Gmail's rolling SMTP limit. Each send reserves its count before any email goes out.
+A cap of 495 emails in any 24 hours, across all draws, is enforced via `EmailSendLog` to stay within Gmail's rolling SMTP limit. Each send checks the cap, claims the draw and its people, and reserves its count in one database transaction before any email goes out.
 
 ### Admin Access
 
