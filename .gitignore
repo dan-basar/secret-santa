@@ -1,7 +1,27 @@
-# Every env file holds secrets (.env.local, .env.neon-branch, .env.local.prod-backup, ...)
-.env*
+# Dependencies and build output
 node_modules/
 .next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Env files hold secrets (.env.local, .env.development.local, ...); only the template is tracked
+.env*
+!.env.example
+
+# Vercel
+.vercel/
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Claude Code local settings and notes
 .claude/
-tsconfig.tsbuildinfo
-Secret Santa Press Release.docx
+CLAUDE.local.md
