@@ -2,6 +2,10 @@
 
 # Secret Santa Picker
 
+[![CI](https://github.com/dan-basar/secret-santa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dan-basar/secret-santa/actions/workflows/ci.yml?query=branch%3Amain)
+
+**Live app:** <https://www.baseworkshop.app/secret-santa>
+
 A full-stack web application for running Secret Santa gift exchanges. Create a draw, assign participants to groups to prevent unwanted pairings, share a results link, and optionally send everyone an email revealing their match.
 
 Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Vercel**.
