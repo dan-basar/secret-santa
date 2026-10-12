@@ -3,12 +3,18 @@ import styles from '@/styles/Draw.module.css';
 
 // The draw's shareable link (names only), with a copy button
 export default function ShareBar({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // Clipboard access can be refused (permissions, an insecure page), so say
+  // "Copied" only once the write has succeeded
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+    setTimeout(() => setCopyState('idle'), 2000);
   };
 
   return (
@@ -18,7 +24,7 @@ export default function ShareBar({ url }: { url: string }) {
         <p className={styles.shareUrl}>{url}</p>
       </div>
       <button className="btn btn-secondary" onClick={handleCopy}>
-        {copied ? '✓ Copied' : 'Copy link'}
+        {copyState === 'copied' ? '✓ Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy link'}
       </button>
     </div>
   );

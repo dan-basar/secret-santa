@@ -70,7 +70,7 @@ TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 
 ### Database Setup
 
-Run the schema script once to create all required tables (`Draws`, `Participants`, `Matches`, `DailyEmailLog`, `RateLimits`):
+Run the schema script once to create all required tables (`Draws`, `Participants`, `Matches`, `EmailSendLog`, `RateLimits`):
 
 ```bash
 psql "$DATABASE_URL" -f sql/setup.sql
@@ -86,6 +86,8 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 | `003_rate_limits.sql` | The `RateLimits` table |
 | `004_email_status.sql` | `Participants.email_sent_at`, for per-person email tracking and resend |
 | `005_email_claims.sql` | `Participants.email_claimed_at`, so a send that dies midway leaves nobody wrongly marked as emailed |
+| `006_match_constraints.sql` | `Draws.admin_key` becomes `NOT NULL`; `UNIQUE` on each of `Matches.giver_participant_id` and `receiver_participant_id` |
+| `007_email_send_log.sql` | The `EmailSendLog` table, for the rolling 24-hour email cap (replaces `DailyEmailLog`, which is no longer read) |
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 
@@ -119,7 +121,7 @@ The organizer provides their name and email, completes a Turnstile CAPTCHA, and 
 
 Sending is tracked per person. Each person is claimed in the database (`Participants.email_claimed_at`) before their email goes out, so two clicks can never email anyone twice. As soon as their own email settles, `email_sent_at` is set and the daily count goes up if it went out, or the claim is released if it failed. A request that dies midway (the function's time limit, or a stalled SMTP connection) leaves only the emails still in flight claimed; a claim older than 5 minutes can be taken again, so those people show as not delivered and can be resent to. SMTP connect, greeting and socket timeouts are 15 seconds, so a stalled send fails well within the 60-second function limit. The organizer then sees who wasn't reached and can **resend to just those people** (`retryFailed: true`), or share their personal links another way. A second full send is rejected with `409 Conflict`. If every email in a first send fails, the draw is reopened so the organizer can start over.
 
-A daily cap of 495 emails across all draws is enforced via `DailyEmailLog` to stay within Gmail SMTP limits.
+A cap of 495 emails in any 24 hours, across all draws, is enforced via `EmailSendLog` to stay within Gmail's rolling SMTP limit. Each send reserves its count before any email goes out.
 
 ### Admin Access
 
@@ -150,7 +152,7 @@ src/
       create-draw.ts  # POST: validate, match, persist in a transaction
       get-draw.ts     # GET: fetch draw; matches and reveal links for the organizer only
       reveal.ts       # GET: one participant's own match, by reveal token
-      send-emails.ts  # POST: CAPTCHA + daily cap + per-person claimed send / resend
+      send-emails.ts  # POST: CAPTCHA + 24-hour cap + per-person claimed send / resend
       delete-draw.ts  # POST: soft-delete
       health.ts       # GET: DB health check
     _app.tsx          # App wrapper: global styles and icons
@@ -184,7 +186,7 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 | `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`), generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
 | `GET` | `/api/get-draw?id=<uuid>` | Fetch a draw. Optional header `X-Admin-Key: <adminKey>` (a `key` in the query string is ignored). Without a valid admin key: participant names only. With it: emails, groups, reveal tokens, per-person email status and matches, each match as `{ giver, receiver }` indexes into `participants`. Requests without a key never run the matches query. `410` for deleted draws. |
 | `GET` | `/api/reveal?token=<uuid>` | One participant's name, their match, the draw date and the organizer (once emails are sent). `404` for unknown tokens, `410` for deleted draws. |
-| `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail }`, or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Returns `{ success, totalSent, totalFailed, failedNames }`. `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `409` already sent (or nothing to resend), `410` deleted, `503` daily cap reached. |
+| `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail }`, or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Returns `{ success, totalSent, totalFailed, failedNames }`. `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `409` already sent (or nothing to resend), `410` deleted, `503` cap of 495 emails in 24 hours reached. |
 | `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ id, key }`. Soft-delete a draw. Idempotent. `403` wrong key. |
 | `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503 { ok: false, error }` otherwise. |
 

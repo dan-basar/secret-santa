@@ -49,7 +49,7 @@ const OLD_KEY = 'old-admin-key';
 const threePeople = [person('A'), person('B'), person('C')];
 
 // The next sql`...` call is the old-draw lookup; it resolves to this row
-function oldDraw(row: { admin_key: string | null; deleted_at: string | null; emails_sent_at: string | null } | null) {
+function oldDraw(row: { admin_key: string; deleted_at: string | null; emails_sent_at: string | null } | null) {
   vi.mocked(sql).mockImplementationOnce((() => Promise.resolve(row ? [row] : [])) as never);
 }
 
@@ -80,9 +80,6 @@ describe('POST /api/create-draw replacing an earlier draw', () => {
       const res = await post(threePeople, { replacesDrawId: OLD_ID, replacesKey });
       expect(res.statusCode).toBe(403);
     }
-    // Old draws from before admin keys were stored can't be replaced either
-    oldDraw({ admin_key: null, deleted_at: null, emails_sent_at: null });
-    expect((await post(threePeople, { replacesDrawId: OLD_ID, replacesKey: '' })).statusCode).toBe(403);
     expect(sql.transaction).not.toHaveBeenCalled();
   });
 
@@ -137,6 +134,17 @@ describe('POST /api/create-draw', () => {
     const res = await post([person('A', 'Smiths'), person('B', 'Smiths'), person('C'), person('D')]);
     expect(res.statusCode).toBe(200);
     expect(sql.transaction).toHaveBeenCalledOnce();
+  });
+
+  it('saves one match per person by position, never within a group', async () => {
+    const participants = [person('Sam', 'A'), person('Sam', 'B'), person('Alex', 'A'), person('Jo', 'B')];
+    const res = await post(participants);
+    expect(res.statusCode).toBe(200);
+    const insert = queries().find(q => q.text.includes('INSERT INTO Matches'))!;
+    const [givers, receivers] = insert.values.slice(1, 3) as [number[], number[]];
+    expect(givers).toEqual([1, 2, 3, 4]);
+    expect([...receivers].sort()).toEqual([1, 2, 3, 4]);
+    receivers.forEach((r, i) => expect(participants[r - 1].group).not.toBe(participants[i].group));
   });
 
   it('rejects more than 20 groups', async () => {

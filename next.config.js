@@ -4,6 +4,8 @@ const { basePath } = require('./src/lib/base-path.json');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Don't advertise the framework in an X-Powered-By header
+  poweredByHeader: false,
   basePath,
   async headers() {
     const security = [

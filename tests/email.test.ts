@@ -54,6 +54,11 @@ describe('sendMatchEmail', () => {
     expect(text).toContain(link);
   });
 
+  it('sends replies to the organizer', async () => {
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN);
+    expect(sendMail.mock.calls[0][0].replyTo).toBe('pat@example.com');
+  });
+
   it('shows the hosted logo at a fixed size above the greeting', async () => {
     await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN);
 

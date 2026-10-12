@@ -46,15 +46,14 @@ Never put real keys in `.env.development.local`; it keeps the test keys.
 
 Symptoms: `send-emails` reports failures (`failedNames`), or `503` "daily email limit reached".
 
-- **Our daily cap.** `send-emails` refuses a send that would take the day's total past **495** (`DAILY_EMAIL_LIMIT`), counted per UTC day in `DailyEmailLog`. Today's count:
+- **Our daily cap.** `send-emails` refuses a send that would take the last 24 hours past **495** (`DAILY_EMAIL_LIMIT`), counted per hour in `EmailSendLog`. A send reserves its whole count before emailing anyone and gives back what it didn't send; a request that died mid-send keeps its reservation, so the count can run a little high. The count the cap sees right now:
   ```sql
   SELECT
-       dailyEmailLog.log_date as logDate
-      ,dailyEmailLog.emails_sent as emailsSent
-  FROM DailyEmailLog as dailyEmailLog
-  WHERE dailyEmailLog.log_date = (now() AT TIME ZONE 'utc')::date
+       COALESCE(SUM(emailSendLog.emails_sent), 0) as emailsInLast24Hours
+  FROM EmailSendLog as emailSendLog
+  WHERE emailSendLog.hour_start > now() - interval '25 hours'
   ```
-  It resets at midnight UTC.
+  There is no midnight reset: room comes back as each hour rolls out of the window. `DailyEmailLog`, the old per-day count, is no longer read or written.
 - **Gmail itself blocked or throttled the account** (sending limits, suspicious-activity lock, revoked app password). Check the Gmail account's inbox for a notice and the Vercel function logs for the SMTP error. A revoked or changed password needs the rotation steps above.
 
 Meanwhile nobody is stuck: organizers can copy each person's **personal link** from their organizer page and send it by text or chat. Failed emails are released (and anyone left claimed by a send that timed out is released after 5 minutes), so once Gmail works again the organizer can press **Resend** to reach just the people who were missed.

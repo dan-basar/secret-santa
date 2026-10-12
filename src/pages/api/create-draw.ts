@@ -14,7 +14,7 @@ import type { ApiError, CreateDrawResponse } from '@/types/api';
 
 // The draw being replaced by Edit & Redraw
 interface OldDrawRow {
-  admin_key: string | null;
+  admin_key: string;
   deleted_at: Date | null;
   emails_sent_at: Date | null;
 }
@@ -94,8 +94,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(422).json({ error: check.reason });
   }
 
-  const matches = createMatches(participants);
-  if (!matches) {
+  const receivers = createMatches(participants);
+  if (!receivers) {
     return res.status(422).json({ error: 'Could not find a valid matching. Please adjust your groups.' });
   }
 
@@ -109,7 +109,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         FROM Draws
         WHERE id = ${replacesDrawId}::uuid
       ` as OldDrawRow[];
-      // Old draws with no stored admin_key never match, as in delete-draw
       if (!oldRows.length || typeof replacesKey !== 'string' || replacesKey !== oldRows[0].admin_key) {
         return res.status(403).json({ error: 'Only the organizer can replace this draw.' });
       }
@@ -130,10 +129,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   // Positions are 1-based to match WITH ORDINALITY below. Matches reference
   // participants by position rather than name, so two people with the same
-  // name in one draw still map to their own rows. createMatches() returns the
-  // same object references it was given, so indexOf identifies each person.
-  const giverPositions = matches.map(match => participants.indexOf(match.giver) + 1);
-  const receiverPositions = matches.map(match => participants.indexOf(match.receiver) + 1);
+  // name in one draw still map to their own rows. Participant i gives to
+  // participant receivers[i].
+  const giverPositions = receivers.map((_, i) => i + 1);
+  const receiverPositions = receivers.map(ri => ri + 1);
 
   try {
     // One HTTPS round trip; Neon runs the statements in a single transaction
