@@ -97,8 +97,6 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 
-[`scripts/copy-azure-to-neon.ts`](scripts/copy-azure-to-neon.ts) is a one-off script that copies the original Azure SQL data into Neon; see the comment at the top of the file for usage.
-
 ### Running
 
 ```bash
@@ -180,8 +178,6 @@ public/               # Logo, favicons, app icons and link-preview image
 sql/
   setup.sql           # Database schema (Postgres)
   migrations/         # One-off schema changes for existing databases, each with a _check.sql
-scripts/
-  copy-azure-to-neon.ts  # One-off Azure SQL -> Neon data copy
 docs/                 # Architecture and operations notes
 ```
 
