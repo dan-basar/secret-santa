@@ -29,7 +29,7 @@ npm test           # Vitest tests (tests/)
 cd /home/user/secret-santa && npm run dev
 ```
 
-Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). Page tests (`tests/home.test.tsx`) use React Testing Library and start with `// @vitest-environment jsdom`. CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR. Route tests mostly answer queries with canned rows; `tests/real-sql.test.ts` runs the routes' real SQL against `sql/setup.sql` in PGlite, an in-memory Postgres (`tests/helpers/pglite-sql.ts`), so a schema or query change should keep it passing. There is no linter configured beyond TypeScript strict mode.
+Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js would treat them as routes). Page tests (`tests/home.test.tsx`) use React Testing Library and start with `// @vitest-environment jsdom`. CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every PR, and fails PRs during the yearly holiday change freeze (3am ET on the Tuesday before Thanksgiving to 3am ET on 2 January) unless they carry the `freeze-exception` label; see docs/OPERATIONS.md. Route tests mostly answer queries with canned rows; `tests/real-sql.test.ts` runs the routes' real SQL against `sql/setup.sql` in PGlite, an in-memory Postgres (`tests/helpers/pglite-sql.ts`), so a schema or query change should keep it passing. There is no linter configured beyond TypeScript strict mode.
 
 ## Environment and Data Safety
 

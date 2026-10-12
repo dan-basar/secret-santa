@@ -101,7 +101,7 @@ npm test           # Vitest tests in tests/
 npm run build && npm start  # production
 ```
 
-CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every pull request.
+CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every pull request, and blocks pull requests during the yearly holiday change freeze (see [docs/OPERATIONS.md](docs/OPERATIONS.md#holiday-change-freeze)).
 
 ---
 
@@ -179,6 +179,7 @@ sql/
   setup.sql           # Database schema (Postgres)
   migrations/         # One-off schema changes for existing databases, each with a _check.sql
 docs/                 # Architecture and operations notes
+scripts/              # freeze.ts: the yearly holiday change freeze dates, checked by CI (check-freeze.ts)
 ```
 
 ---
