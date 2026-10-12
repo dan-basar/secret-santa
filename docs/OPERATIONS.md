@@ -72,3 +72,7 @@ GET <site>/secret-santa/api/health
 ```
 
 `200 { "ok": true }` means the function runs and Neon answered `SELECT 1`; `503 { "ok": false, "error": "Database unreachable." }` means the database is unreachable. It isn't rate limited and can be pointed at by an uptime monitor. If it fails, check Neon's status page and the project in the Neon console (a project over its Free plan limits also fails here), then the Vercel function logs.
+
+## Dependency updates
+
+Dependabot (`.github/dependabot.yml`) opens pull requests weekly: one grouped PR for npm minor and patch updates, separate PRs for npm major updates, and PRs for the GitHub Actions used by CI (which are pinned to commit SHAs, with the version in a comment). Each runs CI like any other PR; read the changelog for majors, then squash-merge.
