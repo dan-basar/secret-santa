@@ -21,14 +21,13 @@ export default function DeleteSection({ onDelete, loading, error }: Props) {
       <h2 className={styles.sectionTitle}>Delete this draw</h2>
       <p className={styles.sectionDesc}>
         Permanently removes access to this draw. The shareable link and every personal link will stop working.
-        This cannot be undone.
       </p>
       {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
 
       <div className={styles.confirmRow}>
         <label className={styles.confirmCheck}>
           <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
-          I understand this draw and all its links will stop working.
+          This cannot be undone.
         </label>
         <div>
           <button className="btn btn-danger" onClick={handleDelete} disabled={!confirmed || loading}>
