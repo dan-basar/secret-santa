@@ -211,7 +211,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (!claim.cap_ok) {
       return res.status(503).json({
-        error: `The daily email limit of ${DAILY_EMAIL_LIMIT} has been reached. Please try again tomorrow.`,
+        error: 'The site\'s email limit is reached for now. Try again in a few hours, or send each person their personal link below.',
       });
     }
 

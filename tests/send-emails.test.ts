@@ -347,7 +347,7 @@ describe('POST /api/send-emails', () => {
     db.emailLog = [{ hour: Date.UTC(2026, 11, 1, 23), sent: 493 }];
     const blocked = await post(firstSend);
     expect(blocked.statusCode).toBe(503);
-    expect(blocked.body.error).toBe('The daily email limit of 495 has been reached. Please try again tomorrow.');
+    expect(blocked.body.error).toBe('The site\'s email limit is reached for now. Try again in a few hours, or send each person their personal link below.');
     expect(sendMatchEmail).not.toHaveBeenCalled();
     expect(db.draw.emails_sent_at).toBeNull();
 

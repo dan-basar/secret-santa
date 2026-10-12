@@ -94,8 +94,17 @@ describe('home form', () => {
     for (const email of ['ann@example', '<ann@example.com>']) {
       type('Person 1 email', email);
       fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
-      expect(screen.getByText('Please make sure every participant has a valid name and email address.')).toBeTruthy();
+      expect(screen.getByText('Please fix: Person 1 (Ann) has an email address that isn\'t valid.')).toBeTruthy();
     }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('names each row that needs fixing', () => {
+    render(<Home />);
+    type('Person 1 email', 'ann@example');
+    type('Person 2 email', 'bob@example.com');
+    fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
+    expect(screen.getByText('Please fix: Person 1 needs a name; Person 2 needs a name.')).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

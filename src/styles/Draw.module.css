@@ -81,8 +81,7 @@
   gap: 20px;
 }
 
-.organizerLink {
-  padding: 16px 20px;
+.organizerLinkRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -90,23 +89,8 @@
 }
 
 /* Keep "Copy link" on one line beside a long link */
-.organizerLink > button {
+.organizerLinkRow > button {
   flex-shrink: 0;
-}
-
-.organizerLinkLabel {
-  font-size: 14px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink);
-  margin-bottom: 4px;
-}
-
-.organizerLinkNote {
-  font-size: 14px;
-  color: var(--ink);
-  margin-bottom: 6px;
 }
 
 .shareUrl {
@@ -395,7 +379,7 @@
     flex-direction: column;
   }
 
-  .organizerLink,
+  .organizerLinkRow,
   .personalLinkRow {
     flex-direction: column;
     align-items: flex-start;

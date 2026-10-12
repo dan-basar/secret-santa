@@ -106,16 +106,23 @@ export default function Home() {
     setError('');
 
     const filled = participants.filter((p) => p.name.trim() || p.email.trim());
-    const invalid = filled.filter(
-      (p) => !p.name.trim() || (p.email.trim() && !isValidEmail(p.email.trim()))
-    );
 
     if (filled.length < 2) {
       setError('Please enter at least 2 participants.');
       return;
     }
-    if (invalid.length > 0) {
-      setError('Please make sure every participant has a valid name and email address.');
+    // Named by the row label on the form ("Person 3"), plus the name when there is one
+    const problems = participants.flatMap((p, i) => {
+      const name = p.name.trim();
+      const email = p.email.trim();
+      if (!name && !email) return [];
+      const row = name ? `Person ${i + 1} (${name})` : `Person ${i + 1}`;
+      if (!name) return [`${row} needs a name`];
+      if (email && !isValidEmail(email)) return [`${row} has an email address that isn't valid`];
+      return [];
+    });
+    if (problems.length > 0) {
+      setError(`Please fix: ${problems.join('; ')}.`);
       return;
     }
     const duplicates = duplicateNames(filled.map((p) => p.name));

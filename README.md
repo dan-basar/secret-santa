@@ -129,7 +129,7 @@ Draw creation returns a random 14-character `adminKey` (letters and digits, [`sr
 
 ### Rate Limiting
 
-[`src/proxy.ts`](src/proxy.ts) limits each IP per hour: 10 for `create-draw`, 5 for `send-emails`, 10 for `delete-draw`, and 60 each for `get-draw` and `reveal`, the lookups behind organizer and personal links; over the limit it returns `429`. Counts live in the Neon `RateLimits` table, so every Vercel instance shares them: one row per SHA-256 hash of IP + route per hour (raw IPs are never stored). Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails, the request is allowed through (fails open). IPs in `RATE_LIMIT_IP_WHITELIST` are never limited.
+[`src/proxy.ts`](src/proxy.ts) limits each IP per hour: 10 for `create-draw`, 5 for `send-emails`, 10 for `delete-draw`, and 60 each for `get-draw` and `reveal`, the lookups behind organizer and personal links; over the limit it returns `429`. Counts live in the Neon `RateLimits` table, so every Vercel instance shares them: one row per HMAC-SHA-256 hash of client + route per hour, keyed with `RATE_LIMIT_HASH_SECRET`, so raw IPs are never stored and the hashes can't be reversed without the secret. A client is an IPv4 address, or an IPv6 /64 block (one household or phone can hold millions of IPv6 addresses). Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails or the secret is missing, the request is allowed through (fails open) and the error is logged. IPs in `RATE_LIMIT_IP_WHITELIST` are never limited.
 
 ---
 
@@ -150,6 +150,7 @@ src/
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
     groups.ts         # Home page form state: groups by id, Edit & Redraw draft
     names.ts          # duplicateNames(): names must differ ignoring case and spaces (form and API)
+    ip-prefix.ts      # rateLimitClient(): IPv4 address, or IPv6 /64, as one rate-limit client
   pages/
     api/
       create-draw.ts  # POST: validate, match, persist in a transaction
@@ -158,7 +159,7 @@ src/
       send-emails.ts  # POST: CAPTCHA + 24-hour cap + per-person claimed send / resend
       delete-draw.ts  # POST: soft-delete
       health.ts       # GET: DB health check
-    _app.tsx          # App wrapper: global styles and icons
+    _app.tsx          # App wrapper: global styles, icons, and the fonts (next/font, self-hosted)
     _document.tsx     # Sets <html lang="en">
     index.tsx         # Home page — participant form
     draw.tsx          # Organizer page (/draw#<adminKey>) — organizer link, matches, personal links, email, admin actions

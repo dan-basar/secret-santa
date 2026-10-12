@@ -19,12 +19,14 @@ function request(path: string, ip = '203.0.113.7') {
 }
 
 beforeEach(() => {
+  vi.stubEnv('RATE_LIMIT_HASH_SECRET', 'test-secret');
   vi.mocked(sql).mockReset();
   vi.mocked(sql).mockResolvedValue([]);
   vi.spyOn(Math, 'random').mockReturnValue(0.5); // no cleanup unless a test asks
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -45,13 +47,41 @@ describe('proxy rate limiting', () => {
     });
   });
 
-  it('stores a SHA-256 hash of the IP and route, never the raw IP', async () => {
+  it('stores a keyed hash of the IP and route, never the raw IP', async () => {
     vi.mocked(sql).mockResolvedValueOnce([{ hits: 1 }]);
     await proxy(request('/api/delete-draw'));
     const params = vi.mocked(sql).mock.calls[0].slice(1);
     expect(params).toHaveLength(1);
     expect(params[0]).toMatch(/^[0-9a-f]{64}$/);
     expect(params[0]).not.toContain('203.0.113.7');
+  });
+
+  it('gives a different bucket under a different secret, so the hash can\'t be rebuilt without it', async () => {
+    vi.mocked(sql).mockResolvedValue([{ hits: 1 }]);
+    await proxy(request('/api/delete-draw'));
+    vi.stubEnv('RATE_LIMIT_HASH_SECRET', 'another-secret');
+    await proxy(request('/api/delete-draw'));
+    const [first, second] = vi.mocked(sql).mock.calls.map(call => call[1]);
+    expect(first).not.toBe(second);
+  });
+
+  it('counts IPv6 addresses in the same /64 together', async () => {
+    vi.mocked(sql).mockResolvedValue([{ hits: 1 }]);
+    await proxy(request('/api/create-draw', '2001:db8:1:2::a'));
+    await proxy(request('/api/create-draw', '2001:db8:1:2:ffff:1:2:3'));
+    await proxy(request('/api/create-draw', '2001:db8:1:9::a'));
+    const [a, b, c] = vi.mocked(sql).mock.calls.map(call => call[1]);
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+  });
+
+  it('fails open, and says why, when the hash secret is missing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('RATE_LIMIT_HASH_SECRET', '');
+    const res = await proxy(request('/api/create-draw'));
+    expect(res.status).toBe(200);
+    expect(sql).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalled();
   });
 
   it('counts each route separately for the same IP', async () => {
