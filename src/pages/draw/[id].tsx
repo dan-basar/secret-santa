@@ -301,7 +301,17 @@ export default function DrawPage() {
               <DeleteSection onDelete={handleDelete} loading={deleteLoading} error={deleteError} />
             </>
           ) : (
-            <ParticipantList participants={draw.participants} />
+            <>
+              {/* An organizer link whose key is wrong or was cut off when copied gets the
+                  shared view, which would read as if the matches had gone */}
+              {adminKey && (
+                <p className="error-msg" role="alert">
+                  This organizer link&rsquo;s key doesn&rsquo;t match this draw, so you&rsquo;re seeing the shared view.
+                  Check you copied the whole link, including everything after <code>#key=</code>.
+                </p>
+              )}
+              <ParticipantList participants={draw.participants} />
+            </>
           )}
         </main>
 
