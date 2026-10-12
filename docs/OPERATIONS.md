@@ -74,4 +74,4 @@ GET <site>/secret-santa/api/health
 
 ## Dependency updates
 
-Dependabot (`.github/dependabot.yml`) opens pull requests weekly: one grouped PR for npm minor and patch updates, separate PRs for npm major updates, and PRs for the GitHub Actions used by CI (which are pinned to commit SHAs, with the version in a comment). Each runs CI like any other PR; read the changelog for majors, then squash-merge.
+Dependabot (`.github/dependabot.yml`) opens pull requests weekly: one grouped PR for npm minor and patch updates, separate PRs for npm major updates (except `@types/node`, which stays on Node 24, and React and its types, whose move to 19 is a deliberate migration), and PRs for the GitHub Actions used by CI (which are pinned to commit SHAs, with the version in a comment). Each runs CI like any other PR; read the changelog for majors, then squash-merge. Closing a Dependabot PR without merging tells it to skip that version.
