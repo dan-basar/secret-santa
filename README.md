@@ -224,3 +224,9 @@ Pull requests are welcome. A few conventions to follow:
 - Always use parameterized SQL queries; never interpolate user input
 - Multi-step writes must use transactions with rollback on error
 - Open PRs against `main`; use descriptive kebab-case branch names
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Dan Basar
