@@ -273,6 +273,10 @@
   color: var(--ink-light);
 }
 
+.inactive {
+  opacity: 0.5;
+}
+
 .organizerFieldError {
   font-size: 12px;
   color: var(--accent);

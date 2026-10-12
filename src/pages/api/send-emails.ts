@@ -43,6 +43,13 @@ interface MatchRow {
   receiver_name: string;
 }
 
+interface ClaimRow {
+  cap_ok: boolean;
+  draw_claimed: boolean;
+  claimed_ids: number[];
+  reserved_hour: Date | null;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse<SendEmailsResponse | SendEmailsError>) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -138,94 +145,94 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (retryFailed && !unsent.length) return res.status(409).json({ error: 'Everyone has already been sent their email.' });
 
-    // Step 1: Reserve room under the email cap BEFORE sending.
+    // Step 1: In one transaction, check the email cap and claim the draw and
+    // each participant BEFORE sending, reserving the cap for whoever was claimed.
     //
-    // Sends are counted in hourly rows, and the cap covers every row that can
-    // hold a send from the last 24 hours (so up to 25 hours, erring on the safe
-    // side), matching Gmail's rolling limit rather than the calendar day. The
-    // advisory lock makes concurrent requests reserve one at a time, so two big
-    // sends can't both pass the check; the INSERT adds this request's count only
-    // when it fits, and returns no row when it doesn't. Whatever ends up not
-    // being sent is given back below; a request that dies keeps its reservation,
-    // since some of those emails may have gone out.
-    const [, reservedRows] = await sql.transaction([
+    // The cap covers every hourly EmailSendLog row that can hold a send from the
+    // last 24 hours (so up to 25 hours, erring on the safe side), matching Gmail's
+    // rolling limit rather than the calendar day. The advisory lock makes
+    // concurrent requests take turns, so two big sends can't both pass the check.
+    //
+    // The claims are atomic UPDATEs: on the first send only one request matches
+    // `emails_sent_at IS NULL` and gets the draw back, so two first sends can't
+    // both save organizer details. Each participant comes back only to the
+    // request that set their email_claimed_at, so two clicks of Send or Resend can
+    // never email anyone twice. A claim older than CLAIM_EXPIRY_MINUTES was left
+    // by a request that died, so it can be taken. Nothing is claimed when the cap
+    // check fails, and on a first send nobody is claimed unless the draw was.
+    //
+    // Failed sends give their reservation back below; a request that dies keeps
+    // its reservation, since some of those emails may have gone out.
+    const [, claimRows] = await sql.transaction([
       sql`SELECT pg_advisory_xact_lock(${EMAIL_CAP_LOCK_ID}::bigint)`,
       sql`
-        INSERT INTO EmailSendLog (hour_start, emails_sent)
-        SELECT date_trunc('hour', now()), ${unsent.length}::int
-        WHERE (
-             SELECT COALESCE(SUM(emailSendLog.emails_sent), 0)
+        WITH cap AS (
+             SELECT COALESCE(SUM(emailSendLog.emails_sent), 0) + ${unsent.length}::int <= ${DAILY_EMAIL_LIMIT}::int as ok
              FROM EmailSendLog as emailSendLog
              WHERE emailSendLog.hour_start > now() - interval '25 hours'
-        ) + ${unsent.length}::int <= ${DAILY_EMAIL_LIMIT}::int
-        ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
-        RETURNING hour_start
+        ), draw_claim AS (
+             UPDATE Draws
+             SET emails_sent_at = now(), organizer_name = ${safeOrganizerName}, organizer_email = ${safeOrganizerEmail}
+             WHERE id = ${id}::uuid
+                  AND emails_sent_at IS NULL
+                  AND NOT ${!!retryFailed}::boolean
+                  AND (SELECT ok FROM cap)
+             RETURNING id
+        ), participant_claim AS (
+             UPDATE Participants
+             SET email_claimed_at = now()
+             WHERE id = ANY(${unsent.map(match => match.giver_id)}::int[])
+                  AND email_sent_at IS NULL
+                  AND (email_claimed_at IS NULL OR email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}))
+                  AND (SELECT ok FROM cap)
+                  AND (${!!retryFailed}::boolean OR EXISTS (SELECT 1 FROM draw_claim))
+             RETURNING id
+        ), reserve AS (
+             INSERT INTO EmailSendLog (hour_start, emails_sent)
+             SELECT date_trunc('hour', now()), COUNT(*)::int
+             FROM participant_claim
+             HAVING COUNT(*) > 0
+             ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
+             RETURNING hour_start
+        )
+        SELECT
+             (SELECT ok FROM cap) as cap_ok
+            ,EXISTS (SELECT 1 FROM draw_claim) as draw_claimed
+            ,ARRAY(SELECT id FROM participant_claim) as claimed_ids
+            ,(SELECT hour_start FROM reserve) as reserved_hour
       `,
-    ]) as [unknown, { hour_start: Date }[]];
+    ]) as [unknown, ClaimRow[]];
+    const claim = claimRows[0];
 
-    if (!reservedRows.length) {
+    if (!claim.cap_ok) {
       return res.status(503).json({
         error: `The daily email limit of ${DAILY_EMAIL_LIMIT} has been reached. Please try again tomorrow.`,
       });
     }
 
-    // Hands back reserved emails that won't be sent. A failure here only leaves
+    if (!retryFailed && !claim.draw_claimed) return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
+
+    const claimedIds = new Set(claim.claimed_ids);
+    const toSend = unsent.filter(match => claimedIds.has(match.giver_id));
+
+    if (retryFailed && !toSend.length) return res.status(409).json({ error: 'These emails are already being sent.' });
+
+    // Hands back reserved emails that weren't sent. A failure here only leaves
     // the cap counting too many for a day, so it never fails the request
-    const reservedHour = reservedRows[0].hour_start;
     const releaseReserved = async (count: number) => {
-      if (count <= 0) return;
+      if (count <= 0 || !claim.reserved_hour) return;
       try {
         await sql`
           UPDATE EmailSendLog
           SET emails_sent = emails_sent - ${count}::int
-          WHERE hour_start = ${reservedHour}::timestamptz
+          WHERE hour_start = ${claim.reserved_hour}::timestamptz
         `;
       } catch (err) {
         console.error(err);
       }
     };
 
-    // Step 2: On the first send, claim the draw BEFORE sending.
-    //
-    // This stops two concurrent first sends from both saving organizer details.
-    // The UPDATE is atomic: only the first request matches `emails_sent_at IS NULL`,
-    // so only it gets a row back from RETURNING. Any other request stops here.
-    if (!retryFailed) {
-      const drawClaimRows = await sql`
-        UPDATE Draws
-        SET emails_sent_at = now(), organizer_name = ${safeOrganizerName}, organizer_email = ${safeOrganizerEmail}
-        WHERE id = ${id}::uuid
-             AND emails_sent_at IS NULL
-        RETURNING id
-      `;
-
-      if (!drawClaimRows.length) {
-        await releaseReserved(unsent.length);
-        return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
-      }
-    }
-
-    // Step 3: Claim each participant BEFORE sending their email.
-    //
-    // The same pattern per person, in one statement: a participant comes back
-    // only to the request that set their email_claimed_at, so two clicks of Send
-    // or Resend can never email anyone twice. A claim older than
-    // CLAIM_EXPIRY_MINUTES was left by a request that died, so it can be taken.
-    const participantClaimRows = await sql`
-      UPDATE Participants
-      SET email_claimed_at = now()
-      WHERE id = ANY(${unsent.map(match => match.giver_id)}::int[])
-           AND email_sent_at IS NULL
-           AND (email_claimed_at IS NULL OR email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}))
-      RETURNING id
-    ` as { id: number }[];
-    const claimedIds = new Set(participantClaimRows.map(row => row.id));
-    const toSend = unsent.filter(match => claimedIds.has(match.giver_id));
-    await releaseReserved(unsent.length - toSend.length);
-
-    if (retryFailed && !toSend.length) return res.status(409).json({ error: 'These emails are already being sent.' });
-
-    // Step 4: Send the emails, recording each one as soon as its own send settles,
+    // Step 2: Send the emails, recording each one as soon as its own send settles,
     // so a request killed mid-batch loses at most the emails still in flight (their
     // claims expire and they show as not delivered). Every email is attempted even
     // if some fail, so partial delivery is possible.
