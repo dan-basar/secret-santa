@@ -125,8 +125,13 @@ input::placeholder {
   border: 1px solid #e8c4bc;
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled) {
   background: var(--accent-light);
+}
+
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .btn-success {

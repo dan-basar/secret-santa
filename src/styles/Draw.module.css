@@ -300,14 +300,23 @@
   gap: 12px;
 }
 
-.confirmText {
-  font-size: 13px;
-  color: var(--accent);
+.confirmCheck {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
 }
 
-.confirmBtns {
-  display: flex;
-  gap: 8px;
+/* Undo the global text-input styles */
+.confirmCheck input {
+  width: auto;
+  padding: 0;
+  margin-top: 3px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .participantList {
@@ -348,8 +357,11 @@
 
 .footer {
   border-top: 1px solid var(--border);
-  padding: 20px 24px;
-  text-align: center;
+  /* Side padding lines the links up with the 860px content column */
+  padding: 20px max(24px, calc((100% - 860px) / 2 + 24px));
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
   font-size: 18px;
 }
 

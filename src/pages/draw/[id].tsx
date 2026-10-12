@@ -279,6 +279,8 @@ export default function DrawPage() {
 
         <footer className={styles.footer}>
           <Link href="/">← Start a new draw</Link>
+          {/* The policy lives on the root site, outside this app's base path */}
+          <a href="/privacy">Privacy policy</a>
         </footer>
       </div>
     </>
