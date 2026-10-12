@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { formFromParticipants } from '@/lib/groups';
 import { siteUrl } from '@/lib/site';
 import { isUuid } from '@/lib/uuid';
-import ShareBar from '@/components/draw/ShareBar';
+import OrganizerLink from '@/components/draw/OrganizerLink';
 import ParticipantList from '@/components/draw/ParticipantList';
 import MatchesTable from '@/components/draw/MatchesTable';
 import PersonalLinks from '@/components/draw/PersonalLinks';
@@ -52,15 +52,6 @@ export default function DrawPage() {
 
   useEffect(() => {
     if (!router.isReady || typeof id !== 'string') return;
-
-    // Admin links from before the fragment carried ?key=. Use it, then swap it
-    // for #key= so the query string isn't kept in the address bar or history
-    const legacyKey = router.query.key;
-    if (typeof legacyKey === 'string' && legacyKey) {
-      setAdminKey(legacyKey);
-      router.replace(`/draw/${id}#key=${encodeURIComponent(legacyKey)}`, undefined, { shallow: true });
-      return;
-    }
 
     setAdminKey(new URLSearchParams(window.location.hash.slice(1)).get('key') ?? '');
   }, [router, id]);
@@ -147,7 +138,7 @@ export default function DrawPage() {
 
   // Built from NEXT_PUBLIC_BASE_URL like the links in the emails, so an organizer
   // who opened the page on another address (vercel.app) still copies the public one
-  const shareableUrl = siteUrl(`/draw/${encodeURIComponent(String(id ?? ''))}`);
+  const organizerUrl = siteUrl(`/draw/${encodeURIComponent(String(id ?? ''))}#key=${encodeURIComponent(adminKey ?? '')}`);
   const personalUrl = (token: string) => siteUrl(`/reveal/${encodeURIComponent(token)}`);
 
   const handleEditAndRedraw = () => {
@@ -187,7 +178,7 @@ export default function DrawPage() {
           <div className={`card ${styles.messageCard}`}>
             <span className={styles.bigIcon}>🚫</span>
             <h1>This draw is no longer available</h1>
-            <p className={styles.muted}>The person who created it has deleted the results.</p>
+            <p className={styles.muted}>The person who created it has deleted the results. If the draw was redone, ask your organizer for the new link.</p>
             <Link href="/" className="btn btn-secondary" style={{ marginTop: 16 }}>
               Start a new draw
             </Link>
@@ -269,10 +260,9 @@ export default function DrawPage() {
         <main className={styles.main}>
           {/* The header already names the app; this gives the page its one top-level heading */}
           <h1 className="visually-hidden">Secret Santa draw results</h1>
-          <ShareBar url={shareableUrl} />
-
           {admin ? (
             <>
+              <OrganizerLink url={organizerUrl} />
               <MatchesTable
                 participants={admin.participants}
                 matches={admin.matches}

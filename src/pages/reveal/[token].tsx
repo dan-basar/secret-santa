@@ -57,7 +57,7 @@ export default function RevealPage() {
 
   if (state === 'deleted' || state === 'not-found' || state === 'incomplete' || state === 'error' || !data) {
     const message = state === 'deleted'
-      ? { icon: '🚫', title: 'This draw is no longer available', text: 'The organizer has deleted this draw.' }
+      ? { icon: '🚫', title: 'This draw is no longer available', text: 'The organizer has deleted this draw. If the draw was redone, ask your organizer for your new link.' }
       : state === 'incomplete'
         ? { icon: '🔗', title: 'This link looks incomplete', text: 'Links sometimes get cut off when they’re pasted into a text or chat. Copy the whole link from your email again, or ask your organizer to resend it.' }
       : state === 'not-found'

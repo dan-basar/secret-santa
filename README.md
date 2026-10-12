@@ -21,9 +21,8 @@ More detail:
 - **Conflict-free matching** — participants in the same group (e.g. families, teams) are never paired together
 - **Up to 50 participants** across up to 20 groups per draw
 - **Private reveal links** — each participant gets a personal link that shows only who they drew, behind a tap-to-reveal
-- **Shareable link** — public view lists participant names only; pairings stay private
 - **Email notifications** — one-click emails to all participants, protected by Cloudflare Turnstile CAPTCHA; anyone whose email failed can be resent to later
-- **Admin access** — the creator gets a private link to see matches (hidden until they ask, so an organizer who is playing isn't spoiled), emails and personal links, send emails, delete the draw, or edit and redraw
+- **Admin access** — the creator gets a private organizer link, shown with a Copy button at the top of their page, to see matches (hidden until they ask, so an organizer who is playing isn't spoiled), emails and personal links, send emails, delete the draw, or edit and redraw
 - **Soft-delete** — draws are hidden, not destroyed
 - **Rate limiting** — per-IP hourly limits on creating, emailing and deleting draws
 
@@ -125,7 +124,7 @@ A cap of 495 emails in any 24 hours, across all draws, is enforced via `EmailSen
 
 ### Admin Access
 
-Draw creation returns a `drawId` and a random `adminKey`. The creator is redirected to `/draw/<id>#key=<adminKey>`. The key sits in the URL fragment, which browsers never send to the server, and the page passes it to `get-draw` in an `X-Admin-Key` header, so it stays out of request logs. Older `?key=` links still work: the page reads the key and rewrites the address to the `#key=` form. Anyone with just the draw ID sees participant names only; if the link has a `#key=` that doesn't match (say it was cut off when copied), the page says so above that names-only view instead of looking as if the matches were gone. The admin key unlocks the matches, email addresses, groups and personal reveal links, plus sending emails, deletion and the edit-and-redraw flow. Pairings are visible only to the organizer and, one at a time, to each person through their own reveal link. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
+Draw creation returns a `drawId` and a random `adminKey`. The creator is redirected to `/draw/<id>#key=<adminKey>`. The key sits in the URL fragment, which browsers never send to the server, and the page passes it to `get-draw` in an `X-Admin-Key` header, so it stays out of request logs. The organizer page shows this link in a box with a Copy button, warning that it shows everyone's matches and is the only way back. The page no longer offers a names-only link to share, though anyone with just the draw ID still sees participant names only; if the link has a `#key=` that doesn't match (say it was cut off when copied), the page says so above that names-only view instead of looking as if the matches were gone. The admin key unlocks the matches, email addresses, groups and personal reveal links, plus sending emails, deletion and the edit-and-redraw flow. Pairings are visible only to the organizer and, one at a time, to each person through their own reveal link. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
 
 ### Rate Limiting
 

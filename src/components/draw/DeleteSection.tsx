@@ -20,7 +20,7 @@ export default function DeleteSection({ onDelete, loading, error }: Props) {
     <section className={`card ${styles.section} ${styles.dangerSection}`}>
       <h2 className={styles.sectionTitle}>Delete this draw</h2>
       <p className={styles.sectionDesc}>
-        Permanently removes access to this draw. The shareable link and every personal link will stop working.
+        Permanently removes access to this draw. Your organizer link and every personal link will stop working.
       </p>
       {error && <p className="error-msg" role="alert" style={{ marginBottom: 12 }}>{error}</p>}
 
