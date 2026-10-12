@@ -232,6 +232,7 @@ export default function DrawPage() {
             <Link href="/" className={styles.homeLink}>
               <Image src={logo} alt="" width={24} height={28} />
               Secret Santa Picker App
+              <Image src={logo} alt="" width={24} height={28} />
             </Link>
             <span className={styles.headerMeta}>Draw created {createdDate}</span>
           </div>
