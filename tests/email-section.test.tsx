@@ -18,7 +18,7 @@ function drawWith(emails: Array<string | null>): GetDrawResponse {
   };
 }
 
-function renderSection(draw: GetDrawResponse) {
+function renderSection(draw: GetDrawResponse, organizerLinkNotice = '') {
   render(
     <EmailSection
       draw={draw}
@@ -29,6 +29,7 @@ function renderSection(draw: GetDrawResponse) {
       onOrganizerEmailChange={() => {}}
       loading={false}
       error=""
+      organizerLinkNotice={organizerLinkNotice}
       turnstileKey={0}
       onTurnstileToken={() => {}}
       hasTurnstileToken={false}
@@ -42,11 +43,12 @@ afterEach(() => {
 });
 
 describe('email section before the first send', () => {
-  it('disables the organizer fields and skips the CAPTCHA when nobody has an email', () => {
+  it('offers to email just the organizer their link when nobody has an email', () => {
     renderSection(drawWith([null, null]));
-    expect((screen.getByLabelText('Organizer Name') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText('Organizer Email') as HTMLInputElement).disabled).toBe(true);
-    expect(screen.queryByTestId('turnstile')).toBeNull();
+    expect((screen.getByLabelText('Organizer Name') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText('Organizer Email') as HTMLInputElement).disabled).toBe(false);
+    expect(screen.getByTestId('turnstile')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '📧 Email me my organizer link' })).toBeTruthy();
   });
 
   it('enables the organizer fields and shows the CAPTCHA when someone has an email', () => {
@@ -54,5 +56,16 @@ describe('email section before the first send', () => {
     expect((screen.getByLabelText('Organizer Name') as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByLabelText('Organizer Email') as HTMLInputElement).disabled).toBe(false);
     expect(screen.getByTestId('turnstile')).toBeTruthy();
+  });
+
+  it('says the organizer gets their link too when there are match emails to send', () => {
+    renderSection(drawWith(['a@example.com', null]));
+    expect(screen.getByText(/You'll get your organizer link by email too/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '📧 Send emails to 1 participant' })).toBeTruthy();
+  });
+
+  it('shows whether the organizer link went out', () => {
+    renderSection(drawWith([null]), '✓ Your organizer link was emailed to pat@example.com.');
+    expect(screen.getByText('✓ Your organizer link was emailed to pat@example.com.')).toBeTruthy();
   });
 });

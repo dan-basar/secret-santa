@@ -13,7 +13,8 @@ vi.mock('@/lib/db', async (importOriginal) => {
 });
 
 const sendMatchEmail = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock('@/lib/email', () => ({ sendMatchEmail }));
+const sendOrganizerLinkEmail = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('@/lib/email', () => ({ sendMatchEmail, sendOrganizerLinkEmail }));
 vi.mock('@/lib/turnstile', () => ({ verifyTurnstile: async () => true }));
 
 import { NextRequest } from 'next/server';
@@ -106,7 +107,25 @@ describe('routes against a real Postgres', () => {
     }
 
     const [log] = await sql`SELECT COALESCE(SUM(emails_sent), 0)::int as sent FROM EmailSendLog`;
-    expect(log.sent).toBeGreaterThanOrEqual(3);
+    expect(log.sent).toBeGreaterThanOrEqual(4);
+    expect(sendOrganizerLinkEmail).toHaveBeenCalledWith('Pat', 'pat@example.com', adminKey);
+  });
+
+  it('emails just the organizer their link when nobody has an email address', async () => {
+    const { adminKey } = await create({ participants: people.map(p => ({ ...p, email: '' })) });
+    const drawId = (await adminView(adminKey)).id;
+    const [before] = await sql`SELECT COALESCE(SUM(emails_sent), 0)::int as sent FROM EmailSendLog`;
+    sendOrganizerLinkEmail.mockClear();
+
+    const send = await call(sendEmails, { method: 'POST', body: { id: drawId, key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't' } });
+    expect(send.statusCode).toBe(200);
+    expect((send.body as SendEmailsResponse).organizerLinkSent).toBe(true);
+    expect(sendOrganizerLinkEmail).toHaveBeenCalledWith('Pat', 'pat@example.com', adminKey);
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+    expect((await adminView(adminKey)).emails_sent_at).toBeNull();
+
+    const [after] = await sql`SELECT COALESCE(SUM(emails_sent), 0)::int as sent FROM EmailSendLog`;
+    expect(after.sent - before.sent).toBe(1);
   });
 
   it('resends only to someone whose email failed', async () => {

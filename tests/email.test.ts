@@ -6,7 +6,7 @@ vi.mock('nodemailer', () => ({
   default: { createTransport },
 }));
 
-const { sendMatchEmail, revealUrl } = await import('@/lib/email');
+const { sendMatchEmail, sendOrganizerLinkEmail, revealUrl, organizerUrl } = await import('@/lib/email');
 // The transporter is created once at import; copy the calls now, because Vitest clears mocks before each test
 const transportCalls = createTransport.mock.calls.slice();
 
@@ -108,5 +108,32 @@ describe('revealUrl', () => {
       vi.stubEnv('NEXT_PUBLIC_BASE_URL', base);
       expect(revealUrl(TOKEN)).toBe(expected);
     }
+  });
+});
+
+describe('sendOrganizerLinkEmail', () => {
+  const KEY = 'aB3dE5gH7jK9mN';
+
+  it('links to the organizer page with the key in the fragment', async () => {
+    await sendOrganizerLinkEmail('Pat', 'pat@example.com', KEY);
+
+    const { to, html, text, subject } = sendMail.mock.calls[0][0];
+    const link = `https://baseworkshop.app/secret-santa/draw#${KEY}`;
+
+    expect(organizerUrl(KEY)).toBe(link);
+    expect(to).toBe('pat@example.com');
+    expect(subject).toBe('🎁 Your Secret Santa organizer link');
+    expect(html).toContain(`href="${link}"`);
+    expect(text).toContain(link);
+    expect(text).toContain('Keep it private');
+  });
+
+  it('escapes the organizer name in the HTML body', async () => {
+    await sendOrganizerLinkEmail('<b>Pat</b>', 'pat@example.com', KEY);
+
+    const { html, text } = sendMail.mock.calls[0][0];
+    expect(html).toContain('Hi &lt;b&gt;Pat&lt;/b&gt;,');
+    expect(html).not.toContain('<b>');
+    expect(text).toContain('Hi <b>Pat</b>,');
   });
 });

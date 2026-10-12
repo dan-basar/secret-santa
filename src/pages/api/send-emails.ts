@@ -1,13 +1,16 @@
-// POST /api/send-emails: emails each participant their match and reveal link.
-// Admin key required. Body: { id, key, turnstileToken } plus organizerName and
-// organizerEmail on the first send, or retryFailed: true to resend only the failed.
-// Returns 200 { success, totalSent, totalFailed, failedNames }; 400 bad input;
+// POST /api/send-emails: emails each participant their match and reveal link,
+// and on the first send emails the organizer their organizer link. With no
+// participant emails, the first send emails just the organizer their link, and
+// can be repeated. Admin key required. Body: { id, key, turnstileToken } plus
+// organizerName and organizerEmail on the first send, or retryFailed: true to
+// resend only the failed.
+// Returns 200 { success, totalSent, totalFailed, failedNames, organizerLinkSent }; 400 bad input;
 // 403 wrong key or CAPTCHA; 409 already sent / nothing to resend; 410 deleted;
 // 503 daily cap hit (495 emails in any 24 hours, across all draws).
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
-import { sendMatchEmail } from '@/lib/email';
+import { sendMatchEmail, sendOrganizerLinkEmail } from '@/lib/email';
 import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
@@ -41,6 +44,11 @@ interface MatchRow {
   giver_email_sent_at: Date | null;
   giver_reveal_token: string;
   receiver_name: string;
+}
+
+interface ReserveRow {
+  cap_ok: boolean;
+  reserved_hour: Date | null;
 }
 
 interface ClaimRow {
@@ -150,6 +158,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (retryFailed && !unsent.length) return res.status(409).json({ error: 'Everyone has already been sent their email.' });
 
+    // Nobody has an email address: email just the organizer their link. The
+    // draw isn't marked as sent, so Edit & Redraw stays open and this can be
+    // repeated (the hourly rate limit and the cap still apply)
+    if (!retryFailed && !unsent.length) {
+      const [, reserveRows] = await sql.transaction([
+        sql`SELECT pg_advisory_xact_lock(${EMAIL_CAP_LOCK_ID}::bigint)`,
+        sql`
+          WITH organizer_cap AS (
+               SELECT COALESCE(SUM(emailSendLog.emails_sent), 0) + 1 <= ${DAILY_EMAIL_LIMIT}::int as ok
+               FROM EmailSendLog as emailSendLog
+               WHERE emailSendLog.hour_start > now() - interval '25 hours'
+          ), reserve AS (
+               INSERT INTO EmailSendLog (hour_start, emails_sent)
+               SELECT date_trunc('hour', now()), 1
+               WHERE (SELECT ok FROM organizer_cap)
+               ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
+               RETURNING hour_start
+          )
+          SELECT
+               (SELECT ok FROM organizer_cap) as cap_ok
+              ,(SELECT hour_start FROM reserve) as reserved_hour
+        `,
+      ]) as [unknown, ReserveRow[]];
+      const reserved = reserveRows[0];
+
+      if (!reserved.cap_ok) return res.status(503).json({ error: 'The site\'s email limit is reached for now. Try again in a few hours, or copy your organizer link above.' });
+
+      try {
+        await sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, draw.admin_key);
+      } catch (err) {
+        console.error(err);
+        try {
+          await sql`
+            UPDATE EmailSendLog
+            SET emails_sent = emails_sent - ${1}::int
+            WHERE hour_start = ${reserved.reserved_hour}::timestamptz
+          `;
+        } catch (releaseErr) {
+          console.error(releaseErr);
+        }
+        return res.status(500).json({ error: 'Failed to send your organizer link. Please try again.' });
+      }
+
+      return res.status(200).json({ success: true, totalSent: 0, totalFailed: 0, failedNames: [], organizerLinkSent: true });
+    }
+
+    // The first send also emails the organizer their link: one more email
+    const organizerCount = retryFailed ? 0 : 1;
+
     // Step 1: In one transaction, check the email cap and claim the draw and
     // each participant BEFORE sending, reserving the cap for whoever was claimed.
     //
@@ -172,7 +229,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       sql`SELECT pg_advisory_xact_lock(${EMAIL_CAP_LOCK_ID}::bigint)`,
       sql`
         WITH cap AS (
-             SELECT COALESCE(SUM(emailSendLog.emails_sent), 0) + ${unsent.length}::int <= ${DAILY_EMAIL_LIMIT}::int as ok
+             SELECT COALESCE(SUM(emailSendLog.emails_sent), 0) + ${unsent.length + organizerCount}::int <= ${DAILY_EMAIL_LIMIT}::int as ok
              FROM EmailSendLog as emailSendLog
              WHERE emailSendLog.hour_start > now() - interval '25 hours'
         ), draw_claim AS (
@@ -194,7 +251,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
              RETURNING id
         ), reserve AS (
              INSERT INTO EmailSendLog (hour_start, emails_sent)
-             SELECT date_trunc('hour', now()), COUNT(*)::int
+             SELECT date_trunc('hour', now()), COUNT(*)::int + ${organizerCount}::int
              FROM participant_claim
              HAVING COUNT(*) > 0
              ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
@@ -237,6 +294,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       }
     };
 
+    // On the first send the organizer's link goes out alongside; if it fails the
+    // send still stands, and the page tells the organizer to copy their link
+    const organizerLinkSending = retryFailed
+      ? Promise.resolve(false)
+      : sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, draw.admin_key).then(() => true, (err) => {
+        console.error(err);
+        return false;
+      });
+
     // Step 2: Send the emails, recording each one as soon as its own send settles,
     // so a request killed mid-batch loses at most the emails still in flight (their
     // claims expire and they show as not delivered). Every email is attempted even
@@ -274,10 +340,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       return ok;
     }));
 
+    const organizerLinkSent = await organizerLinkSending;
+
     const failed = toSend.filter((_, i) => !delivered[i]);
     const failedNames: string[] = failed.map(match => match.giver_name);
     const actualSent = toSend.length - failed.length;
-    await releaseReserved(failed.length);
+    await releaseReserved(failed.length + (organizerCount && !organizerLinkSent ? 1 : 0));
 
     const allFailed = failed.length > 0 && failed.length === toSend.length;
 
@@ -298,6 +366,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       totalSent: actualSent,
       totalFailed: failed.length,
       failedNames,
+      organizerLinkSent,
     });
   } catch (err) {
     console.error(err);
