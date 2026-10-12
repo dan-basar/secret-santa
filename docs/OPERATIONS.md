@@ -74,7 +74,15 @@ A rollback does not touch the database. If the bad deploy came with a migration,
 GET <site>/secret-santa/api/health
 ```
 
-`200 { "ok": true }` means the function runs and Neon answered `SELECT 1`; `503 { "ok": false, "error": "Database unreachable." }` means the database is unreachable. It isn't rate limited and can be pointed at by an uptime monitor. If it fails, check Neon's status page and the project in the Neon console (a project over its Free plan limits also fails here), then the Vercel function logs.
+`200 { "ok": true }` means the function runs and Neon answered `SELECT 1`; `503 { "ok": false, "error": "Database unreachable." }` means the database is unreachable. It isn't rate limited and can be pointed at by an uptime monitor. If it fails, check Neon's status page and the project in the Neon console (it's on Neon's Launch plan, billed by use, so it isn't cut off at a monthly allowance), then the Vercel function logs.
+
+## Holiday change freeze
+
+Every year, from **3am Eastern on the Tuesday before US Thanksgiving until 3am Eastern on 2 January**, nothing ships to production unless the owner approves it, so organizers aren't hit by a risky change in the busiest weeks. The Tuesday falls between 20 and 26 November (Thanksgiving is the fourth Thursday); both edges are 08:00 UTC, since Eastern is on standard time throughout. Land features and dependency majors before the freeze starts or after it ends.
+
+CI enforces it: during the freeze the **Holiday change freeze** step of the `check` job fails every pull request, so none can merge (the ruleset requires `check`). To let an approved fix through, add the **`freeze-exception`** label to its PR; that re-runs CI and the step passes. Create the label once under the repository's Issues → Labels if it doesn't exist yet. The dates come from `scripts/freeze.ts` (tested in `tests/freeze.test.ts`); `npx tsx scripts/check-freeze.ts` prints whether a freeze is on and when the next one starts.
+
+Two gaps to know about: a PR whose CI went green before the freeze started keeps its green check, so don't merge older PRs during the freeze without re-running CI; and a manual redeploy or promotion in the Vercel dashboard bypasses CI entirely. Dependabot keeps opening PRs during the freeze; they fail the step and wait until January.
 
 ## Dependency updates
 
