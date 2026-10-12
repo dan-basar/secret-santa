@@ -1,5 +1,6 @@
 import type { AdminDraw } from '@/types/api';
 import { isValidEmail } from '@/lib/email-address';
+import { hasLink } from '@/lib/sanitize';
 import TurnstileWidget from '@/components/draw/TurnstileWidget';
 import styles from '@/styles/Draw.module.css';
 
@@ -58,7 +59,9 @@ function FirstSendForm({
   const name = organizerName.trim();
   const email = organizerEmail.trim();
   const emailInvalid = email.length > 0 && !isValidEmail(email);
-  const canSend = hasEmails && name.length > 0 && email.length > 0 && !emailInvalid;
+  // The name goes into every email, so the server refuses a web address in it
+  const nameHasLink = hasLink(name);
+  const canSend = hasEmails && name.length > 0 && !nameHasLink && email.length > 0 && !emailInvalid;
 
   return (
     <>
@@ -81,6 +84,9 @@ function FirstSendForm({
             placeholder="Your name"
             disabled={loading || !hasEmails}
           />
+          {nameHasLink && (
+            <p className={styles.organizerFieldError}>Your name can&rsquo;t contain a web address.</p>
+          )}
         </div>
         <div className={styles.organizerField}>
           <label className={styles.organizerLabel} htmlFor="organizerEmail">Organizer Email</label>

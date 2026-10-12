@@ -1,6 +1,15 @@
 // Shared with src/lib/site.ts (BASE_PATH), so the prefix is defined once
 const { basePath } = require('./src/lib/base-path.json');
 
+// No plugins, no <base> tag that could redirect relative URLs, no framing. There
+// is no script-src: Turbopack builds put a small inline bootstrap script in every
+// page, which a script-src without 'unsafe-inline' would block
+const contentSecurityPolicy = [
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -9,7 +18,7 @@ const nextConfig = {
   basePath,
   async headers() {
     const security = [
-      { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+      { key: 'Content-Security-Policy', value: contentSecurityPolicy },
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

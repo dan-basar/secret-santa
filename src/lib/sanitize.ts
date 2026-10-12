@@ -10,6 +10,16 @@ export function hasHtmlTag(input: string): boolean {
 }
 
 /**
+ * True if the string contains something a mail app would turn into a link:
+ * "://", "www." or a domain-shaped word such as "bit.ly" (letters, a dot, then
+ * two or more letters). Names go into the match emails, so they must not carry
+ * links. Initials such as "J. R. Smith" or "J.R." still pass.
+ */
+export function hasLink(input: string): boolean {
+  return /:\/\/|www\.|[a-z0-9-]+\.[a-z]{2,}/i.test(input);
+}
+
+/**
  * Escape plain text for placement in HTML element content or a quoted attribute.
  */
 export function escapeHtml(input: string): string {

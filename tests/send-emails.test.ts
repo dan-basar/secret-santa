@@ -452,6 +452,13 @@ describe('POST /api/send-emails', () => {
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
   });
 
+  it('rejects an organizer name with a web address before checking the CAPTCHA', async () => {
+    const res = await post({ ...firstSend, organizerName: 'Pat at https://evil.example' });
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Organizer name cannot contain a web address.' });
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+  });
+
   it('rejects a retryFailed that is not a boolean', async () => {
     const res = await post({ ...resend, retryFailed: 'yes' });
     expect(res.statusCode).toBe(400);

@@ -8,7 +8,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'crypto';
 import { sql, isUuid } from '@/lib/db';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
-import { hasHtmlTag } from '@/lib/sanitize';
+import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
 
@@ -80,6 +80,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   if (participants.some(p => hasHtmlTag(p.name) || hasHtmlTag(p.group))) {
     return res.status(400).json({ error: 'Names and groups cannot contain HTML.' });
+  }
+
+  // Names are written into the match emails, where a mail app would make a
+  // web address clickable. Groups never appear in an email
+  const linkNames = participants.filter(p => hasLink(p.name));
+  if (linkNames.length > 0) {
+    return res.status(400).json({
+      error: `Names cannot contain web addresses: ${linkNames.map(p => p.name).join(', ')}`,
+    });
   }
 
   const invalidEmails = participants.filter(p => p.email && !isValidEmail(p.email));

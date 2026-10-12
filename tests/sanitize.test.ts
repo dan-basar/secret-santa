@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { escapeHtml, hasHtmlTag } from '@/lib/sanitize';
+import { escapeHtml, hasHtmlTag, hasLink } from '@/lib/sanitize';
 
 describe('escapeHtml', () => {
   it('escapes the five HTML-significant characters', () => {
@@ -40,5 +40,30 @@ describe('hasHtmlTag', () => {
     '"Nick"',
   ])('allows %s', input => {
     expect(hasHtmlTag(input)).toBe(false);
+  });
+});
+
+describe('hasLink', () => {
+  it.each([
+    'https://evil.example',
+    'Claim your prize at bit.ly/abc',
+    'www.example',
+    'Visit EXAMPLE.COM',
+    'ftp://files',
+    'gift-cards.shop',
+  ])('rejects %s', input => {
+    expect(hasLink(input)).toBe(true);
+  });
+
+  it.each([
+    'Tom & Jerry',
+    'J. R. Smith',
+    'J.R.',
+    'Mary-Kate O\'Brien',
+    'Zoë',
+    'Dr. Who',
+    'Sam (3rd floor)',
+  ])('allows %s', input => {
+    expect(hasLink(input)).toBe(false);
   });
 });
