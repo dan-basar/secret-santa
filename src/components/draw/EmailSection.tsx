@@ -82,6 +82,7 @@ function FirstSendForm({
             value={organizerName}
             onChange={(e) => onOrganizerNameChange(e.target.value)}
             placeholder="Your name"
+            maxLength={200}
             disabled={loading || !hasEmails}
           />
           {nameHasLink && (
@@ -97,6 +98,7 @@ function FirstSendForm({
             value={organizerEmail}
             onChange={(e) => onOrganizerEmailChange(e.target.value)}
             placeholder="your@email.com"
+            maxLength={320}
             disabled={loading || !hasEmails}
           />
           {emailInvalid && (

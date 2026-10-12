@@ -3,6 +3,8 @@
 interface TurnstileRenderOptions {
   sitekey: string;
   callback?: (token: string) => void;
+  // Return true to mark the error handled
+  'error-callback'?: (errorCode: string) => boolean | void;
 }
 
 interface Turnstile {

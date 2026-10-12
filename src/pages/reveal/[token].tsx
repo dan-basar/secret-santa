@@ -5,9 +5,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import styles from '@/styles/Reveal.module.css';
 import logo from '../../../public/logo.svg';
+import { isUuid } from '@/lib/uuid';
 import type { RevealResponse } from '@/types/api';
 
-type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
+type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'error';
 
 export default function RevealPage() {
   const router = useRouter();
@@ -20,6 +21,8 @@ export default function RevealPage() {
 
   useEffect(() => {
     if (typeof token !== 'string') return;
+    // Not even shaped like a token: almost always a link cut short when pasted
+    if (!isUuid(token)) { setState('incomplete'); return; }
     fetch(`${router.basePath}/api/reveal?token=${encodeURIComponent(token)}`)
       .then(async (res) => {
         if (res.status === 410) { setState('deleted'); return; }
@@ -52,9 +55,11 @@ export default function RevealPage() {
     );
   }
 
-  if (state === 'deleted' || state === 'not-found' || state === 'error' || !data) {
+  if (state === 'deleted' || state === 'not-found' || state === 'incomplete' || state === 'error' || !data) {
     const message = state === 'deleted'
       ? { icon: '🚫', title: 'This draw is no longer available', text: 'The organizer has deleted this draw.' }
+      : state === 'incomplete'
+        ? { icon: '🔗', title: 'This link looks incomplete', text: 'Links sometimes get cut off when they’re pasted into a text or chat. Copy the whole link from your email again, or ask your organizer to resend it.' }
       : state === 'not-found'
         ? { icon: '🔍', title: 'Link not found', text: 'This personal link is not valid. Check the link in your email, or ask your organizer for it again.' }
         : { icon: '⚠️', title: 'Something went wrong', text: 'Please refresh the page to try again.' };

@@ -148,7 +148,8 @@ export default function Home() {
       });
 
       if (!res.ok) {
-        const data: ApiError = await res.json();
+        // An error from Vercel itself (a timeout, say) has no JSON body
+        const data: Partial<ApiError> = await res.json().catch(() => ({}));
         // The earlier draw is gone, so there is nothing left to replace;
         // submitting again creates a plain new draw
         if (res.status === 410) setReplaces(null);

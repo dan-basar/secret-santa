@@ -75,6 +75,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     safeOrganizerName = organizerName.trim();
     safeOrganizerEmail = organizerEmail.trim().toLowerCase();
 
+    // Column sizes in sql/setup.sql; longer values would fail in the database
+    if (safeOrganizerName.length > 200) return res.status(400).json({ error: 'Organizer name must be 200 characters or fewer.' });
+    if (safeOrganizerEmail.length > 320) return res.status(400).json({ error: 'Organizer email must be 320 characters or fewer.' });
     if (hasHtmlTag(safeOrganizerName)) return res.status(400).json({ error: 'Organizer name cannot contain HTML.' });
     // It is written into every email, where a mail app would make a web address clickable
     if (hasLink(safeOrganizerName)) return res.status(400).json({ error: 'Organizer name cannot contain a web address.' });

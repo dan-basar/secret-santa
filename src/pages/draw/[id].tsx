@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { formFromParticipants } from '@/lib/groups';
 import { siteUrl } from '@/lib/site';
+import { isUuid } from '@/lib/uuid';
 import ShareBar from '@/components/draw/ShareBar';
 import ParticipantList from '@/components/draw/ParticipantList';
 import MatchesTable from '@/components/draw/MatchesTable';
@@ -15,7 +16,11 @@ import styles from '@/styles/Draw.module.css';
 import logo from '../../../public/logo.svg';
 import type { ApiError, GetDrawResponse, SendEmailsError } from '@/types/api';
 
-type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'error';
+type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'error';
+
+// When a send's outcome is unknown: the people it reached show as sent once the
+// page reloads, and anyone still being emailed shows as sent within minutes
+const MAYBE_SENT = 'We couldn\'t confirm the send. Some emails may still be going out, so check the list below again in a few minutes before resending.';
 
 export default function DrawPage() {
   const router = useRouter();
@@ -63,6 +68,8 @@ export default function DrawPage() {
   const loadDraw = useCallback(async () => {
     // Wait for the key, so the organizer's page doesn't load the shared view first
     if (typeof id !== 'string' || adminKey === null) return;
+    // Not even shaped like a draw id: almost always a link cut short when pasted
+    if (!isUuid(id)) { setState('incomplete'); return; }
     try {
       const res = await fetch(`${router.basePath}/api/get-draw?id=${id}`, {
         headers: adminKey ? { 'X-Admin-Key': adminKey } : {},
@@ -97,14 +104,17 @@ export default function DrawPage() {
           : { id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(), turnstileToken }),
       });
       if (!res.ok) {
-        const data: SendEmailsError = await res.json();
-        setEmailError(data.error || 'Failed to send emails.');
+        // A send that runs past the function's time limit gets a 504 from Vercel
+        // whose body isn't JSON, while emails may still have gone out
+        const data: Partial<SendEmailsError> = await res.json().catch(() => ({}));
+        setEmailError(data.error || (res.status >= 500 ? MAYBE_SENT : 'Failed to send emails.'));
       }
-      // Reload for each person's sent status rather than guessing it from the response
-      await loadDraw();
     } catch {
-      setEmailError('Network error. Please try again.');
+      // The request may have reached the server before the connection dropped
+      setEmailError(MAYBE_SENT);
     } finally {
+      // Always reload for each person's sent status rather than guessing it
+      await loadDraw();
       // A Turnstile token works once, so get a fresh one for any next attempt
       setTurnstileKey((k) => k + 1);
       setTurnstileToken(null);
@@ -178,6 +188,24 @@ export default function DrawPage() {
             <span className={styles.bigIcon}>🚫</span>
             <h1>This draw is no longer available</h1>
             <p className={styles.muted}>The person who created it has deleted the results.</p>
+            <Link href="/" className="btn btn-secondary" style={{ marginTop: 16 }}>
+              Start a new draw
+            </Link>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (state === 'incomplete') {
+    return (
+      <>
+        <Head><title>Link incomplete — Secret Santa Picker</title></Head>
+        <div className={styles.centered}>
+          <div className={`card ${styles.messageCard}`}>
+            <span className={styles.bigIcon}>🔗</span>
+            <h1>This link looks incomplete</h1>
+            <p className={styles.muted}>Links sometimes get cut off when they&rsquo;re pasted into a text or chat. Copy the whole link again.</p>
             <Link href="/" className="btn btn-secondary" style={{ marginTop: 16 }}>
               Start a new draw
             </Link>

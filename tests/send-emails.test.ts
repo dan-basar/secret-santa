@@ -459,6 +459,17 @@ describe('POST /api/send-emails', () => {
     expect(sendMatchEmail).not.toHaveBeenCalled();
   });
 
+  it('rejects an organizer name or email too long for its column with 400', async () => {
+    const longName = await post({ ...firstSend, organizerName: 'P'.repeat(201) });
+    expect(longName.statusCode).toBe(400);
+    expect(longName.body).toEqual({ error: 'Organizer name must be 200 characters or fewer.' });
+
+    const longEmail = await post({ ...firstSend, organizerEmail: `${'p'.repeat(310)}@example.com` });
+    expect(longEmail.statusCode).toBe(400);
+    expect(longEmail.body).toEqual({ error: 'Organizer email must be 320 characters or fewer.' });
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+  });
+
   it('rejects a retryFailed that is not a boolean', async () => {
     const res = await post({ ...resend, retryFailed: 'yes' });
     expect(res.statusCode).toBe(400);
