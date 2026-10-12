@@ -66,6 +66,7 @@ beforeEach(() => {
   sendMatchEmail.mockReset();
   sendMatchEmail.mockImplementation(async () => {});
   vi.stubEnv('NEXT_PUBLIC_BASE_URL', 'https://baseworkshop.app');
+  vi.stubEnv('RATE_LIMIT_HASH_SECRET', 'test-secret');
 });
 
 describe('routes against a real Postgres', () => {
