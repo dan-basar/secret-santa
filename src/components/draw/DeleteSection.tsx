@@ -27,7 +27,7 @@ export default function DeleteSection({ onDelete, loading, error }: Props) {
       <div className={styles.confirmRow}>
         <label className={styles.confirmCheck}>
           <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
-          This cannot be undone.
+          I understand this cannot be undone.
         </label>
         <div>
           <button className="btn btn-danger" onClick={handleDelete} disabled={!confirmed || loading}>
