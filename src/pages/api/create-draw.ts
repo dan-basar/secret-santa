@@ -1,8 +1,9 @@
 // POST /api/create-draw: validates 2-50 participants ({ name, email?, group? }),
-// draws matches and saves the draw, participants and matches in one transaction.
-// Anyone may call it. Returns 200 { drawId, adminKey }; 400 bad input; 422 no
-// valid matching. Edit & Redraw also sends replacesDrawId + replacesKey (that
-// draw's admin key): 403 wrong key, 409 emails already sent, 410 already deleted.
+// whose names must differ ignoring case and spaces, draws matches and saves the
+// draw, participants and matches in one transaction. Anyone may call it. Returns
+// 200 { drawId, adminKey }; 400 bad input; 422 no valid matching. Edit & Redraw
+// also sends replacesDrawId + replacesKey (that draw's admin key): 403 wrong key,
+// 409 emails already sent, 410 already deleted.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'crypto';
@@ -10,6 +11,7 @@ import { sql, isUuid } from '@/lib/db';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
 import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
+import { duplicateNames, duplicateNamesMessage } from '@/lib/names';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
 
 // The draw being replaced by Edit & Redraw
@@ -68,6 +70,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   const emptyNames = participants.filter(p => !p.name);
   if (emptyNames.length > 0) {
     return res.status(400).json({ error: 'All participants must have a name.' });
+  }
+
+  const duplicates = duplicateNames(participants.map(p => p.name));
+  if (duplicates.length > 0) {
+    return res.status(400).json({ error: duplicateNamesMessage(duplicates) });
   }
 
   // Column sizes in sql/setup.sql; longer values would fail in the database

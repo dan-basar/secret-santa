@@ -22,7 +22,7 @@ export default function DeleteSection({ onDelete, loading, error }: Props) {
       <p className={styles.sectionDesc}>
         Permanently removes access to this draw. The shareable link and every personal link will stop working.
       </p>
-      {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
+      {error && <p className="error-msg" role="alert" style={{ marginBottom: 12 }}>{error}</p>}
 
       <div className={styles.confirmRow}>
         <label className={styles.confirmCheck}>

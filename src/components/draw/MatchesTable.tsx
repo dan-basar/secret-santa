@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { AdminMatch, AdminParticipant } from '@/types/api';
 import styles from '@/styles/Draw.module.css';
 
@@ -9,8 +10,10 @@ interface Props {
 }
 
 // The organizer's matches table, with Edit & Redraw until emails are sent. Group columns appear only
-// when someone is in a group
+// when someone is in a group. The table starts hidden: an organizer who is also taking part would
+// otherwise see who has them as soon as the page opens
 export default function MatchesTable({ participants, matches, emailsSent, onEditAndRedraw }: Props) {
+  const [shown, setShown] = useState(false);
   const pairs = matches.map((m) => ({ giver: participants[m.giver], receiver: participants[m.receiver] }));
   const hasGroups = participants.some((p) => p.group_name);
 
@@ -41,67 +44,78 @@ export default function MatchesTable({ participants, matches, emailsSent, onEdit
         Only you can see this table; the shareable link shows names only.
       </p>
 
-      <table className={styles.table}>
-        <colgroup>
-          {hasGroups ? (
-            <>
-              <col />
-              <col style={{ width: '1px' }} />
-              <col style={{ width: '100%' }} />
-              <col />
-              <col style={{ width: '1px' }} />
-            </>
-          ) : (
-            <>
-              <col style={{ width: '50%' }} />
-              <col style={{ width: '50%' }} />
-            </>
-          )}
-        </colgroup>
-        <thead>
-          <tr>
-            <th>SECRET SANTA</th>
-            {hasGroups && <th className={styles.groupCol}>Group</th>}
-            {hasGroups && <th className={styles.spacerCol} />}
-            <th>→ Gifting to</th>
-            {hasGroups && <th className={styles.groupCol}>Group</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((m, i) => (
-            <tr key={i}>
-              <td className={styles.nameCell}>
-                <span className={styles.name}>{m.giver.name}</span>
-                {hasGroups && (
-                  <span className={styles.mobileGroup}>
-                    <GroupBadge group={m.giver.group_name} labelled />
-                  </span>
-                )}
-                {m.giver.email && <span className={styles.email}>{m.giver.email}</span>}
-              </td>
-              {hasGroups && (
-                <td className={styles.groupCol}>
-                  <GroupBadge group={m.giver.group_name} />
-                </td>
-              )}
-              {hasGroups && <td className={styles.spacerCol} />}
-              <td className={styles.nameCell}>
-                <span className={styles.name}>{m.receiver.name}</span>
-                {hasGroups && (
-                  <span className={styles.mobileGroup}>
-                    <GroupBadge group={m.receiver.group_name} labelled />
-                  </span>
-                )}
-              </td>
-              {hasGroups && (
-                <td className={styles.groupCol}>
-                  <GroupBadge group={m.receiver.group_name} />
-                </td>
-              )}
+      {!shown ? (
+        <div className={styles.matchesHidden}>
+          <button className="btn btn-primary" onClick={() => setShown(true)}>
+            Show all matches
+          </button>
+          <p className={styles.sectionDesc}>
+            Taking part yourself? Skip this and open your own personal link below, so the surprise stays a surprise.
+          </p>
+        </div>
+      ) : (
+        <table className={styles.table}>
+          <colgroup>
+            {hasGroups ? (
+              <>
+                <col />
+                <col style={{ width: '1px' }} />
+                <col style={{ width: '100%' }} />
+                <col />
+                <col style={{ width: '1px' }} />
+              </>
+            ) : (
+              <>
+                <col style={{ width: '50%' }} />
+                <col style={{ width: '50%' }} />
+              </>
+            )}
+          </colgroup>
+          <thead>
+            <tr>
+              <th>SECRET SANTA</th>
+              {hasGroups && <th className={styles.groupCol}>Group</th>}
+              {hasGroups && <th className={styles.spacerCol} />}
+              <th>→ Gifting to</th>
+              {hasGroups && <th className={styles.groupCol}>Group</th>}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {sorted.map((m, i) => (
+              <tr key={i}>
+                <td className={styles.nameCell}>
+                  <span className={styles.name}>{m.giver.name}</span>
+                  {hasGroups && (
+                    <span className={styles.mobileGroup}>
+                      <GroupBadge group={m.giver.group_name} labelled />
+                    </span>
+                  )}
+                  {m.giver.email && <span className={styles.email}>{m.giver.email}</span>}
+                </td>
+                {hasGroups && (
+                  <td className={styles.groupCol}>
+                    <GroupBadge group={m.giver.group_name} />
+                  </td>
+                )}
+                {hasGroups && <td className={styles.spacerCol} />}
+                <td className={styles.nameCell}>
+                  <span className={styles.name}>{m.receiver.name}</span>
+                  {hasGroups && (
+                    <span className={styles.mobileGroup}>
+                      <GroupBadge group={m.receiver.group_name} labelled />
+                    </span>
+                  )}
+                </td>
+                {hasGroups && (
+                  <td className={styles.groupCol}>
+                    <GroupBadge group={m.receiver.group_name} />
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </section>
   );
 }

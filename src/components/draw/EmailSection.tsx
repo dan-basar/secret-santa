@@ -111,7 +111,7 @@ function FirstSendForm({
           Preview: <em>&ldquo;This secret message was sent by <strong>{name}</strong>.&rdquo;</em>
         </p>
       )}
-      {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
+      {error && <p className="error-msg" role="alert" style={{ marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
         {hasEmails && <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />}
         <button
@@ -140,7 +140,7 @@ function ResendForm({ draw, unsentCount, loading, error, turnstileKey, onTurnsti
         Resend tries again for just {unsentCount === 1 ? 'this person' : 'these people'}. Everyone else already has their email.
         You can also send {unsentCount === 1 ? 'them their' : 'each of them their'} personal link below.
       </p>
-      {error && <p className="error-msg" style={{ marginBottom: 12 }}>{error}</p>}
+      {error && <p className="error-msg" role="alert" style={{ marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
         <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />
         <button

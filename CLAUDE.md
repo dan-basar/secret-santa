@@ -81,7 +81,7 @@ Core business logic — handle carefully:
 2. **Validation**: if any single group contains >50% of participants, matching is mathematically impossible — reject early
 3. **Phase 1**: uniform Fisher-Yates shuffle with up to 1000 attempts
 4. **Phase 2**: `assignWithFeasibilityCheck()`, a randomized assignment with a Hall's-condition feasibility check if Phase 1 fails; never dead-ends, so large-group draws stay fast
-5. No self-matches, no same-group matches; participants are compared by position, so duplicate names are fine
+5. No self-matches, no same-group matches; participants are compared by position. Names must still differ ignoring case and spaces (`src/lib/names.ts`, checked by the home form and create-draw), so each person can tell who they drew
 
 ## Branch Strategy
 
