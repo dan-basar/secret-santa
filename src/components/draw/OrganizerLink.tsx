@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import styles from '@/styles/Draw.module.css';
 
-// The draw's shareable link (names only), with a copy button
-export default function ShareBar({ url }: { url: string }) {
+// The organizer's own link, with a copy button. Until it's shown here it lives
+// only in the address bar, where it's easy to lose or to share by mistake
+export default function OrganizerLink({ url }: { url: string }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   // Clipboard access can be refused (permissions, an insecure page), so say
@@ -18,9 +19,12 @@ export default function ShareBar({ url }: { url: string }) {
   };
 
   return (
-    <div className={`card ${styles.shareBar}`}>
+    <div className={`card ${styles.organizerLink}`}>
       <div>
-        <p className={styles.shareLabel}>Shareable link</p>
+        <p className={styles.organizerLinkLabel}>Your organizer link</p>
+        <p className={styles.organizerLinkNote}>
+          Keep it private: it shows everyone&rsquo;s matches! It&rsquo;s the only way back to this page.
+        </p>
         <p className={styles.shareUrl}>{url}</p>
       </div>
       <button className="btn btn-secondary" onClick={handleCopy}>

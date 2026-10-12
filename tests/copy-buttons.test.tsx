@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import ShareBar from '@/components/draw/ShareBar';
+import OrganizerLink from '@/components/draw/OrganizerLink';
 import PersonalLinks from '@/components/draw/PersonalLinks';
 
 function stubClipboard(writeText: () => Promise<void>) {
@@ -18,17 +18,17 @@ afterEach(() => {
 });
 
 describe('copy buttons', () => {
-  it('says Copied once the share link is on the clipboard', async () => {
+  it('says Copied once the organizer link is on the clipboard', async () => {
     stubClipboard(async () => {});
-    render(<ShareBar url="https://example.com/secret-santa/draw/1" />);
+    render(<OrganizerLink url="https://example.com/secret-santa/draw/1#key=k" />);
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
     expect(await screen.findByRole('button', { name: '✓ Copied' })).toBeTruthy();
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/secret-santa/draw/1');
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/secret-santa/draw/1#key=k');
   });
 
-  it('says Copy failed when the clipboard refuses the share link', async () => {
+  it('says Copy failed when the clipboard refuses the organizer link', async () => {
     stubClipboard(async () => { throw new DOMException('Denied', 'NotAllowedError'); });
-    render(<ShareBar url="https://example.com/secret-santa/draw/1" />);
+    render(<OrganizerLink url="https://example.com/secret-santa/draw/1#key=k" />);
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeTruthy();
     expect(screen.queryByText('✓ Copied')).toBeNull();

@@ -41,7 +41,7 @@ export default function MatchesTable({ participants, matches, emailsSent, onEdit
       </div>
       <p className={styles.sectionDesc}>
         {matches.length} participant{matches.length !== 1 ? 's' : ''} — each person will give a gift to the person listed beside them.
-        Only you can see this table; the shareable link shows names only.
+        Only you can see this table.
       </p>
 
       {!shown ? (
