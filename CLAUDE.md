@@ -85,9 +85,8 @@ Core business logic — handle carefully:
 
 ## Branch Strategy
 
-- `main` — production branch; only merged via pull requests
-- Feature branches: descriptive kebab-case names (e.g., `titan/add-feature-XYZ`)
-- **AI-created branches must be prefixed with `titan/`**, not `claude/` (e.g., `titan/add-feature-XYZ`)
+- `main` — production branch; it changes only through pull requests, merged with **Squash and merge**
+- Work on a short-lived feature branch with a descriptive kebab-case name (e.g. `feature/add-xyz`)
 - Current development branch for Claude agents: see task instructions
 
 ## Deployment Cautions
