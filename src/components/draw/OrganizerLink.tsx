@@ -19,17 +19,17 @@ export default function OrganizerLink({ url }: { url: string }) {
   };
 
   return (
-    <div className={`card ${styles.organizerLink}`}>
-      <div>
-        <p className={styles.organizerLinkLabel}>Your organizer link</p>
-        <p className={styles.organizerLinkNote}>
-          Keep it private: it shows everyone&rsquo;s matches! It&rsquo;s the only way back to this page.
-        </p>
-        <p className={styles.shareUrl}>{url}</p>
+    <section className={`card ${styles.section}`}>
+      <h2 className={styles.sectionTitle}>Your organizer link</h2>
+      <p className={styles.sectionDesc}>
+        Keep it private: it shows everyone&rsquo;s matches! It&rsquo;s the only way back to this page.
+      </p>
+      <div className={styles.organizerLinkRow}>
+        <span className={styles.shareUrl}>{url}</span>
+        <button className="btn btn-secondary" onClick={handleCopy}>
+          {copyState === 'copied' ? '✓ Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy link'}
+        </button>
       </div>
-      <button className="btn btn-secondary" onClick={handleCopy}>
-        {copyState === 'copied' ? '✓ Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy link'}
-      </button>
-    </div>
+    </section>
   );
 }
