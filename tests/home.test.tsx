@@ -12,7 +12,7 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   router.push.mockReset();
   fetchMock.mockReset();
-  fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ drawId: 'draw-1', adminKey: 'key-1' }) });
+  fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ adminKey: 'key-1' }) });
   vi.stubGlobal('fetch', fetchMock);
 });
 
@@ -60,7 +60,7 @@ describe('home form', () => {
     expect(annGroup.selectedOptions[0].text).toBe('Joneses');
 
     fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
-    await vi.waitFor(() => expect(router.push).toHaveBeenCalledWith('/draw/draw-1#key=key-1'));
+    await vi.waitFor(() => expect(router.push).toHaveBeenCalledWith('/draw#key-1'));
     expect(fetchMock.mock.calls[0][0]).toBe('/secret-santa/api/create-draw');
     expect(sentParticipants()).toEqual([
       { name: 'Ann', email: '', group: 'Joneses' },

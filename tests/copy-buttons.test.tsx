@@ -20,15 +20,15 @@ afterEach(() => {
 describe('copy buttons', () => {
   it('says Copied once the organizer link is on the clipboard', async () => {
     stubClipboard(async () => {});
-    render(<OrganizerLink url="https://example.com/secret-santa/draw/1#key=k" />);
+    render(<OrganizerLink url="https://example.com/secret-santa/draw#Ab3dEf6hIj9kLm" />);
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
     expect(await screen.findByRole('button', { name: '✓ Copied' })).toBeTruthy();
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/secret-santa/draw/1#key=k');
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/secret-santa/draw#Ab3dEf6hIj9kLm');
   });
 
   it('says Copy failed when the clipboard refuses the organizer link', async () => {
     stubClipboard(async () => { throw new DOMException('Denied', 'NotAllowedError'); });
-    render(<OrganizerLink url="https://example.com/secret-santa/draw/1#key=k" />);
+    render(<OrganizerLink url="https://example.com/secret-santa/draw#Ab3dEf6hIj9kLm" />);
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeTruthy();
     expect(screen.queryByText('✓ Copied')).toBeNull();

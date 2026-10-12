@@ -1,11 +1,11 @@
-import type { AdminDraw } from '@/types/api';
+import type { GetDrawResponse } from '@/types/api';
 import { isValidEmail } from '@/lib/email-address';
 import { hasLink } from '@/lib/sanitize';
 import TurnstileWidget from '@/components/draw/TurnstileWidget';
 import styles from '@/styles/Draw.module.css';
 
 interface Props {
-  draw: AdminDraw;
+  draw: GetDrawResponse;
   // People with an email address who haven't been sent one
   unsentCount: number;
   organizerName: string;

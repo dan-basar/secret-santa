@@ -26,7 +26,7 @@ import sendEmails from '@/pages/api/send-emails';
 import reveal from '@/pages/api/reveal';
 import deleteDraw from '@/pages/api/delete-draw';
 import health from '@/pages/api/health';
-import type { AdminDraw, CreateDrawResponse, RevealResponse, SendEmailsResponse } from '@/types/api';
+import type { GetDrawResponse, CreateDrawResponse, RevealResponse, SendEmailsResponse } from '@/types/api';
 
 interface Result { statusCode: number; body: unknown }
 
@@ -56,10 +56,10 @@ async function create(body: Record<string, unknown> = {}) {
   return res.body as CreateDrawResponse;
 }
 
-async function adminView(drawId: string, adminKey: string) {
-  const res = await call(getDraw, { method: 'GET', query: { id: drawId }, headers: { 'x-admin-key': adminKey } });
+async function adminView(adminKey: string) {
+  const res = await call(getDraw, { method: 'GET', headers: { 'x-admin-key': adminKey } });
   expect(res.statusCode).toBe(200);
-  return res.body as AdminDraw;
+  return res.body as GetDrawResponse;
 }
 
 beforeEach(() => {
@@ -71,8 +71,11 @@ beforeEach(() => {
 
 describe('routes against a real Postgres', () => {
   it('creates a draw, shows it, sends it once and reveals each match', async () => {
-    const { drawId, adminKey } = await create();
-    const draw = await adminView(drawId, adminKey);
+    const { adminKey } = await create();
+    expect(adminKey).toMatch(/^[0-9A-Za-z]{14}$/);
+    const draw = await adminView(adminKey);
+    const drawId = draw.id;
+    expect(draw.participants.every(p => /^[0-9A-Za-z]{8}$/.test(p.reveal_token))).toBe(true);
     expect(draw.participants.map(p => p.name)).toEqual(['Alex', 'Sam', 'Jo', 'Kim']);
     expect(draw.matches).toHaveLength(4);
     for (const m of draw.matches) {
@@ -80,10 +83,6 @@ describe('routes against a real Postgres', () => {
       const groups = [draw.participants[m.giver].group_name, draw.participants[m.receiver].group_name];
       expect(groups[0]!.trim().toLowerCase()).not.toBe(groups[1]!.trim().toLowerCase());
     }
-
-    const shared = await call(getDraw, { method: 'GET', query: { id: drawId } });
-    expect(shared.statusCode).toBe(200);
-    expect(shared.body).not.toHaveProperty('matches');
 
     const send = await call(sendEmails, { method: 'POST', body: { id: drawId, key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't' } });
     expect(send.statusCode).toBe(200);
@@ -93,7 +92,7 @@ describe('routes against a real Postgres', () => {
     const again = await call(sendEmails, { method: 'POST', body: { id: drawId, key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't' } });
     expect(again.statusCode).toBe(409);
 
-    const after = await adminView(drawId, adminKey);
+    const after = await adminView(adminKey);
     expect(after.emails_sent_at).not.toBeNull();
     expect(after.participants.filter(p => p.email_sent_at).map(p => p.name)).toEqual(['Alex', 'Sam', 'Kim']);
 
@@ -111,7 +110,8 @@ describe('routes against a real Postgres', () => {
   });
 
   it('resends only to someone whose email failed', async () => {
-    const { drawId, adminKey } = await create();
+    const { adminKey } = await create();
+    const drawId = (await adminView(adminKey)).id;
     sendMatchEmail.mockImplementation(async (...args: unknown[]) => {
       if (args[1] === 'kim@example.com') throw new Error('SMTP down');
     });
@@ -122,37 +122,55 @@ describe('routes against a real Postgres', () => {
     const retry = await call(sendEmails, { method: 'POST', body: { id: drawId, key: adminKey, retryFailed: true, turnstileToken: 't' } });
     expect(retry.statusCode).toBe(200);
     expect(sendMatchEmail.mock.calls.map(c => (c as unknown[])[1])).toEqual(['kim@example.com']);
-    expect((await adminView(drawId, adminKey)).participants.every(p => !p.email || p.email_sent_at)).toBe(true);
+    expect((await adminView(adminKey)).participants.every(p => !p.email || p.email_sent_at)).toBe(true);
   });
 
   it('redraws by replacing the old draw, then refuses to replace it twice', async () => {
     const old = await create();
-    const fresh = await create({ replacesDrawId: old.drawId, replacesKey: old.adminKey });
-    expect(fresh.drawId).not.toBe(old.drawId);
-    const oldView = await call(getDraw, { method: 'GET', query: { id: old.drawId }, headers: { 'x-admin-key': old.adminKey } });
+    const oldId = (await adminView(old.adminKey)).id;
+    const fresh = await create({ replacesDrawId: oldId, replacesKey: old.adminKey });
+    expect(fresh.adminKey).not.toBe(old.adminKey);
+    const oldView = await call(getDraw, { method: 'GET', headers: { 'x-admin-key': old.adminKey } });
     expect(oldView.statusCode).toBe(410);
 
-    const twice = await call(createDraw, { method: 'POST', body: { participants: people, replacesDrawId: old.drawId, replacesKey: old.adminKey } });
+    const twice = await call(createDraw, { method: 'POST', body: { participants: people, replacesDrawId: oldId, replacesKey: old.adminKey } });
     expect(twice.statusCode).toBe(410);
   });
 
   it('soft-deletes a draw, so its links answer 410', async () => {
-    const { drawId, adminKey } = await create();
-    const token = (await adminView(drawId, adminKey)).participants[0].reveal_token;
+    const { adminKey } = await create();
+    const draw = await adminView(adminKey);
+    const drawId = draw.id;
+    const token = draw.participants[0].reveal_token;
 
     expect((await call(deleteDraw, { method: 'POST', body: { id: drawId, key: 'wrong' } })).statusCode).toBe(403);
     expect((await call(deleteDraw, { method: 'POST', body: { id: drawId, key: adminKey } })).statusCode).toBe(200);
 
-    expect((await call(getDraw, { method: 'GET', query: { id: drawId } })).statusCode).toBe(410);
+    expect((await call(getDraw, { method: 'GET', headers: { 'x-admin-key': adminKey } })).statusCode).toBe(410);
     expect((await call(reveal, { method: 'GET', query: { token } })).statusCode).toBe(410);
     const [row] = await sql`SELECT deleted_at FROM Draws WHERE id = ${drawId}::uuid`;
     expect(row.deleted_at).toBeInstanceOf(Date);
   });
 
-  it('answers 404 for ids that are well formed but unknown', async () => {
-    const unknown = '00000000-0000-4000-8000-000000000000';
-    expect((await call(getDraw, { method: 'GET', query: { id: unknown } })).statusCode).toBe(404);
-    expect((await call(reveal, { method: 'GET', query: { token: unknown } })).statusCode).toBe(404);
+  it('answers 404 for keys and tokens that are well formed but unknown', async () => {
+    expect((await call(getDraw, { method: 'GET', headers: { 'x-admin-key': '00000000000000' } })).statusCode).toBe(404);
+    expect((await call(reveal, { method: 'GET', query: { token: '00000000' } })).statusCode).toBe(404);
+  });
+
+  it('draws fresh tokens when a new one repeats one already saved', async () => {
+    const { adminKey } = await create();
+    const taken = (await adminView(adminKey)).participants[0].reveal_token;
+    // The first attempt reuses a saved personal link token; the retry gets fresh ones
+    const tokens = await import('@/lib/tokens');
+    const newToken = vi.spyOn(tokens, 'newToken');
+    newToken.mockImplementationOnce(() => 'Ab3dEf6hIj9kLm').mockImplementationOnce(() => taken);
+    const second = await create();
+    expect(second.adminKey).not.toBe('Ab3dEf6hIj9kLm');
+    const tokensNow = (await adminView(second.adminKey)).participants.map(p => p.reveal_token);
+    expect(tokensNow).not.toContain(taken);
+    // A key and 4 tokens for the refused attempt, then again for the retry
+    expect(newToken).toHaveBeenCalledTimes(10);
+    newToken.mockRestore();
   });
 
   it('reports the database healthy', async () => {

@@ -5,10 +5,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import styles from '@/styles/Reveal.module.css';
 import logo from '../../../public/logo.svg';
-import { isUuid } from '@/lib/uuid';
+import { isRevealToken, isCutShort, REVEAL_TOKEN_LENGTH } from '@/lib/tokens';
 import type { RevealResponse } from '@/types/api';
 
-type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'error';
+type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'busy' | 'error';
 
 export default function RevealPage() {
   const router = useRouter();
@@ -21,12 +21,14 @@ export default function RevealPage() {
 
   useEffect(() => {
     if (typeof token !== 'string') return;
-    // Not even shaped like a token: almost always a link cut short when pasted
-    if (!isUuid(token)) { setState('incomplete'); return; }
+    // Too short: almost always a link cut short when pasted
+    if (isCutShort(token, REVEAL_TOKEN_LENGTH)) { setState('incomplete'); return; }
+    if (!isRevealToken(token)) { setState('not-found'); return; }
     fetch(`${router.basePath}/api/reveal?token=${encodeURIComponent(token)}`)
       .then(async (res) => {
         if (res.status === 410) { setState('deleted'); return; }
         if (res.status === 404) { setState('not-found'); return; }
+        if (res.status === 429) { setState('busy'); return; }
         if (!res.ok) { setState('error'); return; }
         setData(await res.json());
         setState('loaded');
@@ -55,11 +57,13 @@ export default function RevealPage() {
     );
   }
 
-  if (state === 'deleted' || state === 'not-found' || state === 'incomplete' || state === 'error' || !data) {
+  if (state !== 'loaded' || !data) {
     const message = state === 'deleted'
       ? { icon: '🚫', title: 'This draw is no longer available', text: 'The organizer has deleted this draw. If the draw was redone, ask your organizer for your new link.' }
       : state === 'incomplete'
         ? { icon: '🔗', title: 'This link looks incomplete', text: 'Links sometimes get cut off when they’re pasted into a text or chat. Copy the whole link from your email again, or ask your organizer to resend it.' }
+      : state === 'busy'
+        ? { icon: '⏳', title: 'Too many tries', text: 'This network has opened a lot of links in the last hour. Try again in an hour.' }
       : state === 'not-found'
         ? { icon: '🔍', title: 'Link not found', text: 'This personal link is not valid. Check the link in your email, or ask your organizer for it again.' }
         : { icon: '⚠️', title: 'Something went wrong', text: 'Please refresh the page to try again.' };

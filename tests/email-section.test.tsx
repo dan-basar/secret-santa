@@ -1,25 +1,24 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import type { AdminDraw } from '@/types/api';
+import type { GetDrawResponse } from '@/types/api';
 
 // Stands in for the Cloudflare widget, so a test can see whether it was rendered
 vi.mock('@/components/draw/TurnstileWidget', () => ({ default: () => <div data-testid="turnstile" /> }));
 
 import EmailSection from '@/components/draw/EmailSection';
 
-function drawWith(emails: Array<string | null>): AdminDraw {
+function drawWith(emails: Array<string | null>): GetDrawResponse {
   return {
     id: 'draw-1',
     created_at: '2026-12-01T00:00:00.000Z',
     emails_sent_at: null,
-    isAdmin: true,
     participants: emails.map((email, i) => ({ name: `P${i}`, email, group_name: null, reveal_token: `token-${i}`, email_sent_at: null })),
     matches: [],
   };
 }
 
-function renderSection(draw: AdminDraw) {
+function renderSection(draw: GetDrawResponse) {
   render(
     <EmailSection
       draw={draw}

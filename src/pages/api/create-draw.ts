@@ -1,13 +1,15 @@
 // POST /api/create-draw: validates 2-50 participants ({ name, email?, group? }),
 // whose names must differ ignoring case and spaces, draws matches and saves the
 // draw, participants and matches in one transaction. Anyone may call it. Returns
-// 200 { drawId, adminKey }; 400 bad input; 422 no valid matching. Edit & Redraw
+// 200 { adminKey }, the secret in the organizer's /draw#<adminKey> link; 400 bad
+// input; 422 no valid matching. Edit & Redraw
 // also sends replacesDrawId + replacesKey (that draw's admin key): 403 wrong key,
 // 409 emails already sent, 410 already deleted.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'crypto';
 import { sql, isUuid } from '@/lib/db';
+import { newToken, ADMIN_KEY_LENGTH, REVEAL_TOKEN_LENGTH } from '@/lib/tokens';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
 import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
@@ -141,7 +143,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   }
 
   const drawId = randomUUID();
-  const adminKey = randomUUID();
 
   // Positions are 1-based to match WITH ORDINALITY below. Matches reference
   // participants by position rather than name, so two people with the same
@@ -150,9 +151,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   const giverPositions = receivers.map((_, i) => i + 1);
   const receiverPositions = receivers.map(ri => ri + 1);
 
-  try {
-    // One HTTPS round trip; Neon runs the statements in a single transaction
-    // and rolls back all of them if any fails
+  // Short tokens can, very rarely, repeat one already in the database. The
+  // unique constraints then refuse the insert and roll everything back, so
+  // draw fresh tokens and try again
+  for (let attempt = 1; ; attempt++) {
+    const adminKey = newToken(ADMIN_KEY_LENGTH);
+    const revealCodes = participants.map(() => newToken(REVEAL_TOKEN_LENGTH));
+    try {
+      await saveDraw(adminKey, revealCodes);
+      return res.status(200).json({ adminKey });
+    } catch (err) {
+      if ((err as { code?: string }).code === '22012') { // division_by_zero from the replace guard
+        return res.status(409).json({ error: 'Your earlier draw changed while you were editing. Open it again and try again.' });
+      }
+      if ((err as { code?: string }).code === '23505' && attempt < 3) continue; // unique_violation
+      console.error(err);
+      return res.status(500).json({ error: 'Database error. Please try again.' });
+    }
+  }
+
+  // One HTTPS round trip; Neon runs the statements in a single transaction
+  // and rolls back all of them if any fails
+  async function saveDraw(adminKey: string, revealCodes: string[]) {
     await sql.transaction([
       // If the old draw was deleted or emailed since the check above, no row is
       // updated and 1 / count(*) divides by zero, which rolls everything back
@@ -173,14 +193,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         VALUES (${drawId}::uuid, ${adminKey})
       `,
       sql`
-        INSERT INTO Participants (draw_id, position, name, email, group_name)
+        INSERT INTO Participants (draw_id, position, name, email, group_name, reveal_code)
         SELECT
              ${drawId}::uuid
             ,input.position
             ,input.name
             ,input.email
             ,input.group_name
-        FROM unnest(${participants.map(p => p.name)}::varchar[], ${participants.map(p => p.email || null)}::varchar[], ${participants.map(p => p.group || null)}::varchar[]) WITH ORDINALITY as input(name, email, group_name, position)
+            ,input.reveal_code
+        FROM unnest(${participants.map(p => p.name)}::varchar[], ${participants.map(p => p.email || null)}::varchar[], ${participants.map(p => p.group || null)}::varchar[], ${revealCodes}::varchar[]) WITH ORDINALITY as input(name, email, group_name, reveal_code, position)
       `,
       sql`
         INSERT INTO Matches (draw_id, giver_participant_id, receiver_participant_id)
@@ -195,13 +216,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                        AND receivers.position = pairs.receiver_position
       `,
     ]);
-    return res.status(200).json({ drawId, adminKey });
-  } catch (err) {
-    if ((err as { code?: string }).code === '22012') { // division_by_zero from the replace guard
-      return res.status(409).json({ error: 'Your earlier draw changed while you were editing. Open it again and try again.' });
-    }
-    console.error(err);
-    return res.status(500).json({ error: 'Database error. Please try again.' });
   }
 }
 

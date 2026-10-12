@@ -109,8 +109,16 @@ describe('proxy rate limiting', () => {
     expect(vi.mocked(sql).mock.calls[1][0].join('')).toContain('DELETE FROM RateLimits');
   });
 
+  it('limits the lookups behind organizer and personal links, which keeps guessing slow', async () => {
+    for (const path of ['/api/get-draw', '/api/reveal']) {
+      vi.mocked(sql).mockResolvedValueOnce([{ hits: 61 }]);
+      const res = await proxy(request(path));
+      expect(res.status).toBe(429);
+    }
+  });
+
   it('does not touch the database for unlimited routes', async () => {
-    const res = await proxy(request('/api/get-draw'));
+    const res = await proxy(request('/api/health'));
     expect(res.status).toBe(200);
     expect(vi.mocked(sql)).not.toHaveBeenCalled();
   });

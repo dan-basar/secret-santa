@@ -26,9 +26,9 @@ describe('base path', () => {
 });
 
 describe('next.config.js headers', () => {
-  it('sends noindex on every draw and reveal page', async () => {
+  it('sends noindex on the organizer page and every reveal page', async () => {
     const rules = await nextConfig.headers!();
-    for (const source of ['/draw/:path*', '/reveal/:path*']) {
+    for (const source of ['/draw', '/reveal/:path*']) {
       const rule = rules.find((r: { source: string }) => r.source === source);
       expect(rule?.headers).toContainEqual({ key: 'X-Robots-Tag', value: 'noindex, nofollow' });
     }

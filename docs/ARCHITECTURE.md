@@ -2,17 +2,18 @@
 
 A short tour for someone new to the code. Setup and the API table are in the [README](../README.md); day-to-day operations are in [OPERATIONS.md](OPERATIONS.md).
 
-## Three secrets, three levels of access
+## Two secrets, two levels of access
 
-There are no accounts. Access comes from three random UUIDs, each carried in a link:
+There are no accounts. Access comes from two random secrets of letters and digits ([`src/lib/tokens.ts`](../src/lib/tokens.ts)), each carried in a link:
 
 | Secret | Link | Unlocks |
 |---|---|---|
-| **Draw ID** | `/draw/<id>` (no longer offered for sharing) | Participant names only |
-| **Admin key** | `/draw/<id>#key=<adminKey>` (the organizer's link) | Everything about the draw: matches, email addresses, groups, every personal reveal link, per-person email status; sending and resending emails, Edit & Redraw, deleting |
-| **Reveal token** | `/reveal/<token>` (one per participant) | That one person's own match, the draw date and, once emails are sent, the organizer's name. Nothing about anyone else |
+| **Admin key** (14 characters) | `/draw#<adminKey>` (the organizer's link) | Everything about the draw: matches, email addresses, groups, every personal reveal link, per-person email status; sending and resending emails, Edit & Redraw, deleting |
+| **Reveal token** (8 characters) | `/reveal/<token>` (one per participant) | That one person's own match, the draw date and, once emails are sent, the organizer's name. Nothing about anyone else |
 
-The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It travels in the URL fragment, which browsers never send to the server; the draw page reads it there and sends it to `get-draw` in an `X-Admin-Key` header (and in the JSON body to `send-emails` and `delete-draw`), so it never appears in a query string or request log. The organizer page shows the link in a box with a Copy button, marked private; it is never shown to anyone else, so losing it means losing admin access. Older `?key=` links are no longer accepted. Every draw has one (`admin_key` is `NOT NULL`).
+The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It travels in the URL fragment, which browsers never send to the server; the draw page reads it there and sends it to `get-draw` in an `X-Admin-Key` header (and in the JSON body to `send-emails` and `delete-draw`), so it never appears in a query string or request log. `get-draw` finds the draw by the key alone, so the draw's own uuid never appears in a link. The organizer page shows the link in a box with a Copy button, marked private; it is never shown to anyone else, so losing it means losing admin access. Every draw has one (`admin_key` is `NOT NULL` and `UNIQUE`).
+
+The secrets are short so links fit in a text: the organizer link is about 61 characters and a personal link about 57. 14 characters from 62 are about 83 random bits and 8 about 48; what keeps guessing out of reach is the per-IP limit of 60 lookups an hour on `get-draw` and `reveal` (`src/proxy.ts`). Personal links get the shorter secret because each shows only one match. Links from before migration 008 (UUIDs, `/draw/<id>#key=…`, `?key=`) no longer open anything.
 
 ## Draw lifecycle
 
@@ -40,7 +41,7 @@ Browser
 Vercel (region cle1)
   │
   ├─ src/proxy.ts ── runs on /api/* only
-  │     create-draw, send-emails, delete-draw: per-IP hourly limit,
+  │     create-draw, send-emails, delete-draw, get-draw, reveal: per-IP hourly limit,
   │     counted in the RateLimits table → 429 when over; fails open on DB error
   │
   ├─ src/pages/api/<route>.ts ── validate input → query → JSON response
@@ -50,14 +51,14 @@ Vercel (region cle1)
         to Neon Postgres (AWS US East 2); multi-step writes use sql.transaction()
 ```
 
-Pages (`index.tsx`, `draw/[id].tsx`, `reveal/[token].tsx`) are client-rendered React; they call the API routes with `fetch`.
+Pages (`index.tsx`, `draw.tsx`, `reveal/[token].tsx`) are client-rendered React; they call the API routes with `fetch`.
 
 ## Tables
 
 ```
 Draws (id uuid)
   │ 1
-  ├──< Participants (draw_id, position 1..n, reveal_token, email_sent_at, email_claimed_at)
+  ├──< Participants (draw_id, position 1..n, reveal_code, email_sent_at, email_claimed_at)
   │         ▲ giver_participant_id     ▲ receiver_participant_id
   └──< Matches (draw_id) ──────────────┘
 
