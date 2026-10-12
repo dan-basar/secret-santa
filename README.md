@@ -38,7 +38,7 @@ More detail:
 | Email | Nodemailer + Gmail SMTP |
 | CAPTCHA | Cloudflare Turnstile |
 | Deployment | Vercel |
-| Tests | Vitest, React Testing Library |
+| Tests | Vitest, React Testing Library, PGlite (in-memory Postgres) |
 
 ---
 
@@ -168,6 +168,7 @@ src/
     api.ts            # JSON response types, shared by the API routes and the pages
     turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
 tests/                # Vitest tests: lib, every API route, and the home form (React Testing Library, jsdom)
+  real-sql.test.ts    # The routes' real SQL against sql/setup.sql in PGlite
 public/               # Logo, favicons, app icons and link-preview image
 sql/
   setup.sql           # Database schema (Postgres)
