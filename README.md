@@ -2,6 +2,10 @@
 
 # Secret Santa Picker
 
+[![CI](https://github.com/dan-basar/secret-santa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dan-basar/secret-santa/actions/workflows/ci.yml?query=branch%3Amain)
+
+**Live app:** <https://www.baseworkshop.app/secret-santa>
+
 A full-stack web application for running Secret Santa gift exchanges. Create a draw, assign participants to groups to prevent unwanted pairings, share a results link, and optionally send everyone an email revealing their match.
 
 Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Vercel**.
@@ -49,22 +53,10 @@ More detail:
 
 ### Environment Variables
 
-Create a `.env.local` file in the project root (or run `vercel env pull .env.local` to fetch the values from the linked Vercel project):
+Copy [`.env.example`](.env.example) to `.env.local` and fill in the values (or run `vercel env pull .env.local` to fetch them from the linked Vercel project). Every variable is required except `RATE_LIMIT_IP_WHITELIST`; `NEXT_PUBLIC_BASE_URL` is the site origin without the `/secret-santa` basePath.
 
-```dotenv
-DATABASE_URL=postgresql://user:password@your-endpoint.neon.tech/neondb?sslmode=require
-
-GMAIL_USER=you@gmail.com
-GMAIL_APP_PASSWORD=your-16-char-app-password
-
-# Site origin used for the reveal links in emails, without the /secret-santa basePath
-NEXT_PUBLIC_BASE_URL=http://localhost:3000
-
-NEXT_PUBLIC_TURNSTILE_SITE_KEY=your-site-key
-TURNSTILE_SECRET_KEY=your-secret-key
-
-# Optional: comma-separated IPs that are never rate limited
-RATE_LIMIT_IP_WHITELIST=
+```bash
+cp .env.example .env.local
 ```
 
 **Local development never uses the production database.** Point `DATABASE_URL` in `.env.local` at the Neon `dev` branch (an empty copy of the schema, with no real participants); the production connection string lives only in Vercel. `vercel env pull` writes the production value, so swap `DATABASE_URL` back to the dev branch after running it.
@@ -96,8 +88,6 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 | `005_email_claims.sql` | `Participants.email_claimed_at`, so a send that dies midway leaves nobody wrongly marked as emailed |
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
-
-[`scripts/copy-azure-to-neon.ts`](scripts/copy-azure-to-neon.ts) is a one-off script that copies the original Azure SQL data into Neon; see the comment at the top of the file for usage.
 
 ### Running
 
@@ -180,8 +170,6 @@ public/               # Logo, favicons, app icons and link-preview image
 sql/
   setup.sql           # Database schema (Postgres)
   migrations/         # One-off schema changes for existing databases, each with a _check.sql
-scripts/
-  copy-azure-to-neon.ts  # One-off Azure SQL -> Neon data copy
 docs/                 # Architecture and operations notes
 ```
 
@@ -224,3 +212,9 @@ Pull requests are welcome. A few conventions to follow:
 - Always use parameterized SQL queries; never interpolate user input
 - Multi-step writes must use transactions with rollback on error
 - Open PRs against `main`; use descriptive kebab-case branch names
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Dan Basar

@@ -37,7 +37,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 - `.env.development.local` holds Cloudflare's always-pass Turnstile test keys so emails can be sent from `npm run dev` (the real keys reject `localhost`). Never put real keys there.
 - **Only send email for draws you create, to addresses you were given.**
 - Schema changes go in a new `sql/migrations/NNN_name.sql` with a read-only `NNN_name_check.sql`, and are folded into `sql/setup.sql`. Never apply them to production yourself; the runbook is in docs/OPERATIONS.md.
-- All env vars are required except `RATE_LIMIT_IP_WHITELIST`; there are no defaults. The list is in the README.
+- All env vars are required except `RATE_LIMIT_IP_WHITELIST`; there are no defaults. The list, with placeholders, is in `.env.example`.
 
 ## Conventions
 
@@ -85,9 +85,8 @@ Core business logic — handle carefully:
 
 ## Branch Strategy
 
-- `main` — production branch; only merged via pull requests
-- Feature branches: descriptive kebab-case names (e.g., `titan/add-feature-XYZ`)
-- **AI-created branches must be prefixed with `titan/`**, not `claude/` (e.g., `titan/add-feature-XYZ`)
+- `main` — production branch; it changes only through pull requests, merged with **Squash and merge**
+- Work on a short-lived feature branch with a descriptive kebab-case name (e.g. `feature/add-xyz`)
 - Current development branch for Claude agents: see task instructions
 
 ## Deployment Cautions
