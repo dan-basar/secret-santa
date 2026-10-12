@@ -14,7 +14,7 @@ import type { ApiError, CreateDrawResponse } from '@/types/api';
 
 // The draw being replaced by Edit & Redraw
 interface OldDrawRow {
-  admin_key: string | null;
+  admin_key: string;
   deleted_at: Date | null;
   emails_sent_at: Date | null;
 }
@@ -109,7 +109,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         FROM Draws
         WHERE id = ${replacesDrawId}::uuid
       ` as OldDrawRow[];
-      // Old draws with no stored admin_key never match, as in delete-draw
       if (!oldRows.length || typeof replacesKey !== 'string' || replacesKey !== oldRows[0].admin_key) {
         return res.status(403).json({ error: 'Only the organizer can replace this draw.' });
       }

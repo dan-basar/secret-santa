@@ -10,7 +10,7 @@ import type { ApiError, DeleteDrawResponse } from '@/types/api';
 interface DrawRow {
   id: string;
   deleted_at: Date | null;
-  admin_key: string | null;
+  admin_key: string;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<DeleteDrawResponse | ApiError>) {
@@ -36,7 +36,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
 
-    // Old draws with no stored admin_key never match, so they can't be deleted
     if (key !== drawRows[0].admin_key) return res.status(403).json({ error: 'Only the organizer can delete this draw.' });
 
     if (!drawRows[0].deleted_at) {

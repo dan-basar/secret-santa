@@ -12,7 +12,7 @@ There are no accounts. Access comes from three random UUIDs, each carried in a l
 | **Admin key** | `/draw/<id>#key=<adminKey>` (the organizer's link) | Everything about the draw: matches, email addresses, groups, every personal reveal link, per-person email status; sending and resending emails, Edit & Redraw, deleting |
 | **Reveal token** | `/reveal/<token>` (one per participant) | That one person's own match, the draw date and, once emails are sent, the organizer's name. Nothing about anyone else |
 
-The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It travels in the URL fragment, which browsers never send to the server; the draw page reads it there and sends it to `get-draw` in an `X-Admin-Key` header (and in the JSON body to `send-emails` and `delete-draw`), so it never appears in a query string or request log. Organizer links from before this used `?key=`; the page still accepts them and rewrites the address to `#key=`. It is never shown to anyone else, so losing it means losing admin access. Old draws with no stored admin key (`admin_key` is NULL) can't be managed at all.
+The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It travels in the URL fragment, which browsers never send to the server; the draw page reads it there and sends it to `get-draw` in an `X-Admin-Key` header (and in the JSON body to `send-emails` and `delete-draw`), so it never appears in a query string or request log. Organizer links from before this used `?key=`; the page still accepts them and rewrites the address to `#key=`. It is never shown to anyone else, so losing it means losing admin access. Every draw has one (`admin_key` is `NOT NULL`).
 
 ## Draw lifecycle
 
@@ -28,7 +28,7 @@ stateDiagram-v2
 
 - **Created.** Matches are drawn and saved with the draw. The organizer can share personal links, send emails, Edit & Redraw, or delete.
 - **Edit & Redraw** (only before emails go out) copies the participants back into the home page form. The old draw stays live until the new one is saved; `create-draw` then soft-deletes the old draw in the **same transaction** that saves the new one, so there is never a moment with neither or both.
-- **Emails sent.** The first send records the organizer's name and email and sets `Draws.emails_sent_at`. Each participant is claimed (`Participants.email_claimed_at`) before their email goes out. When that one email settles, `email_sent_at` is set (and `DailyEmailLog` counted) if it went out, or the claim is released if it failed, so the organizer can resend to just those people. A claim older than 5 minutes is from a request that died mid-send and can be taken again. A second full send is refused (`409`). Redraw is blocked from here on, in the UI and in `create-draw`, because emails can't be taken back.
+- **Emails sent.** Before anything goes out, the send reserves its count under the email cap in `EmailSendLog` (495 in any 24 hours, across all draws; `503` if it doesn't fit) and gives back whatever it ends up not sending. The first send records the organizer's name and email and sets `Draws.emails_sent_at`. Each participant is claimed (`Participants.email_claimed_at`) before their email goes out. When that one email settles, `email_sent_at` is set if it went out, or the claim is released if it failed, so the organizer can resend to just those people. A claim older than 5 minutes is from a request that died mid-send and can be taken again. A second full send is refused (`409`). Redraw is blocked from here on, in the UI and in `create-draw`, because emails can't be taken back.
 - **Deleted.** `deleted_at` is set; the rows stay. Every link to the draw, including personal links, then gets `410` / "no longer available".
 
 ## Request path
@@ -61,14 +61,14 @@ Draws (id uuid)
   │         ▲ giver_participant_id     ▲ receiver_participant_id
   └──< Matches (draw_id) ──────────────┘
 
-DailyEmailLog (log_date)              — emails sent per UTC day, all draws
+EmailSendLog (hour_start)             — emails sent per hour, all draws
 RateLimits (bucket, window_start)     — hits per hashed IP + route per hour
 ```
 
 - **Draws** — one row per draw: admin key, timestamps (`emails_sent_at`, `deleted_at` double as flags), organizer name/email once emails are sent.
 - **Participants** — one row per person: name, optional email, optional group name, position in the draw, their reveal token, when their email went out, and a short-lived claim while it is being sent.
-- **Matches** — one row per giver → receiver pair, pointing at two Participants rows. Pairs are linked by position, so duplicate names are fine.
-- **DailyEmailLog** and **RateLimits** are counters, not tied to any draw.
+- **Matches** — one row per giver → receiver pair, pointing at two Participants rows. Pairs are linked by position, so duplicate names are fine. Each participant appears once as a giver and once as a receiver (`UNIQUE` on both columns).
+- **EmailSendLog** and **RateLimits** are counters, not tied to any draw.
 
 The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 
@@ -81,6 +81,6 @@ The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 | Organizer name and email | Draws, set on first send | Kept with the draw |
 | Admin key, reveal tokens | Draws, Participants | Kept with the draw |
 | Hashed IP + route hit counts | RateLimits (SHA-256; raw IPs never stored) | About 2 days, then hard-deleted by `src/proxy.ts` |
-| Emails sent per day | DailyEmailLog (a count only) | Kept |
+| Emails sent per hour | EmailSendLog (a count only) | Kept |
 
 Draws are only ever soft-deleted: deleting hides a draw from every link but keeps the rows. Participant and organizer email addresses are kept too, by decision for now; there is no purge job. Emails themselves are sent through the Gmail account in `GMAIL_USER`, so copies also sit in its Sent folder.

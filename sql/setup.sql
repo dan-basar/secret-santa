@@ -15,7 +15,8 @@ CREATE TABLE Draws (
     ,organizer_name varchar(200) NULL
     ,organizer_email varchar(320) NULL
      -- Secret key included in the organizer's URL; required to send emails or delete
-    ,admin_key varchar(100) NULL
+     -- (NOT NULL since migrations/006_match_constraints.sql)
+    ,admin_key varchar(100) NOT NULL
 );
 
 CREATE TABLE Participants (
@@ -50,6 +51,11 @@ CREATE TABLE Matches (
     ,draw_id uuid NOT NULL REFERENCES Draws(id)
     ,giver_participant_id integer NOT NULL REFERENCES Participants(id)
     ,receiver_participant_id integer NOT NULL REFERENCES Participants(id)
+     -- One gift given and one received per person (added by
+     -- migrations/006_match_constraints.sql). The giver index also serves reveal.ts,
+     -- which looks a match up by its giver
+    ,CONSTRAINT UQ_Matches_Giver UNIQUE (giver_participant_id)
+    ,CONSTRAINT UQ_Matches_Receiver UNIQUE (receiver_participant_id)
 );
 
 -- Indexes on draw_id support the common query pattern: fetch all participants /
@@ -57,10 +63,12 @@ CREATE TABLE Matches (
 CREATE INDEX IX_Participants_DrawId ON Participants(draw_id);
 CREATE INDEX IX_Matches_DrawId ON Matches(draw_id);
 
--- One row per UTC date; tracks aggregate emails sent against Gmail's daily limit.
--- date primary key lets send-emails.ts upsert atomically with ON CONFLICT.
-CREATE TABLE DailyEmailLog (
-     log_date date PRIMARY KEY
+-- Emails sent per hour, across all draws. send-emails.ts sums the rows from the last
+-- 24 hours against Gmail's rolling daily limit, reserving a send's count before it
+-- sends. The primary key lets it upsert atomically with ON CONFLICT (added by
+-- migrations/007_email_send_log.sql, replacing the per-day DailyEmailLog).
+CREATE TABLE EmailSendLog (
+     hour_start timestamptz PRIMARY KEY
     ,emails_sent integer NOT NULL DEFAULT 0
 );
 

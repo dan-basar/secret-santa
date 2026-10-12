@@ -14,7 +14,7 @@ interface DrawRow {
   created_at: Date;
   emails_sent_at: Date | null;
   deleted_at: Date | null;
-  admin_key: string | null;
+  admin_key: string;
 }
 
 interface ParticipantRow {

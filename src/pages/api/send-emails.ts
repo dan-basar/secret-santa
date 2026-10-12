@@ -149,15 +149,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // being sent is given back below; a request that dies keeps its reservation,
     // since some of those emails may have gone out.
     const [, reservedRows] = await sql.transaction([
-      sql`SELECT pg_advisory_xact_lock(${EMAIL_CAP_LOCK_ID})`,
+      sql`SELECT pg_advisory_xact_lock(${EMAIL_CAP_LOCK_ID}::bigint)`,
       sql`
         INSERT INTO EmailSendLog (hour_start, emails_sent)
-        SELECT date_trunc('hour', now()), ${unsent.length}
+        SELECT date_trunc('hour', now()), ${unsent.length}::int
         WHERE (
              SELECT COALESCE(SUM(emailSendLog.emails_sent), 0)
              FROM EmailSendLog as emailSendLog
              WHERE emailSendLog.hour_start > now() - interval '25 hours'
-        ) + ${unsent.length} <= ${DAILY_EMAIL_LIMIT}
+        ) + ${unsent.length}::int <= ${DAILY_EMAIL_LIMIT}::int
         ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
         RETURNING hour_start
       `,
@@ -177,7 +177,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       try {
         await sql`
           UPDATE EmailSendLog
-          SET emails_sent = emails_sent - ${count}
+          SET emails_sent = emails_sent - ${count}::int
           WHERE hour_start = ${reservedHour}::timestamptz
         `;
       } catch (err) {

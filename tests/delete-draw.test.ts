@@ -81,13 +81,6 @@ describe('POST /api/delete-draw', () => {
     expect(queries().some(q => q.includes('UPDATE'))).toBe(false);
   });
 
-  it('cannot delete an old draw with no stored admin key', async () => {
-    vi.mocked(sql).mockResolvedValueOnce([{ ...drawRow, admin_key: null }]);
-    const res = await post({ id: DRAW_ID, key: 'anything' });
-    expect(res.statusCode).toBe(403);
-    expect(sql).toHaveBeenCalledTimes(1);
-  });
-
   it('returns 404 for an unknown draw', async () => {
     const res = await post({ id: DRAW_ID, key: ADMIN_KEY });
     expect(res.statusCode).toBe(404);

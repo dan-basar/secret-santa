@@ -49,7 +49,7 @@ const OLD_KEY = 'old-admin-key';
 const threePeople = [person('A'), person('B'), person('C')];
 
 // The next sql`...` call is the old-draw lookup; it resolves to this row
-function oldDraw(row: { admin_key: string | null; deleted_at: string | null; emails_sent_at: string | null } | null) {
+function oldDraw(row: { admin_key: string; deleted_at: string | null; emails_sent_at: string | null } | null) {
   vi.mocked(sql).mockImplementationOnce((() => Promise.resolve(row ? [row] : [])) as never);
 }
 
@@ -80,9 +80,6 @@ describe('POST /api/create-draw replacing an earlier draw', () => {
       const res = await post(threePeople, { replacesDrawId: OLD_ID, replacesKey });
       expect(res.statusCode).toBe(403);
     }
-    // Old draws from before admin keys were stored can't be replaced either
-    oldDraw({ admin_key: null, deleted_at: null, emails_sent_at: null });
-    expect((await post(threePeople, { replacesDrawId: OLD_ID, replacesKey: '' })).statusCode).toBe(403);
     expect(sql.transaction).not.toHaveBeenCalled();
   });
 
