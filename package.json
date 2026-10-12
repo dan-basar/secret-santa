@@ -16,14 +16,14 @@
     "next": "^16.4.0",
     "nodemailer": "^10.0.16",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^19"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24",
     "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react-dom": "^19",
     "jsdom": "^26.1.0",
     "tsx": "^4.23.15",
     "typescript": "^5",
