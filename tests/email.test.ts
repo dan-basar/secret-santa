@@ -7,6 +7,8 @@ vi.mock('nodemailer', () => ({
 }));
 
 const { sendMatchEmail, revealUrl } = await import('@/lib/email');
+// The transporter is created once at import; copy the calls now, because Vitest clears mocks before each test
+const transportCalls = createTransport.mock.calls.slice();
 
 const TOKEN = '3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90';
 
@@ -81,12 +83,12 @@ describe('sendMatchEmail', () => {
 
 describe('transporter', () => {
   it('pools 3 reused SMTP connections', () => {
-    expect(createTransport).toHaveBeenCalledOnce();
-    expect(createTransport.mock.calls[0][0]).toMatchObject({ service: 'gmail', pool: true, maxConnections: 3 });
+    expect(transportCalls).toHaveLength(1);
+    expect(transportCalls[0][0]).toMatchObject({ service: 'gmail', pool: true, maxConnections: 3 });
   });
 
   it('gives up on a stalled connection well within the 60s send-emails limit', () => {
-    const options = createTransport.mock.calls[0][0];
+    const options = transportCalls[0][0];
     for (const timeout of ['connectionTimeout', 'greetingTimeout', 'socketTimeout']) {
       expect(options[timeout]).toBeGreaterThan(0);
       expect(options[timeout]).toBeLessThanOrEqual(15_000);
