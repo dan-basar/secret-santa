@@ -23,7 +23,7 @@ Migrations that change more than one thing are wrapped in `BEGIN; ... COMMIT;`, 
 | `.env.local` (not committed) | `npm run dev` / `npm run build` locally | All variables; `DATABASE_URL` must point at the Neon **dev** branch |
 | `.env.development.local` (not committed) | `npm run dev` only | Cloudflare's always-pass Turnstile test keys, because the real keys reject `localhost` |
 
-The full list, with what each one does, is in the [README](../README.md#environment-variables). `vercel env pull .env.local` copies the Vercel values down, **including the production `DATABASE_URL`**: switch it back to the dev branch straight away. The production connection string should never be used locally.
+The full list, with what each one does, is in [`.env.example`](../.env.example), the template for `.env.local` (setup is in the [README](../README.md#environment-variables)). `vercel env pull .env.local` copies the Vercel values down, **including the production `DATABASE_URL`**: switch it back to the dev branch straight away. The production connection string should never be used locally.
 
 Variables are read when a deployment is built or a function starts, so **changing one in Vercel has no effect until you redeploy** (Deployments → latest production deployment → ⋯ → Redeploy).
 

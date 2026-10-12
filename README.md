@@ -53,22 +53,10 @@ More detail:
 
 ### Environment Variables
 
-Create a `.env.local` file in the project root (or run `vercel env pull .env.local` to fetch the values from the linked Vercel project):
+Copy [`.env.example`](.env.example) to `.env.local` and fill in the values (or run `vercel env pull .env.local` to fetch them from the linked Vercel project). Every variable is required except `RATE_LIMIT_IP_WHITELIST`; `NEXT_PUBLIC_BASE_URL` is the site origin without the `/secret-santa` basePath.
 
-```dotenv
-DATABASE_URL=postgresql://user:password@your-endpoint.neon.tech/neondb?sslmode=require
-
-GMAIL_USER=you@gmail.com
-GMAIL_APP_PASSWORD=your-16-char-app-password
-
-# Site origin used for the reveal links in emails, without the /secret-santa basePath
-NEXT_PUBLIC_BASE_URL=http://localhost:3000
-
-NEXT_PUBLIC_TURNSTILE_SITE_KEY=your-site-key
-TURNSTILE_SECRET_KEY=your-secret-key
-
-# Optional: comma-separated IPs that are never rate limited
-RATE_LIMIT_IP_WHITELIST=
+```bash
+cp .env.example .env.local
 ```
 
 **Local development never uses the production database.** Point `DATABASE_URL` in `.env.local` at the Neon `dev` branch (an empty copy of the schema, with no real participants); the production connection string lives only in Vercel. `vercel env pull` writes the production value, so swap `DATABASE_URL` back to the dev branch after running it.
