@@ -1,6 +1,7 @@
 {
-  "name": "secret-santa-picker",
-  "version": "0.1.0",
+  "name": "secret-santa",
+  "version": "1.0.0",
+  "description": "Secret Santa draw app: group-aware matching, private reveal links and email invites.",
   "private": true,
   "license": "MIT",
   "scripts": {
