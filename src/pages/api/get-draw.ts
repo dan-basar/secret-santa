@@ -37,6 +37,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(405).json({ error: 'Method not allowed.' });
   }
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  // The organizer's answer holds every email address and reveal token
+  res.setHeader('Cache-Control', 'private, no-store');
 
   const { id } = req.query;
   const key = req.headers['x-admin-key'];

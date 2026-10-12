@@ -142,7 +142,7 @@ src/
     matching.ts       # Matching algorithm (shuffle + feasibility-checked fallback)
     email.ts          # Nodemailer email service
     email-address.ts  # isValidEmail(): the one address check, used by the forms and the API
-    sanitize.ts       # HTML tag check and escaping for emails
+    sanitize.ts       # HTML tag and web-address checks, escaping for emails
     base-path.json    # The /secret-santa basePath, read by next.config.js and site.ts
     site.ts           # BASE_PATH, and siteUrl(): public URLs with the basePath
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
@@ -183,7 +183,7 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`), generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
+| `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`; names may not contain HTML or a web address, since they go into the emails), generate matches, persist in a transaction. Returns `{ drawId, adminKey }`. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
 | `GET` | `/api/get-draw?id=<uuid>` | Fetch a draw. Optional header `X-Admin-Key: <adminKey>` (a `key` in the query string is ignored). Without a valid admin key: participant names only. With it: emails, groups, reveal tokens, per-person email status and matches, each match as `{ giver, receiver }` indexes into `participants`. Requests without a key never run the matches query. `410` for deleted draws. |
 | `GET` | `/api/reveal?token=<uuid>` | One participant's name, their match, the draw date and the organizer (once emails are sent). `404` for unknown tokens, `410` for deleted draws. |
 | `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail }`, or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Returns `{ success, totalSent, totalFailed, failedNames }`. `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `409` already sent (or nothing to resend), `410` deleted, `503` cap of 495 emails in 24 hours reached. |

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { siteUrl } from '@/lib/site';
 import { isValidEmail } from '@/lib/email-address';
+import { hasLink } from '@/lib/sanitize';
 import { FormGroup, FormParticipant, groupNameFor, newId } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
 import logo from '../../public/logo.svg';
@@ -114,6 +115,12 @@ export default function Home() {
     }
     if (invalid.length > 0) {
       setError('Please make sure every participant has a valid name and email address.');
+      return;
+    }
+    // Names go into the match emails, so the server refuses web addresses in them
+    const linkNames = filled.filter((p) => hasLink(p.name));
+    if (linkNames.length > 0) {
+      setError(`Names cannot contain web addresses: ${linkNames.map((p) => p.name.trim()).join(', ')}`);
       return;
     }
 

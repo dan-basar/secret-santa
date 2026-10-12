@@ -189,6 +189,18 @@ describe('POST /api/create-draw', () => {
     expect(sql.transaction).not.toHaveBeenCalled();
   });
 
+  it('rejects names with a web address, which would be clickable in the emails', async () => {
+    const res = await post([person('Win a prize at bit.ly/x'), person('B'), person('Get gifts www.example')]);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Names cannot contain web addresses: Win a prize at bit.ly/x, Get gifts www.example' });
+    expect(sql.transaction).not.toHaveBeenCalled();
+  });
+
+  it('allows a group name that looks like a web address, since groups are never emailed', async () => {
+    const res = await post([person('A', 'example.com'), person('B'), person('C')]);
+    expect(res.statusCode).toBe(200);
+  });
+
   it('rejects "Family" and "family" together as one oversized group', async () => {
     const res = await post([person('A', 'Family'), person('B', 'family'), person('C')]);
     expect(res.statusCode).toBe(422);

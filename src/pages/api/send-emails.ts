@@ -8,7 +8,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql, isUuid } from '@/lib/db';
 import { sendMatchEmail } from '@/lib/email';
-import { hasHtmlTag } from '@/lib/sanitize';
+import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
 import type { SendEmailsError, SendEmailsResponse } from '@/types/api';
@@ -76,6 +76,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     safeOrganizerEmail = organizerEmail.trim().toLowerCase();
 
     if (hasHtmlTag(safeOrganizerName)) return res.status(400).json({ error: 'Organizer name cannot contain HTML.' });
+    // It is written into every email, where a mail app would make a web address clickable
+    if (hasLink(safeOrganizerName)) return res.status(400).json({ error: 'Organizer name cannot contain a web address.' });
 
     if (!isValidEmail(safeOrganizerEmail)) return res.status(400).json({ error: 'Invalid organizer email format.' });
   }

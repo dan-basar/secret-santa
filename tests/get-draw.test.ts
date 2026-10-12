@@ -145,6 +145,11 @@ describe('GET /api/get-draw', () => {
     expect(res.headers['X-Robots-Tag']).toBe('noindex, nofollow');
   });
 
+  it('keeps draw data out of every cache', async () => {
+    const res = await get({ id: DRAW_ID });
+    expect(res.headers['Cache-Control']).toBe('private, no-store');
+  });
+
   it('returns 410 for a deleted draw', async () => {
     queueRows({ ...drawRow, deleted_at: new Date('2026-10-03T12:00:00.000Z') });
     const res = await get({ id: DRAW_ID }, { 'x-admin-key': ADMIN_KEY });
