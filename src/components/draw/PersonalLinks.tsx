@@ -10,12 +10,19 @@ interface Props {
 
 // Each participant's personal reveal link, for the organizer to send by text or chat
 export default function PersonalLinks({ participants, emailsSent, linkFor }: Props) {
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  // The row whose copy button last settled, and whether the write worked
+  const [copied, setCopied] = useState<{ token: string; ok: boolean } | null>(null);
 
-  const handleCopy = (token: string) => {
-    navigator.clipboard.writeText(linkFor(token));
-    setCopiedToken(token);
-    setTimeout(() => setCopiedToken((current) => (current === token ? null : current)), 2000);
+  // Clipboard access can be refused, so say "Copied" only once the write succeeded
+  const handleCopy = async (token: string) => {
+    let ok = true;
+    try {
+      await navigator.clipboard.writeText(linkFor(token));
+    } catch {
+      ok = false;
+    }
+    setCopied({ token, ok });
+    setTimeout(() => setCopied((current) => (current?.token === token ? null : current)), 2000);
   };
 
   return (
@@ -33,7 +40,7 @@ export default function PersonalLinks({ participants, emailsSent, linkFor }: Pro
               <span className={styles.shareUrl}>{linkFor(p.reveal_token)}</span>
             </div>
             <button className="btn btn-secondary" onClick={() => handleCopy(p.reveal_token)}>
-              {copiedToken === p.reveal_token ? '✓ Copied' : 'Copy'}
+              {copied?.token === p.reveal_token ? (copied.ok ? '✓ Copied' : 'Copy failed') : 'Copy'}
             </button>
           </li>
         ))}

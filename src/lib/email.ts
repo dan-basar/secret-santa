@@ -51,6 +51,8 @@ export async function sendMatchEmail(
   await transporter.sendMail({
     from: `Secret Santa <${process.env.GMAIL_USER}>`,
     to: toEmail,
+    // A participant who hits Reply reaches the organizer, not the app's Gmail inbox
+    replyTo: organizerEmail,
     subject: "🎁 Your Secret Santa Match",
     text: `Hi ${toName},\n\nThe Secret Santa draw is done, and your match is waiting for you.\n\nYou have drawn ${matchName}'s name for the gift exchange.\n\nView your match any time: ${link}\n\nThis secret message was sent by ${organizerName}. You can contact the organizer at ${organizerEmail} if you need to. Happy Gifting!!`,
     html: `

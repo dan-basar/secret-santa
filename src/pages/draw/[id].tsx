@@ -4,6 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
 import { formFromParticipants } from '@/lib/groups';
+import { siteUrl } from '@/lib/site';
 import ShareBar from '@/components/draw/ShareBar';
 import ParticipantList from '@/components/draw/ParticipantList';
 import MatchesTable from '@/components/draw/MatchesTable';
@@ -134,13 +135,10 @@ export default function DrawPage() {
     }
   };
 
-  const shareableUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}${window.location.pathname}`
-    : '';
-
-  const personalUrl = (token: string) => typeof window !== 'undefined'
-    ? `${window.location.origin}${router.basePath}/reveal/${token}`
-    : '';
+  // Built from NEXT_PUBLIC_BASE_URL like the links in the emails, so an organizer
+  // who opened the page on another address (vercel.app) still copies the public one
+  const shareableUrl = siteUrl(`/draw/${encodeURIComponent(String(id ?? ''))}`);
+  const personalUrl = (token: string) => siteUrl(`/reveal/${encodeURIComponent(token)}`);
 
   const handleEditAndRedraw = () => {
     // Emails can't be taken back, so a redraw after sending would leave people

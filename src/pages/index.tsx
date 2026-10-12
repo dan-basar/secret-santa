@@ -228,7 +228,7 @@ export default function Home() {
                     placeholder={`Group ${i + 1} name`}
                     value={g.name}
                     onChange={(e) => updateGroup(g.id, e.target.value)}
-                    maxLength={100}
+                    maxLength={200}
                   />
                   <button
                     className={`btn btn-secondary ${styles.removeBtn}`}
