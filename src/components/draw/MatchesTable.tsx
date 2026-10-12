@@ -8,7 +8,7 @@ interface Props {
   onEditAndRedraw: () => void;
 }
 
-// The organizer's matches table, with Edit & Redraw. Group columns appear only
+// The organizer's matches table, with Edit & Redraw until emails are sent. Group columns appear only
 // when someone is in a group
 export default function MatchesTable({ participants, matches, emailsSent, onEditAndRedraw }: Props) {
   const pairs = matches.map((m) => ({ giver: participants[m.giver], receiver: participants[m.receiver] }));
@@ -29,20 +29,13 @@ export default function MatchesTable({ participants, matches, emailsSent, onEdit
     <section className={`card ${styles.section}`}>
       <div className={styles.matchesTitleRow}>
         <h2 className={styles.sectionTitle} style={{ marginBottom: 0 }}>Matches</h2>
-        <button
-          className="btn btn-secondary"
-          onClick={onEditAndRedraw}
-          disabled={emailsSent}
-          title={emailsSent ? 'Emails have already been sent for this draw' : undefined}
-        >
-          ← Edit &amp; Redraw
-        </button>
+        {/* Hidden once emails go out: a redraw would leave people holding the wrong match */}
+        {!emailsSent && (
+          <button className="btn btn-secondary" onClick={onEditAndRedraw}>
+            ← Edit &amp; Redraw
+          </button>
+        )}
       </div>
-      {emailsSent && (
-        <p className={styles.sectionDesc}>
-          Edit &amp; Redraw is off because emails have already gone out. A redraw would leave people holding the wrong match.
-        </p>
-      )}
       <p className={styles.sectionDesc}>
         {matches.length} participant{matches.length !== 1 ? 's' : ''} — each person will give a gift to the person listed beside them.
         Only you can see this table; the shareable link shows names only.

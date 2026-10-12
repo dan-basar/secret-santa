@@ -188,9 +188,13 @@ export default function Home() {
         <header className={styles.header}>
           <div className={styles.headerInner}>
             <Image src={logo} alt="Secret Santa Picker logo" width={55} height={64} className={styles.logo} priority />
-            <div>
+            <div className={styles.heroText}>
               <h1 className={styles.title}>Secret Santa Picker App</h1>
-              <p className={styles.subtitle}>Enter your groups and participants, then draw matches.</p>
+              <p className={styles.subtitle}>
+                {/* Each half stays whole, so a wrap can only fall after the comma */}
+                <span className={styles.nowrapPart}>Enter your groups and participants,</span>{' '}
+                <span className={styles.nowrapPart}>then draw matches.</span>
+              </p>
             </div>
             <Image src={logo} alt="" width={55} height={64} className={`${styles.logo} ${styles.logoRight}`} priority />
           </div>
