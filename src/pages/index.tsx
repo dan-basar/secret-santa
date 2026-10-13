@@ -7,13 +7,13 @@ import { siteUrl } from '@/lib/site';
 import { isValidEmail } from '@/lib/email-address';
 import { hasLink } from '@/lib/sanitize';
 import { duplicateNames, duplicateNamesMessage } from '@/lib/names';
-import { FormGroup, FormParticipant, groupNameFor, newId } from '@/lib/groups';
+import { FormGroup, FormParticipant, MAX_GROUPS, MAX_PARTICIPANTS, groupNameFor, newId, parseFormDraft } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
 import logo from '../../public/logo.svg';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
 
-const MAX_PARTICIPANTS = 50;
-const MAX_GROUPS = 20;
+// The form as typed, kept for a refresh or an accidental Back; it ends with the tab
+const DRAFT_KEY = 'homeFormDraft';
 
 const TITLE = 'Secret Santa Picker';
 const DESCRIPTION = 'Draw Secret Santa matches and notify everyone by email.';
@@ -42,25 +42,57 @@ export default function Home() {
   // Set by Edit & Redraw: the earlier draw stays live until this form submits
   const [replaces, setReplaces] = useState<{ drawId: string; key: string } | null>(null);
 
+  // Saving waits until the saved form has been read back, or the empty form would overwrite it
+  const [restored, setRestored] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+
   useEffect(() => {
-    const draft = sessionStorage.getItem('editDraftData');
-    if (draft) {
-      sessionStorage.removeItem('editDraftData');
-      try {
-        const { groups: g, participants: p, replacesDrawId, replacesKey } = JSON.parse(draft);
-        // Built by formFromParticipants() on the draw page; skip anything else
-        if (!Array.isArray(g) || !g.every((group) => typeof group?.name === 'string')) return;
-        if (!Array.isArray(p) || !p.every((person) => typeof person?.groupId === 'string')) return;
-        setGroups(g);
-        setParticipants(p);
-        if (typeof replacesDrawId === 'string' && typeof replacesKey === 'string') {
-          setReplaces({ drawId: replacesDrawId, key: replacesKey });
+    try {
+      // Edit & Redraw's hand-off wins over a draft left by an earlier visit
+      const handoff = sessionStorage.getItem('editDraftData');
+      if (handoff) sessionStorage.removeItem('editDraftData');
+      // Built by formFromParticipants() on the draw page; anything else is skipped
+      const draft = parseFormDraft(handoff ?? sessionStorage.getItem(DRAFT_KEY) ?? '');
+      if (draft) {
+        setGroups(draft.groups);
+        setParticipants(draft.participants);
+        if (draft.replacesDrawId && draft.replacesKey) {
+          setReplaces({ drawId: draft.replacesDrawId, key: draft.replacesKey });
         }
-      } catch {
-        // ignore malformed data
       }
+    } catch {
+      // Storage can be blocked (private windows); the form just starts empty
     }
+    setRestored(true);
   }, []);
+
+  // Save as the user types. A form with nothing typed in it is not worth keeping
+  useEffect(() => {
+    if (!restored) return;
+    try {
+      const touched = groups.some((g) => g.name) || participants.some((p) => p.name || p.email || p.groupId);
+      if (touched || replaces) {
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+          groups,
+          participants,
+          replacesDrawId: replaces?.drawId,
+          replacesKey: replaces?.key,
+        }));
+      } else {
+        sessionStorage.removeItem(DRAFT_KEY);
+      }
+    } catch {
+      // Storage can be blocked or full; typing still works, it just isn't kept
+    }
+  }, [restored, groups, participants, replaces]);
+
+  // Back to the blank form. An Edit & Redraw banner stays: it has its own Cancel
+  const clearForm = () => {
+    setGroups([{ id: newId(), name: '' }]);
+    setParticipants([emptyParticipant(), emptyParticipant()]);
+    setError('');
+    setConfirmingClear(false);
+  };
 
   // --- Group handlers ---
   const addGroup = () => {
@@ -171,6 +203,8 @@ export default function Home() {
       }
 
       const data: CreateDrawResponse = await res.json();
+      // The draw exists now; coming back to this page starts a fresh form
+      try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* storage blocked */ }
       // In the fragment, never the query string, so the key stays out of server logs
       router.push(`/draw#${data.adminKey}`);
     } catch {
@@ -279,8 +313,25 @@ export default function Home() {
               <h2 className={styles.sectionTitle}>
                 <span className={styles.step}>2</span>
                 Participants
-                <span className={styles.count}>{filledCount} / {MAX_PARTICIPANTS}</span>
+                <span className={styles.count}>
+                  {filledCount} / {MAX_PARTICIPANTS}
+                  {!confirmingClear && (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      <button type="button" className={styles.clearLink} onClick={() => setConfirmingClear(true)}>
+                        Clear form
+                      </button>
+                    </>
+                  )}
+                </span>
               </h2>
+              {confirmingClear && (
+                <p className={`${styles.clearConfirm} fade-in`} role="alert">
+                  Clear all names, emails and groups?
+                  <button type="button" className={styles.clearYes} onClick={clearForm}>Yes, clear</button>
+                  <button type="button" className={styles.clearKeep} onClick={() => setConfirmingClear(false)} autoFocus>Keep</button>
+                </p>
+              )}
               <p className={styles.sectionDesc}>
                 Enter each person's name, email, and optionally assign them to a group.
               </p>

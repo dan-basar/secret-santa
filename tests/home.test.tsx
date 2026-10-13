@@ -10,6 +10,7 @@ import Home from '@/pages/index';
 const fetchMock = vi.fn();
 
 beforeEach(() => {
+  sessionStorage.clear();
   router.push.mockReset();
   fetchMock.mockReset();
   fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ adminKey: 'key-1' }) });
@@ -123,5 +124,115 @@ describe('home form', () => {
     fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
     expect(screen.getByRole('alert').textContent).toMatch(/Names must be distinguishable.*: Sam\./);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  describe('saving the form as it is typed', () => {
+    const draft = () => sessionStorage.getItem('homeFormDraft');
+
+    it('keeps what was typed through a reload', () => {
+      const first = render(<Home />);
+      type('Group 1 name', 'Smiths');
+      type('Person 1 name', 'Ann');
+      type('Person 1 email', 'ann@example.com');
+      fireEvent.click(screen.getByRole('button', { name: /add participant/i }));
+      type('Person 3 name', 'Cat');
+      first.unmount();
+
+      render(<Home />);
+      expect((screen.getByLabelText('Group 1 name') as HTMLInputElement).value).toBe('Smiths');
+      expect((screen.getByLabelText('Person 1 name') as HTMLInputElement).value).toBe('Ann');
+      expect((screen.getByLabelText('Person 1 email') as HTMLInputElement).value).toBe('ann@example.com');
+      expect((screen.getByLabelText('Person 3 name') as HTMLInputElement).value).toBe('Cat');
+    });
+
+    it('saves nothing for a form with nothing typed in it, and does not wipe a draft while restoring', () => {
+      const first = render(<Home />);
+      expect(draft()).toBeNull();
+      type('Person 1 name', 'Ann');
+      first.unmount();
+      render(<Home />);
+      expect(JSON.parse(draft()!).participants[0].name).toBe('Ann');
+    });
+
+    it('ignores a saved draft that is not a form this page built', () => {
+      for (const bad of ['not json', '{}', JSON.stringify({ groups: [], participants: [] }),
+        JSON.stringify({ groups: [{ id: 'g', name: 'x' }], participants: [{ id: 'p', name: 1, email: '', groupId: '' }, { id: 'q', name: '', email: '', groupId: '' }] })]) {
+        sessionStorage.setItem('homeFormDraft', bad);
+        render(<Home />);
+        expect((screen.getByLabelText('Person 1 name') as HTMLInputElement).value).toBe('');
+        expect(screen.getAllByLabelText(/Person \d+ name/)).toHaveLength(2);
+        cleanup();
+      }
+    });
+
+    it('clears the form after a confirmation, and Keep leaves it alone', () => {
+      render(<Home />);
+      type('Group 1 name', 'Smiths');
+      type('Person 1 name', 'Ann');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear form' }));
+      expect(screen.getByRole('alert').textContent).toMatch(/Clear all names, emails and groups\?/);
+      fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+      expect((screen.getByLabelText('Person 1 name') as HTMLInputElement).value).toBe('Ann');
+      expect(screen.queryByRole('alert')).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear form' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Yes, clear' }));
+      expect((screen.getByLabelText('Person 1 name') as HTMLInputElement).value).toBe('');
+      expect((screen.getByLabelText('Group 1 name') as HTMLInputElement).value).toBe('');
+      expect(screen.getAllByLabelText(/Person \d+ name/)).toHaveLength(2);
+      expect(draft()).toBeNull();
+    });
+
+    it('forgets the draft once the draw is created', async () => {
+      render(<Home />);
+      type('Person 1 name', 'Ann');
+      type('Person 2 name', 'Bob');
+      expect(draft()).not.toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
+      await vi.waitFor(() => expect(router.push).toHaveBeenCalledWith('/draw#key-1'));
+      expect(draft()).toBeNull();
+    });
+
+    it('keeps the draft when the draw fails, so a retry does not mean retyping', async () => {
+      fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: 'Failed' }) });
+      render(<Home />);
+      type('Person 1 name', 'Ann');
+      type('Person 2 name', 'Bob');
+      fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
+      await screen.findByText('Failed');
+      expect(draft()).not.toBeNull();
+    });
+
+    it("prefers Edit & Redraw's hand-off, and keeps what it replaces through a reload", () => {
+      sessionStorage.setItem('homeFormDraft', JSON.stringify({
+        groups: [{ id: 'g1', name: '' }],
+        participants: [{ id: 'a', name: 'Old', email: '', groupId: '' }, { id: 'b', name: 'Draft', email: '', groupId: '' }],
+      }));
+      sessionStorage.setItem('editDraftData', JSON.stringify({
+        groups: [{ id: 'g1', name: '' }],
+        participants: [{ id: 'c', name: 'Cy', email: '', groupId: '' }, { id: 'd', name: 'Di', email: '', groupId: '' }],
+        replacesDrawId: 'draw-1',
+        replacesKey: 'key-1',
+      }));
+      const first = render(<Home />);
+      expect((screen.getByLabelText('Person 1 name') as HTMLInputElement).value).toBe('Cy');
+      expect(sessionStorage.getItem('editDraftData')).toBeNull();
+      first.unmount();
+
+      render(<Home />);
+      expect((screen.getByLabelText('Person 1 name') as HTMLInputElement).value).toBe('Cy');
+      expect(screen.getByText(/This will replace your earlier draw/)).toBeTruthy();
+    });
+
+    it('still works when storage is blocked', () => {
+      const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+      const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+      render(<Home />);
+      type('Person 1 name', 'Ann');
+      expect((screen.getByLabelText('Person 1 name') as HTMLInputElement).value).toBe('Ann');
+      getItem.mockRestore();
+      setItem.mockRestore();
+    });
   });
 });

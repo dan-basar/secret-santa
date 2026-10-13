@@ -16,6 +16,10 @@ export interface FormParticipant {
   groupId: string; // '' for no group
 }
 
+// Limits the home form enforces; a saved draft outside them is not restored
+export const MAX_PARTICIPANTS = 50;
+export const MAX_GROUPS = 20;
+
 export function newId(): string {
   return Math.random().toString(36).slice(2);
 }
@@ -50,4 +54,39 @@ export function formFromParticipants(
   });
 
   return { groups: groups.length > 0 ? groups : [{ id: newId(), name: '' }], participants };
+}
+
+export interface FormDraft {
+  groups: FormGroup[];
+  participants: FormParticipant[];
+  replacesDrawId?: string;
+  replacesKey?: string;
+}
+
+const isString = (v: unknown): v is string => typeof v === 'string';
+
+/**
+ * Parses a saved form (Edit & Redraw's hand-off or the as-you-type draft),
+ * returning null for anything that isn't a form this page could have built.
+ */
+export function parseFormDraft(raw: string): FormDraft | null {
+  try {
+    const d = JSON.parse(raw);
+    if (!Array.isArray(d?.groups) || d.groups.length < 1 || d.groups.length > MAX_GROUPS) return null;
+    if (!Array.isArray(d.participants) || d.participants.length < 2 || d.participants.length > MAX_PARTICIPANTS) return null;
+    if (!d.groups.every((g: Record<string, unknown>) => isString(g?.id) && isString(g.name))) return null;
+    if (!d.participants.every((p: Record<string, unknown>) =>
+      isString(p?.id) && isString(p.name) && isString(p.email) && isString(p.groupId))) return null;
+    const draft: FormDraft = {
+      groups: d.groups.map((g: FormGroup) => ({ id: g.id, name: g.name })),
+      participants: d.participants.map((p: FormParticipant) => ({ id: p.id, name: p.name, email: p.email, groupId: p.groupId })),
+    };
+    if (isString(d.replacesDrawId) && isString(d.replacesKey)) {
+      draft.replacesDrawId = d.replacesDrawId;
+      draft.replacesKey = d.replacesKey;
+    }
+    return draft;
+  } catch {
+    return null;
+  }
 }
