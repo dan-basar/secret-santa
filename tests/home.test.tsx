@@ -165,10 +165,27 @@ describe('home form', () => {
       }
     });
 
+    it('shows Clear form only once a third row has been added', () => {
+      render(<Home />);
+      expect(screen.queryByRole('button', { name: 'Clear form' })).toBeNull();
+      type('Group 1 name', 'Smiths');
+      type('Person 1 name', 'Ann');
+      type('Person 1 email', 'ann@example.com');
+      type('Person 2 name', 'Bob');
+      expect(screen.queryByRole('button', { name: 'Clear form' })).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: /add participant/i }));
+      expect(screen.getByRole('button', { name: 'Clear form' })).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove person 3' }));
+      expect(screen.queryByRole('button', { name: 'Clear form' })).toBeNull();
+    });
+
     it('clears the form after a confirmation, and Keep leaves it alone', () => {
       render(<Home />);
       type('Group 1 name', 'Smiths');
       type('Person 1 name', 'Ann');
+      fireEvent.click(screen.getByRole('button', { name: /add participant/i }));
 
       fireEvent.click(screen.getByRole('button', { name: 'Clear form' }));
       expect(screen.getByRole('alert').textContent).toMatch(/Clear all names, emails and groups\?/);

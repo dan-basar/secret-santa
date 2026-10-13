@@ -217,6 +217,8 @@ export default function Home() {
   }, [participants, groups, replaces, router]);
 
   const filledCount = participants.filter((p) => p.name.trim()).length;
+  // A short form is quick to retype, so the link waits until the list has grown past the two starting rows
+  const canClear = participants.length > 2;
 
   return (
     <>
@@ -315,7 +317,7 @@ export default function Home() {
                 Participants
                 <span className={styles.count}>
                   {filledCount} / {MAX_PARTICIPANTS}
-                  {!confirmingClear && (
+                  {canClear && !confirmingClear && (
                     <>
                       <span aria-hidden="true"> · </span>
                       <button type="button" className={styles.clearLink} onClick={() => setConfirmingClear(true)}>
@@ -325,7 +327,7 @@ export default function Home() {
                   )}
                 </span>
               </h2>
-              {confirmingClear && (
+              {canClear && confirmingClear && (
                 <p className={`${styles.clearConfirm} fade-in`} role="alert">
                   Clear all names, emails and groups?
                   <button type="button" className={styles.clearYes} onClick={clearForm}>Yes, clear</button>
