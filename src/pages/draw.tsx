@@ -13,7 +13,7 @@ import EmailSection from '@/components/draw/EmailSection';
 import DeleteSection from '@/components/draw/DeleteSection';
 import styles from '@/styles/Draw.module.css';
 import logo from '../../public/logo.svg';
-import type { ApiError, GetDrawResponse, SendEmailsError } from '@/types/api';
+import type { ApiError, GetDrawResponse, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'busy' | 'error';
 
@@ -33,6 +33,8 @@ export default function DrawPage() {
 
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
+  // Whether the organizer's own link went out with their last send
+  const [organizerLinkNotice, setOrganizerLinkNotice] = useState('');
   const [organizerName, setOrganizerName] = useState('');
   const [organizerEmail, setOrganizerEmail] = useState('');
 
@@ -88,6 +90,7 @@ export default function DrawPage() {
     if (!draw) return;
     setEmailLoading(true);
     setEmailError('');
+    setOrganizerLinkNotice('');
     try {
       const res = await fetch(`${router.basePath}/api/send-emails`, {
         method: 'POST',
@@ -96,6 +99,12 @@ export default function DrawPage() {
           ? { id: draw.id, key: adminKey, turnstileToken, retryFailed: true }
           : { id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(), turnstileToken }),
       });
+      if (res.ok && !retryFailed) {
+        const data: SendEmailsResponse = await res.json();
+        setOrganizerLinkNotice(data.organizerLinkSent
+          ? `✓ Your organizer link was emailed to ${organizerEmail.trim()}.`
+          : 'We couldn\'t email you your organizer link. Copy it from the top of this page instead.');
+      }
       if (!res.ok) {
         // A send that runs past the function's time limit gets a 504 from Vercel
         // whose body isn't JSON, while emails may still have gone out
@@ -283,6 +292,7 @@ export default function DrawPage() {
             onOrganizerEmailChange={setOrganizerEmail}
             loading={emailLoading}
             error={emailError}
+            organizerLinkNotice={organizerLinkNotice}
             turnstileKey={turnstileKey}
             onTurnstileToken={setTurnstileToken}
             hasTurnstileToken={!!turnstileToken}

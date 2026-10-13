@@ -56,6 +56,8 @@ export interface SendEmailsResponse {
   totalSent: number;
   totalFailed: number;
   failedNames: string[];
+  // Whether the organizer was emailed their organizer link (first send only)
+  organizerLinkSent: boolean;
 }
 
 // A resend where every email failed also lists who wasn't reached

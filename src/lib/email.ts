@@ -71,3 +71,41 @@ export async function sendMatchEmail(
     `,
   });
 }
+
+/** Public URL of the organizer's page; the admin key rides in the fragment */
+export function organizerUrl(adminKey: string): string {
+  return siteUrl(`/draw#${encodeURIComponent(adminKey)}`);
+}
+
+// The organizer's own copy of their link, so losing the tab doesn't lose the
+// draw. It goes out with the first send, or on its own when nobody has an email
+export async function sendOrganizerLinkEmail(
+  toName: string,
+  toEmail: string,
+  adminKey: string
+): Promise<void> {
+  const link = organizerUrl(adminKey);
+
+  const htmlToName = escapeHtml(toName);
+  const htmlLink = escapeHtml(link);
+  const logoUrl = escapeHtml(siteUrl('/icon-192.png'));
+
+  await transporter.sendMail({
+    from: `Secret Santa <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: "🎁 Your Secret Santa organizer link",
+    text: `Hi ${toName},\n\nHere is your organizer link for your Secret Santa draw. Keep it private: it shows everyone's matches! It's the only way back to your draw's page.\n\nYour organizer link: ${link}\n\nHappy Gifting!!`,
+    html: `
+      <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a;">
+        <img src="${logoUrl}" width="96" height="96" alt="Secret Santa Picker" style="display: block; margin: 0 auto 24px; border: 0;">
+        <p style="font-size: 18px; margin-bottom: 24px;">Hi ${htmlToName},</p>
+        <p style="font-size: 16px; line-height: 1.6;">Here is your organizer link for your Secret Santa draw.</p>
+        <p style="font-size: 16px; line-height: 1.6;">Keep it private: it shows everyone&rsquo;s matches! It&rsquo;s the only way back to your draw&rsquo;s page.</p>
+        <p style="margin: 32px 0;">
+          <a href="${htmlLink}" style="display: inline-block; padding: 12px 24px; background: #c84b2f; color: #ffffff; text-decoration: none; border-radius: 6px; font-family: Arial, sans-serif; font-size: 16px;">Open your draw</a>
+        </p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px; word-break: break-all;">${htmlLink}</p>
+      </div>
+    `,
+  });
+}

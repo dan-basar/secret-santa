@@ -28,12 +28,22 @@ const { HOUR, hourOf, emailsCounted } = vi.hoisted(() => {
 vi.mock('@/lib/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/db')>();
 
+  function reserve(count: number): Date {
+    const hour = hourOf(db.now);
+    const row = db.emailLog.find(r => r.hour === hour);
+    if (row) row.sent += count;
+    else db.emailLog.push({ hour, sent: count });
+    return new Date(hour);
+  }
+
   function run(text: string, values: unknown[]): unknown[] {
     // The one statement that checks the cap, claims the draw and participants,
     // and reserves the cap for whoever was claimed
     if (text.includes('WITH cap AS')) {
       const [count, limit, organizerName, organizerEmail, , retryFailed, ids, expiryMinutes] =
         values as [number, number, string, string, string, boolean, number[], number];
+      // The organizer's own link email, reserved with the claims on a first send
+      const organizerCount = values[values.length - 1] as number;
       const capOk = emailsCounted() + count <= limit;
       const drawClaimed = capOk && !retryFailed && !db.draw.emails_sent_at;
       if (drawClaimed) {
@@ -48,13 +58,15 @@ vi.mock('@/lib/db', async (importOriginal) => {
       for (const p of claimed) p.email_claimed_at = db.now;
       let reservedHour: Date | null = null;
       if (claimed.length) {
-        const hour = hourOf(db.now);
-        const row = db.emailLog.find(r => r.hour === hour);
-        if (row) row.sent += claimed.length;
-        else db.emailLog.push({ hour, sent: claimed.length });
-        reservedHour = new Date(hour);
+        reservedHour = reserve(claimed.length + organizerCount);
       }
       return [{ cap_ok: capOk, draw_claimed: drawClaimed, claimed_ids: claimed.map(p => p.id), reserved_hour: reservedHour }];
+    }
+    // A first send with nobody to email: reserve one email for the organizer's link
+    if (text.includes('WITH organizer_cap AS')) {
+      const [limit] = values as [number];
+      const capOk = emailsCounted() + 1 <= limit;
+      return [{ cap_ok: capOk, reserved_hour: capOk ? reserve(1) : null }];
     }
     if (text.includes('FROM Draws')) return [{ ...db.draw }];
     if (text.includes('FROM Matches')) {
@@ -107,7 +119,8 @@ vi.mock('@/lib/db', async (importOriginal) => {
 });
 
 const sendMatchEmail = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/email', () => ({ sendMatchEmail }));
+const sendOrganizerLinkEmail = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/email', () => ({ sendMatchEmail, sendOrganizerLinkEmail }));
 
 import handler from '@/pages/api/send-emails';
 
@@ -170,6 +183,8 @@ beforeEach(() => {
   db.now = Date.UTC(2026, 11, 1);
   db.roundTrips = 0;
   sendMatchEmail.mockReset();
+  sendOrganizerLinkEmail.mockReset();
+  sendOrganizerLinkEmail.mockImplementation(async () => {});
   failFor();
   vi.stubEnv('NEXT_PUBLIC_BASE_URL', 'https://baseworkshop.app');
   vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({ success: true }) })));
@@ -186,21 +201,77 @@ describe('POST /api/send-emails', () => {
   it('sends to everyone with an email and marks each of them sent', async () => {
     const res = await post(firstSend);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, totalSent: 3, totalFailed: 0, failedNames: [] });
+    expect(res.body).toEqual({ success: true, totalSent: 3, totalFailed: 0, failedNames: [], organizerLinkSent: true });
     expect(emailed().sort()).toEqual(['alex@example.com', 'jo@example.com', 'sam@example.com']);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(db.draw.emails_sent_at).not.toBeNull();
+    // Three match emails and the organizer's link
+    expect(emailsCounted()).toBe(4);
+  });
+
+  it('emails the organizer their organizer link on the first send', async () => {
+    await post(firstSend);
+    expect(sendOrganizerLinkEmail).toHaveBeenCalledTimes(1);
+    expect(sendOrganizerLinkEmail).toHaveBeenCalledWith('Pat', 'pat@example.com', ADMIN_KEY);
+  });
+
+  it('still completes the send when the organizer link email fails, and gives back its reservation', async () => {
+    sendOrganizerLinkEmail.mockImplementation(async () => { throw new Error('SMTP refused pat@example.com'); });
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ success: true, totalSent: 3, totalFailed: 0, failedNames: [], organizerLinkSent: false });
+    expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(emailsCounted()).toBe(3);
+  });
+
+  describe('when nobody has an email address', () => {
+    beforeEach(() => {
+      for (const p of db.participants) p.email = null;
+    });
+
+    it('emails just the organizer their link, without marking the draw sent', async () => {
+      const res = await post(firstSend);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ success: true, totalSent: 0, totalFailed: 0, failedNames: [], organizerLinkSent: true });
+      expect(sendMatchEmail).not.toHaveBeenCalled();
+      expect(sendOrganizerLinkEmail).toHaveBeenCalledWith('Pat', 'pat@example.com', ADMIN_KEY);
+      // Edit & Redraw stays open, and the organizer can ask again
+      expect(db.draw.emails_sent_at).toBeNull();
+      expect(emailsCounted()).toBe(1);
+      expect((await post(firstSend)).statusCode).toBe(200);
+      expect(emailsCounted()).toBe(2);
+    });
+
+    it('answers 503 when the daily cap is full', async () => {
+      db.emailLog = [{ hour: hourOf(db.now), sent: 495 }];
+      const res = await post(firstSend);
+      expect(res.statusCode).toBe(503);
+      expect(sendOrganizerLinkEmail).not.toHaveBeenCalled();
+    });
+
+    it('answers 500 and gives back the reservation when the email fails', async () => {
+      sendOrganizerLinkEmail.mockImplementation(async () => { throw new Error('SMTP refused pat@example.com'); });
+      const res = await post(firstSend);
+      expect(res.statusCode).toBe(500);
+      expect(res.body).toEqual({ error: 'Failed to send your organizer link. Please try again.' });
+      expect(emailsCounted()).toBe(0);
+    });
+
+    it('still requires the organizer name and email', async () => {
+      const res = await post({ ...firstSend, organizerEmail: '' });
+      expect(res.statusCode).toBe(400);
+      expect(sendOrganizerLinkEmail).not.toHaveBeenCalled();
+    });
   });
 
   it('leaves the people whose email failed unsent and names them', async () => {
     failFor('sam@example.com');
     const res = await post(firstSend);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, totalSent: 2, totalFailed: 1, failedNames: ['Sam'] });
+    expect(res.body).toEqual({ success: true, totalSent: 2, totalFailed: 1, failedNames: ['Sam'], organizerLinkSent: true });
     expect(sentNames()).toEqual(['Alex', 'Jo']);
     expect(db.draw.emails_sent_at).not.toBeNull();
-    expect(emailsCounted()).toBe(2);
+    expect(emailsCounted()).toBe(3);
   });
 
   it('reopens the draw when every email on the first send fails', async () => {
@@ -209,7 +280,8 @@ describe('POST /api/send-emails', () => {
     expect(res.statusCode).toBe(500);
     expect(sentNames()).toEqual([]);
     expect(db.draw.emails_sent_at).toBeNull();
-    expect(emailsCounted()).toBe(0);
+    // Only the organizer's link went out
+    expect(emailsCounted()).toBe(1);
   });
 
   it('still refuses a second full send with 409', async () => {
@@ -228,11 +300,13 @@ describe('POST /api/send-emails', () => {
     sendMatchEmail.mockClear();
     const res = await post(resend);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, totalSent: 1, totalFailed: 0, failedNames: [] });
+    expect(res.body).toEqual({ success: true, totalSent: 1, totalFailed: 0, failedNames: [], organizerLinkSent: false });
     expect(emailed()).toEqual(['sam@example.com']);
     expect(sendMatchEmail.mock.calls[0].slice(3, 5)).toEqual(['Pat', 'pat@example.com']);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
-    expect(emailsCounted()).toBe(3);
+    // The resend doesn't email the organizer their link again
+    expect(sendOrganizerLinkEmail).toHaveBeenCalledTimes(1);
+    expect(emailsCounted()).toBe(4);
   });
 
   it('keeps someone unsent when their resend fails again', async () => {
@@ -355,11 +429,12 @@ describe('POST /api/send-emails', () => {
     db.now += 24 * HOUR;
     const res = await post(firstSend);
     expect(res.statusCode).toBe(200);
-    expect(emailsCounted()).toBe(3);
+    expect(emailsCounted()).toBe(4);
   });
 
   it('sends right up to the cap and no further', async () => {
-    db.emailLog = [{ hour: hourOf(db.now) - 5 * HOUR, sent: 492 }];
+    // Three match emails and the organizer's link fill it exactly
+    db.emailLog = [{ hour: hourOf(db.now) - 5 * HOUR, sent: 491 }];
     const res = await post(firstSend);
     expect(res.statusCode).toBe(200);
     expect(emailsCounted()).toBe(495);
@@ -368,7 +443,7 @@ describe('POST /api/send-emails', () => {
   it('reserves nothing for a second first send that is refused', async () => {
     sendMatchEmail.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 10)));
     await Promise.all([post(firstSend), post(firstSend)]);
-    expect(emailsCounted()).toBe(3);
+    expect(emailsCounted()).toBe(4);
   });
 
   it('reserves the cap before sending and records each email as soon as it goes out', async () => {
@@ -378,7 +453,7 @@ describe('POST /api/send-emails', () => {
     await vi.waitFor(() => expect(Object.keys(pending)).toHaveLength(3));
     expect(claimedNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(sentNames()).toEqual([]);
-    expect(emailsCounted()).toBe(3);
+    expect(emailsCounted()).toBe(4);
 
     pending['sam@example.com']();
     await vi.waitFor(() => expect(sentNames()).toEqual(['Sam']));
@@ -389,7 +464,7 @@ describe('POST /api/send-emails', () => {
     expect((await sending).statusCode).toBe(200);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(claimedNames()).toEqual([]);
-    expect(emailsCounted()).toBe(3);
+    expect(emailsCounted()).toBe(4);
   });
 
   it('makes two database round trips before the first email goes out', async () => {
@@ -418,7 +493,7 @@ describe('POST /api/send-emails', () => {
     void post(firstSend);
     await vi.waitFor(() => expect(sentNames()).toEqual(['Alex', 'Sam']));
     // Jo's email may have gone out, so the cap keeps counting it
-    expect(emailsCounted()).toBe(3);
+    expect(emailsCounted()).toBe(4);
     expect(claimedNames()).toEqual(['Jo']);
 
     // Jo shows as not delivered, and once the claim expires a resend reaches them
@@ -429,7 +504,7 @@ describe('POST /api/send-emails', () => {
     expect(res.statusCode).toBe(200);
     expect(emailed()).toEqual(['jo@example.com']);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
-    expect(emailsCounted()).toBe(4);
+    expect(emailsCounted()).toBe(5);
   });
 
   it('lets a claim older than 5 minutes be taken again, but not a fresh one', async () => {

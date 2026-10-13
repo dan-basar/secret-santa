@@ -14,6 +14,8 @@ interface Props {
   onOrganizerEmailChange: (value: string) => void;
   loading: boolean;
   error: string;
+  // After a first send: whether the organizer's own link was emailed to them
+  organizerLinkNotice: string;
   // Changes after each send, so the CAPTCHA remounts with a fresh token
   turnstileKey: number;
   onTurnstileToken: (token: string) => void;
@@ -21,10 +23,11 @@ interface Props {
   onSend: (retryFailed: boolean) => void;
 }
 
-// Email notifications: the first send, then a resend for anyone not reached,
-// then a confirmation once everyone has their email
+// Email notifications: the first send (which also emails the organizer their
+// link, or only that when nobody has an email), then a resend for anyone not
+// reached, then a confirmation once everyone has their email
 export default function EmailSection(props: Props) {
-  const { draw, unsentCount } = props;
+  const { draw, unsentCount, organizerLinkNotice } = props;
 
   let content;
   if (!draw.emails_sent_at) {
@@ -45,6 +48,11 @@ export default function EmailSection(props: Props) {
   return (
     <section className={`card ${styles.section}`}>
       <h2 className={styles.sectionTitle}>Email notifications</h2>
+      {organizerLinkNotice && (
+        <p className={organizerLinkNotice.startsWith('✓') ? 'success-msg' : 'error-msg'} style={{ marginTop: 12 }}>
+          {organizerLinkNotice}
+        </p>
+      )}
       {content}
     </section>
   );
@@ -61,18 +69,23 @@ function FirstSendForm({
   const emailInvalid = email.length > 0 && !isValidEmail(email);
   // The name goes into every email, so the server refuses a web address in it
   const nameHasLink = hasLink(name);
-  const canSend = hasEmails && name.length > 0 && !nameHasLink && email.length > 0 && !emailInvalid;
+  const canSend = name.length > 0 && !nameHasLink && email.length > 0 && !emailInvalid;
 
   return (
     <>
-      <p className={styles.sectionDesc}>
-        {hasEmails
-          ? `Send each participant an email revealing who they drew. This can only be done once. ${emailCount} of ${draw.participants.length} participant${draw.participants.length !== 1 ? 's' : ''} have an email address.`
-          : 'No participants have an email address. Add emails to participants to enable this feature.'}
-      </p>
-      {/* Without anyone to email, the form stays visible but inactive, and the
-          CAPTCHA isn't loaded at all */}
-      <div className={`${styles.organizerFields} ${hasEmails ? '' : styles.inactive}`}>
+      {hasEmails ? (
+        <p className={styles.sectionDesc}>
+          {`Send each participant an email revealing who they drew. This can only be done once. ${emailCount} of ${draw.participants.length} participant${draw.participants.length !== 1 ? 's' : ''} have an email address. You'll get your organizer link by email too.`}
+        </p>
+      ) : (
+        <>
+          <p className={styles.sectionDesc} style={{ marginBottom: 8 }}>
+            No participants have an email address, so there are no match emails to send.
+          </p>
+          <p className={styles.sectionDesc}>Enter your name and email to get your organizer link by email.</p>
+        </>
+      )}
+      <div className={styles.organizerFields}>
         <div className={styles.organizerField}>
           <label className={styles.organizerLabel} htmlFor="organizerName">Organizer Name</label>
           <input
@@ -83,7 +96,7 @@ function FirstSendForm({
             onChange={(e) => onOrganizerNameChange(e.target.value)}
             placeholder="Your name"
             maxLength={200}
-            disabled={loading || !hasEmails}
+            disabled={loading}
           />
           {nameHasLink && (
             <p className={styles.organizerFieldError}>Your name can&rsquo;t contain a web address.</p>
@@ -99,28 +112,30 @@ function FirstSendForm({
             onChange={(e) => onOrganizerEmailChange(e.target.value)}
             placeholder="your@email.com"
             maxLength={320}
-            disabled={loading || !hasEmails}
+            disabled={loading}
           />
           {emailInvalid && (
             <p className={styles.organizerFieldError}>Please enter a valid email address.</p>
           )}
         </div>
       </div>
-      {name && (
+      {hasEmails && name && (
         <p className={styles.organizerPreview}>
           Preview: <em>&ldquo;This secret message was sent by <strong>{name}</strong>.&rdquo;</em>
         </p>
       )}
       {error && <p className="error-msg" role="alert" style={{ marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-        {hasEmails && <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />}
+        <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />
         <button
           className="btn btn-success"
           onClick={() => onSend(false)}
           disabled={loading || !canSend || !hasTurnstileToken}
-          title={!hasEmails ? 'No participants have an email address' : !name || !email ? 'Enter your name and email to send' : undefined}
+          title={!name || !email ? 'Enter your name and email to send' : undefined}
         >
-          {loading ? 'Sending…' : `📧 Send emails to ${emailCount} participant${emailCount !== 1 ? 's' : ''}`}
+          {loading ? 'Sending…' : hasEmails
+            ? `📧 Send emails to ${emailCount} participant${emailCount !== 1 ? 's' : ''}`
+            : '📧 Email me my organizer link'}
         </button>
       </div>
     </>
