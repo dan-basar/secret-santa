@@ -20,6 +20,7 @@ More detail:
 
 - **Conflict-free matching** — participants in the same group (e.g. families, teams) are never paired together
 - **Up to 50 participants** across up to 20 groups per draw
+- **Form kept as you type** — the home form is saved in the browser tab's session storage, so a refresh or an accidental Back doesn't lose it; a small "Clear form" link starts over
 - **Private reveal links** — each participant gets a personal link that shows only who they drew, behind a tap-to-reveal
 - **Email notifications** — one-click emails to all participants, protected by Cloudflare Turnstile CAPTCHA; anyone whose email failed can be resent to later
 - **Admin access** — the creator gets a private organizer link, shown with a Copy button at the top of their page, to see matches (hidden until they ask, so an organizer who is playing isn't spoiled), emails and personal links, send emails, delete the draw, or edit and redraw
@@ -148,7 +149,7 @@ src/
     base-path.json    # The /secret-santa basePath, read by next.config.js and site.ts
     site.ts           # BASE_PATH, and siteUrl(): public URLs with the basePath
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
-    groups.ts         # Home page form state: groups by id, Edit & Redraw draft
+    groups.ts         # Home page form state: groups by id, Edit & Redraw hand-off, the as-you-type draft (parseFormDraft)
     names.ts          # duplicateNames(): names must differ ignoring case and spaces (form and API)
     ip-prefix.ts      # rateLimitClient(): IPv4 address, or IPv6 /64, as one rate-limit client
   pages/

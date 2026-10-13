@@ -71,7 +71,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 - **Typography**: Libre Baskerville (headings) + DM Sans (body), loaded with `next/font/google` in `_app.tsx` (downloaded at build time and served from this site), feeding `--font-serif` / `--font-sans`
 - **Forms**: client-side validation before API calls; errors displayed inline
 - **Groups on the home page** are referenced by a stable id (`src/lib/groups.ts`), never by name, so renaming a group keeps its members
-- **Session storage**: key `editDraftData` passes the form state from the draw page back to the home page for "Edit & Redraw"
+- **Session storage**: key `editDraftData` passes the form state from the draw page back to the home page for "Edit & Redraw"; key `homeFormDraft` holds the home form as it is typed (restored after a refresh or Back, removed once a draw is created or the form is cleared), and the "Clear form" link in the Participants heading resets it after a confirm
 - Participants limit: 50 max; groups limit: 20 max
 
 ## Matching Algorithm (`src/lib/matching.ts`)
