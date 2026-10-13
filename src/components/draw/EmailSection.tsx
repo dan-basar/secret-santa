@@ -73,11 +73,18 @@ function FirstSendForm({
 
   return (
     <>
-      <p className={styles.sectionDesc}>
-        {hasEmails
-          ? `Send each participant an email revealing who they drew. This can only be done once. ${emailCount} of ${draw.participants.length} participant${draw.participants.length !== 1 ? 's' : ''} have an email address. You'll get your organizer link by email too.`
-          : 'No participants have an email address, so there are no match emails to send. Enter your name and email to get your organizer link by email.'}
-      </p>
+      {hasEmails ? (
+        <p className={styles.sectionDesc}>
+          {`Send each participant an email revealing who they drew. This can only be done once. ${emailCount} of ${draw.participants.length} participant${draw.participants.length !== 1 ? 's' : ''} have an email address. You'll get your organizer link by email too.`}
+        </p>
+      ) : (
+        <>
+          <p className={styles.sectionDesc} style={{ marginBottom: 8 }}>
+            No participants have an email address, so there are no match emails to send.
+          </p>
+          <p className={styles.sectionDesc}>Enter your name and email to get your organizer link by email.</p>
+        </>
+      )}
       <div className={styles.organizerFields}>
         <div className={styles.organizerField}>
           <label className={styles.organizerLabel} htmlFor="organizerName">Organizer Name</label>
