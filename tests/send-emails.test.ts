@@ -9,7 +9,10 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 interface FakeParticipant { id: number; name: string; email: string | null; email_sent_at: string | null; email_claimed_at: number | null }
 const db = vi.hoisted(() => ({
   now: 0,
-  draw: {} as { id: string; admin_key: string; deleted_at: string | null; emails_sent_at: string | null; organizer_name: string | null; organizer_email: string | null },
+  draw: {} as {
+    id: string; admin_key: string; deleted_at: string | null; emails_sent_at: string | null; organizer_name: string | null; organizer_email: string | null;
+    organizer_note: string | null; budget_cents: number | null; exchange_date: string | null;
+  },
   participants: [] as FakeParticipant[],
   receiverOf: {} as Record<number, number>,
   emailLog: [] as { hour: number; sent: number }[],
@@ -40,8 +43,8 @@ vi.mock('@/lib/db', async (importOriginal) => {
     // The one statement that checks the cap, claims the draw and participants,
     // and reserves the cap for whoever was claimed
     if (text.includes('WITH cap AS')) {
-      const [count, limit, organizerName, organizerEmail, , retryFailed, ids, expiryMinutes] =
-        values as [number, number, string, string, string, boolean, number[], number];
+      const [count, limit, organizerName, organizerEmail, note, budgetCents, exchangeDate, , retryFailed, ids, expiryMinutes] =
+        values as [number, number, string, string, string | null, number | null, string | null, string, boolean, number[], number];
       // The organizer's own link email, reserved with the claims on a first send
       const organizerCount = values[values.length - 1] as number;
       const capOk = emailsCounted() + count <= limit;
@@ -50,6 +53,9 @@ vi.mock('@/lib/db', async (importOriginal) => {
         db.draw.emails_sent_at = 'now';
         db.draw.organizer_name = organizerName;
         db.draw.organizer_email = organizerEmail;
+        db.draw.organizer_note = note;
+        db.draw.budget_cents = budgetCents;
+        db.draw.exchange_date = exchangeDate;
       }
       const claimed = capOk && (retryFailed || drawClaimed)
         ? db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at
@@ -62,10 +68,16 @@ vi.mock('@/lib/db', async (importOriginal) => {
       }
       return [{ cap_ok: capOk, draw_claimed: drawClaimed, claimed_ids: claimed.map(p => p.id), reserved_hour: reservedHour }];
     }
-    // A first send with nobody to email: reserve one email for the organizer's link
+    // A first send with nobody to email: reserve one email for the organizer's
+    // link, and save the exchange details
     if (text.includes('WITH organizer_cap AS')) {
-      const [limit] = values as [number];
+      const [limit, note, budgetCents, exchangeDate] = values as [number, string | null, number | null, string | null];
       const capOk = emailsCounted() + 1 <= limit;
+      if (capOk && !db.draw.emails_sent_at) {
+        db.draw.organizer_note = note;
+        db.draw.budget_cents = budgetCents;
+        db.draw.exchange_date = exchangeDate;
+      }
       return [{ cap_ok: capOk, reserved_hour: capOk ? reserve(1) : null }];
     }
     if (text.includes('FROM Draws')) return [{ ...db.draw }];
@@ -171,7 +183,10 @@ function failFor(...addresses: string[]) {
 }
 
 beforeEach(() => {
-  db.draw = { id: DRAW_ID, admin_key: ADMIN_KEY, deleted_at: null, emails_sent_at: null, organizer_name: null, organizer_email: null };
+  db.draw = {
+    id: DRAW_ID, admin_key: ADMIN_KEY, deleted_at: null, emails_sent_at: null, organizer_name: null, organizer_email: null,
+    organizer_note: null, budget_cents: null, exchange_date: null,
+  };
   db.participants = [
     { id: 1, name: 'Alex', email: 'alex@example.com', email_sent_at: null, email_claimed_at: null },
     { id: 2, name: 'Sam', email: 'sam@example.com', email_sent_at: null, email_claimed_at: null },
@@ -548,5 +563,79 @@ describe('POST /api/send-emails', () => {
   it('rejects a retryFailed that is not a boolean', async () => {
     const res = await post({ ...resend, retryFailed: 'yes' });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('exchange details', () => {
+  const withDetails = { ...firstSend, organizerNote: '  Wrap it nicely  ', budget: '$25.50', exchangeDate: '2026-12-19' };
+  const saved = { organizer_note: 'Wrap it nicely', budget_cents: 2550, exchange_date: '2026-12-19' };
+  const none = { organizer_note: null, budget_cents: null, exchange_date: null };
+
+  it('saves them with the first send and puts them in every match email', async () => {
+    const res = await post(withDetails);
+    expect(res.statusCode).toBe(200);
+    expect(db.draw).toMatchObject(saved);
+    expect(sendMatchEmail.mock.calls.map(call => call[6])).toEqual([saved, saved, saved]);
+  });
+
+  it('leaves them unset when none are given or they are empty', async () => {
+    await post({ ...firstSend, organizerNote: '', budget: '', exchangeDate: '' });
+    expect(db.draw).toMatchObject(none);
+    expect(sendMatchEmail.mock.calls[0][6]).toEqual(none);
+  });
+
+  it('keeps a budget of 0, which shows as "No limit set"', async () => {
+    await post({ ...firstSend, budget: '0' });
+    expect(db.draw.budget_cents).toBe(0);
+  });
+
+  it('resends with the details saved by the first send, ignoring any in the body', async () => {
+    failFor('sam@example.com');
+    await post(withDetails);
+    failFor();
+    sendMatchEmail.mockClear();
+
+    await post({ ...resend, organizerNote: 'Changed', budget: '99' });
+    expect(emailed()).toEqual(['sam@example.com']);
+    expect(sendMatchEmail.mock.calls[0][6]).toEqual(saved);
+    expect(db.draw).toMatchObject(saved);
+  });
+
+  it('saves them with the organizer link email when nobody has an email address', async () => {
+    for (const p of db.participants) p.email = null;
+    const res = await post(withDetails);
+    expect(res.statusCode).toBe(200);
+    expect(db.draw).toMatchObject(saved);
+    expect(db.draw.emails_sent_at).toBeNull();
+  });
+
+  it('rejects a note with a link or HTML, or longer than 150 characters', async () => {
+    const link = await post({ ...firstSend, organizerNote: 'See bit.ly/gifts' });
+    expect(link.statusCode).toBe(400);
+    expect(link.body).toEqual({ error: 'Links aren’t allowed in the note.' });
+
+    const html = await post({ ...firstSend, organizerNote: '<b>Hi</b>' });
+    expect(html.statusCode).toBe(400);
+
+    const long = await post({ ...firstSend, organizerNote: 'n'.repeat(151) });
+    expect(long.statusCode).toBe(400);
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+    expect(db.draw.emails_sent_at).toBeNull();
+  });
+
+  it('rejects a budget that is not a dollar amount up to $10,000', async () => {
+    for (const budget of ['abc', '12.345', '-5', '10000.01', 25]) {
+      const res = await post({ ...firstSend, budget });
+      expect(res.statusCode).toBe(400);
+    }
+    expect((await post({ ...firstSend, budget: '10,000' })).statusCode).toBe(200);
+  });
+
+  it('rejects an exchange date that is not a real day', async () => {
+    for (const exchangeDate of ['2026-02-30', '12/19/2026', 'soon', 20261219]) {
+      const res = await post({ ...firstSend, exchangeDate });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(sendMatchEmail).not.toHaveBeenCalled();
   });
 });

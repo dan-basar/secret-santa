@@ -3,7 +3,10 @@
 // participant emails, the first send emails just the organizer their link, and
 // can be repeated. Admin key required. Body: { id, key, turnstileToken } plus
 // organizerName and organizerEmail on the first send, or retryFailed: true to
-// resend only the failed.
+// resend only the failed. The first send may also carry the optional exchange
+// details organizerNote, budget (dollars as typed) and exchangeDate (YYYY-MM-DD),
+// saved with the draw and put in every match email; with no participant emails
+// they are saved with each organizer link email, for the personal link pages.
 // Returns 200 { success, totalSent, totalFailed, failedNames, organizerLinkSent }; 400 bad input;
 // 403 wrong key or CAPTCHA; 409 already sent / nothing to resend; 410 deleted;
 // 503 daily cap hit (495 emails in any 24 hours, across all draws).
@@ -14,7 +17,8 @@ import { sendMatchEmail, sendOrganizerLinkEmail } from '@/lib/email';
 import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
-import type { SendEmailsError, SendEmailsResponse } from '@/types/api';
+import { isExchangeDate, noteError, parseBudget } from '@/lib/details';
+import type { ExchangeDetails, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
 // Gmail's free SMTP plan allows ~500 emails in a rolling 24 hours; 495 gives a
 // 5-email safety margin
@@ -35,6 +39,9 @@ interface DrawRow {
   admin_key: string;
   organizer_name: string | null;
   organizer_email: string | null;
+  organizer_note: string | null;
+  budget_cents: number | null;
+  exchange_date: string | null;
 }
 
 interface MatchRow {
@@ -64,7 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(405).json({ error: 'Method not allowed.' });
   }
 
-  const { id, key, organizerName, organizerEmail, turnstileToken, retryFailed } = req.body;
+  const { id, key, organizerName, organizerEmail, organizerNote, budget, exchangeDate, turnstileToken, retryFailed } = req.body;
   if (!id || typeof id !== 'string') return res.status(400).json({ error: 'A draw id is required.' });
   if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
   if (!key || typeof key !== 'string') return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
@@ -74,6 +81,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   // they're only read from the body for the first send
   let safeOrganizerName = '';
   let safeOrganizerEmail = '';
+  // Likewise the exchange details: a resend uses the ones saved by the first send
+  let details: ExchangeDetails = { organizer_note: null, budget_cents: null, exchange_date: null };
 
   if (!retryFailed) {
     if (!organizerName || typeof organizerName !== 'string' || !organizerName.trim()) return res.status(400).json({ error: 'Organizer name is required.' });
@@ -91,6 +100,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     if (hasLink(safeOrganizerName)) return res.status(400).json({ error: 'Organizer name cannot contain a web address.' });
 
     if (!isValidEmail(safeOrganizerEmail)) return res.status(400).json({ error: 'Invalid organizer email format.' });
+
+    // All three are optional; an empty value means not set
+    if (organizerNote !== undefined && organizerNote !== null && typeof organizerNote !== 'string') return res.status(400).json({ error: 'The note must be text.' });
+    if (budget !== undefined && budget !== null && typeof budget !== 'string') return res.status(400).json({ error: 'The budget must be text.' });
+    if (exchangeDate !== undefined && exchangeDate !== null && typeof exchangeDate !== 'string') return res.status(400).json({ error: 'The exchange date must be text.' });
+
+    const note = (organizerNote ?? '').trim();
+    const badNote = noteError(note);
+    if (badNote) return res.status(400).json({ error: badNote });
+    const budgetCents = parseBudget(budget ?? '');
+    if (budgetCents === 'invalid') return res.status(400).json({ error: 'The budget must be a dollar amount of $10,000 or less.' });
+    const date = (exchangeDate ?? '').trim();
+    if (date && !isExchangeDate(date)) return res.status(400).json({ error: 'The exchange date is not a valid date.' });
+
+    details = { organizer_note: note || null, budget_cents: budgetCents, exchange_date: date || null };
   }
 
   // Every email carries a reveal link built from this; an email can't be taken
@@ -119,6 +143,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             ,admin_key
             ,organizer_name
             ,organizer_email
+            ,organizer_note
+            ,budget_cents
+            ,to_char(exchange_date, 'YYYY-MM-DD') as exchange_date
         FROM Draws
         WHERE id = ${id}::uuid
       `,
@@ -150,6 +177,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       // Saved together with emails_sent_at by the first send, so never null here
       safeOrganizerName = draw.organizer_name ?? '';
       safeOrganizerEmail = draw.organizer_email ?? '';
+      details = { organizer_note: draw.organizer_note, budget_cents: draw.budget_cents, exchange_date: draw.exchange_date };
     } else if (draw.emails_sent_at) {
       return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
     }
@@ -160,7 +188,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     // Nobody has an email address: email just the organizer their link. The
     // draw isn't marked as sent, so Edit & Redraw stays open and this can be
-    // repeated (the hourly rate limit and the cap still apply)
+    // repeated (the hourly rate limit and the cap still apply). The exchange
+    // details are saved each time, for the personal link pages
     if (!retryFailed && !unsent.length) {
       const [, reserveRows] = await sql.transaction([
         sql`SELECT pg_advisory_xact_lock(${EMAIL_CAP_LOCK_ID}::bigint)`,
@@ -175,6 +204,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                WHERE (SELECT ok FROM organizer_cap)
                ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
                RETURNING hour_start
+          ), details AS (
+               UPDATE Draws
+               SET organizer_note = ${details.organizer_note}, budget_cents = ${details.budget_cents}::int, exchange_date = ${details.exchange_date}::date
+               WHERE id = ${id}::uuid
+                    AND emails_sent_at IS NULL
+                    AND (SELECT ok FROM organizer_cap)
           )
           SELECT
                (SELECT ok FROM organizer_cap) as cap_ok
@@ -235,6 +270,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         ), draw_claim AS (
              UPDATE Draws
              SET emails_sent_at = now(), organizer_name = ${safeOrganizerName}, organizer_email = ${safeOrganizerEmail}
+                 ,organizer_note = ${details.organizer_note}, budget_cents = ${details.budget_cents}::int, exchange_date = ${details.exchange_date}::date
              WHERE id = ${id}::uuid
                   AND emails_sent_at IS NULL
                   AND NOT ${!!retryFailed}::boolean
@@ -310,7 +346,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const delivered = await Promise.all(toSend.map(async match => {
       let ok = true;
       try {
-        await sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_token);
+        await sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_token, details);
       } catch (err) {
         console.error(err);
         ok = false;

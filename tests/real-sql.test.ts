@@ -128,6 +128,34 @@ describe('routes against a real Postgres', () => {
     expect(after.sent - before.sent).toBe(1);
   });
 
+  it('saves the exchange details with the first send and shows them to the organizer and on personal links', async () => {
+    const { adminKey } = await create();
+    const drawId = (await adminView(adminKey)).id;
+    const send = await call(sendEmails, { method: 'POST', body: {
+      id: drawId, key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't',
+      organizerNote: 'Bring it wrapped', budget: '0', exchangeDate: '2026-12-19',
+    } });
+    expect(send.statusCode).toBe(200);
+    const details = { organizer_note: 'Bring it wrapped', budget_cents: 0, exchange_date: '2026-12-19' };
+    expect(sendMatchEmail.mock.calls.every(c => JSON.stringify((c as unknown[])[6]) === JSON.stringify(details))).toBe(true);
+
+    const view = await adminView(adminKey);
+    expect(view).toMatchObject(details);
+    const r = await call(reveal, { method: 'GET', query: { token: view.participants[0].reveal_token } });
+    expect(r.body).toMatchObject(details);
+  });
+
+  it('saves the exchange details with the organizer link email when nobody has an email address', async () => {
+    const { adminKey } = await create({ participants: people.map(p => ({ ...p, email: '' })) });
+    const drawId = (await adminView(adminKey)).id;
+    await call(sendEmails, { method: 'POST', body: {
+      id: drawId, key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't',
+      budget: '30', exchangeDate: '2027-01-02',
+    } });
+    const view = await adminView(adminKey);
+    expect(view).toMatchObject({ organizer_note: null, budget_cents: 3000, exchange_date: '2027-01-02', emails_sent_at: null });
+  });
+
   it('resends only to someone whose email failed', async () => {
     const { adminKey } = await create();
     const drawId = (await adminView(adminKey)).id;

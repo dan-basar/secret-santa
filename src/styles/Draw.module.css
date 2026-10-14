@@ -274,13 +274,6 @@
   margin-top: 4px;
 }
 
-.organizerPreview {
-  font-size: 13px;
-  color: var(--ink-light);
-  margin-bottom: 12px;
-  line-height: 1.5;
-}
-
 .dangerSection {
   border-color: #f0dcd8;
 }
@@ -396,4 +389,303 @@
   gap: 8px;
   margin-top: 8px;
   text-align: center;
+}
+
+/* Email card: the folded "Add a note, budget, or date" row, its fields and the message preview */
+.details {
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.detailsToggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  font: 500 14px var(--font-sans);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.detailsToggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.detailsChevron {
+  display: inline-block;
+  color: var(--ink-light);
+  transition: transform 0.15s;
+}
+
+.detailsToggle[aria-expanded="true"] .detailsChevron {
+  transform: rotate(90deg);
+}
+
+.detailsSummary {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-light);
+}
+
+.detailsBody,
+.detailsBodySingle {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+  align-items: start;
+}
+
+.detailsBody {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.detailsBody[hidden],
+.detailsBodySingle[hidden] {
+  display: none;
+}
+
+.detailsFields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.noteInput {
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.45;
+}
+
+.noteFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.noteFooter .organizerFieldError {
+  margin-top: 2px;
+}
+
+.noteCount {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-light);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One control per value: the default on the left, the amount or date on the right */
+.seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: white;
+}
+
+.seg > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.segNone {
+  border: 0;
+  background: none;
+  padding: 8px 10px;
+  font: 400 14px var(--font-sans);
+  color: var(--ink-light);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segNone[aria-pressed="true"] {
+  background: var(--ink);
+  color: white;
+  font-weight: 500;
+}
+
+.segNone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.segPart {
+  display: flex;
+  align-items: center;
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+  color: var(--ink-light);
+  font-size: 14px;
+}
+
+.segPartOn {
+  background: var(--accent-light);
+}
+
+.segInput {
+  border: 0;
+  background: transparent;
+  padding: 8px 10px 8px 4px;
+  font: 400 14px var(--font-sans);
+  color: var(--ink);
+  width: 100%;
+  min-width: 0;
+}
+
+.segInput:focus {
+  outline: none;
+}
+
+.segPart:focus-within {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* The calendar button below opens the picker instead */
+.dateInput::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.calendarButton {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 2px;
+  padding: 0;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: white;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.calendarButton:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.calendarButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.calendarButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* A stand-in for the match email, in its own serif type */
+.preview {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  font: 13.5px/1.55 Georgia, serif;
+  color: var(--ink);
+}
+
+.previewHead {
+  font: 500 11px/1.3 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+}
+
+.previewBox {
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: white;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.previewSpaced {
+  margin-top: 10px;
+}
+
+.previewReveal {
+  font-size: 17.5px;
+  line-height: 1.45;
+}
+
+.previewButton {
+  justify-self: start;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  font: 500 12.5px var(--font-sans);
+}
+
+.previewFoot {
+  font-size: 12px;
+  color: var(--ink-light);
+}
+
+/* After sending: the details that went out, read-only */
+.detailsSent {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--paper-warm);
+  font-size: 14px;
+}
+
+.detailsSent dt {
+  color: var(--ink-light);
+}
+
+.detailsSent dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .detailsBody {
+    grid-template-columns: 1fr;
+  }
+
+  /* The summary drops under the row's title, lined up with its text */
+  .detailsToggle {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 8px;
+    row-gap: 2px;
+  }
+
+  .detailsSummary {
+    grid-column: 2;
+  }
+
+  .detailsDot {
+    display: none;
+  }
+
+  /* Leaves the amount and the date room to show in full */
+  .seg > .segNone {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detailsChevron {
+    transition: none;
+  }
 }

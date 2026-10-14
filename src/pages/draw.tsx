@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { formFromParticipants } from '@/lib/groups';
 import { siteUrl } from '@/lib/site';
 import { isAdminKey, isCutShort, ADMIN_KEY_LENGTH } from '@/lib/tokens';
+import { formatBudget } from '@/lib/details';
 import OrganizerLink from '@/components/draw/OrganizerLink';
 import MatchesTable from '@/components/draw/MatchesTable';
 import PersonalLinks from '@/components/draw/PersonalLinks';
@@ -37,6 +38,12 @@ export default function DrawPage() {
   const [organizerLinkNotice, setOrganizerLinkNotice] = useState('');
   const [organizerName, setOrganizerName] = useState('');
   const [organizerEmail, setOrganizerEmail] = useState('');
+  // The optional exchange details, as typed: budget without its "$", date YYYY-MM-DD
+  const [organizerNote, setOrganizerNote] = useState('');
+  const [budget, setBudget] = useState('');
+  const [exchangeDate, setExchangeDate] = useState('');
+  // Filled from the saved details once per draw, so a reload after a send never wipes what's typed
+  const detailsLoadedFor = useRef<string | null>(null);
 
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleted, setDeleted] = useState(false);
@@ -73,6 +80,12 @@ export default function DrawPage() {
       if (res.status === 429) { setState('busy'); return; }
       if (!res.ok) { setState('error'); return; }
       const data: GetDrawResponse = await res.json();
+      if (detailsLoadedFor.current !== data.id) {
+        detailsLoadedFor.current = data.id;
+        setOrganizerNote(data.organizer_note ?? '');
+        setBudget(data.budget_cents !== null ? formatBudget(data.budget_cents).slice(1) : '');
+        setExchangeDate(data.exchange_date ?? '');
+      }
       setDraw(data);
       setState('loaded');
     } catch {
@@ -97,7 +110,10 @@ export default function DrawPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(retryFailed
           ? { id: draw.id, key: adminKey, turnstileToken, retryFailed: true }
-          : { id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(), turnstileToken }),
+          : {
+            id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(),
+            organizerNote: organizerNote.trim(), budget: budget.trim(), exchangeDate, turnstileToken,
+          }),
       });
       if (res.ok && !retryFailed) {
         const data: SendEmailsResponse = await res.json();
@@ -290,6 +306,12 @@ export default function DrawPage() {
             organizerEmail={organizerEmail}
             onOrganizerNameChange={setOrganizerName}
             onOrganizerEmailChange={setOrganizerEmail}
+            organizerNote={organizerNote}
+            budget={budget}
+            exchangeDate={exchangeDate}
+            onOrganizerNoteChange={setOrganizerNote}
+            onBudgetChange={setBudget}
+            onExchangeDateChange={setExchangeDate}
             loading={emailLoading}
             error={emailError}
             organizerLinkNotice={organizerLinkNotice}

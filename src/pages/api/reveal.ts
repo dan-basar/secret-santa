@@ -1,7 +1,8 @@
 // GET /api/reveal?token=<token>: one participant's own match, for their personal
 // link. The reveal token is the only credential and unlocks nothing else.
-// Returns 200 { name, match_name, created_at, organizer_name }; 404 unknown
-// token; 410 deleted draw.
+// Returns 200 { name, match_name, created_at, organizer_name, organizer_note,
+// budget_cents, exchange_date } (the last three are the organizer's optional
+// exchange details, null when not set); 404 unknown token; 410 deleted draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql } from '@/lib/db';
@@ -14,6 +15,9 @@ interface RevealRow {
   created_at: Date;
   emails_sent_at: Date | null;
   organizer_name: string | null;
+  organizer_note: string | null;
+  budget_cents: number | null;
+  exchange_date: string | null;
   deleted_at: Date | null;
 }
 
@@ -40,6 +44,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
           ,draws.created_at
           ,draws.emails_sent_at
           ,draws.organizer_name
+          ,draws.organizer_note
+          ,draws.budget_cents
+          ,to_char(draws.exchange_date, 'YYYY-MM-DD') as exchange_date
           ,draws.deleted_at
       FROM Participants as givers
            INNER JOIN Draws as draws ON givers.draw_id = draws.id
@@ -60,6 +67,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       match_name: row.receiver_name,
       created_at: row.created_at.toISOString(),
       organizer_name: row.emails_sent_at ? row.organizer_name : null,
+      organizer_note: row.organizer_note,
+      budget_cents: row.budget_cents,
+      exchange_date: row.exchange_date,
     });
   } catch (err) {
     console.error(err);

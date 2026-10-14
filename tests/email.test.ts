@@ -11,6 +11,8 @@ const { sendMatchEmail, sendOrganizerLinkEmail, revealUrl, organizerUrl } = awai
 const transportCalls = createTransport.mock.calls.slice();
 
 const TOKEN = '3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90';
+const NO_DETAILS = { organizer_note: null, budget_cents: null, exchange_date: null };
+const DETAILS = { organizer_note: 'Wrap it & bring it', budget_cents: 3000, exchange_date: '2026-12-19' };
 
 beforeEach(() => {
   sendMail.mockClear();
@@ -29,7 +31,8 @@ describe('sendMatchEmail', () => {
       '<b>Spike</b>',
       `"Santa" O'Claus`,
       'santa@example.com<script>',
-      TOKEN
+      TOKEN,
+      NO_DETAILS
     );
 
     const { html, text } = sendMail.mock.calls[0][0];
@@ -46,7 +49,7 @@ describe('sendMatchEmail', () => {
   });
 
   it('links to the personal reveal page', async () => {
-    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN);
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, NO_DETAILS);
 
     const { html, text } = sendMail.mock.calls[0][0];
     const link = `https://baseworkshop.app/secret-santa/reveal/${TOKEN}`;
@@ -57,12 +60,12 @@ describe('sendMatchEmail', () => {
   });
 
   it('sends replies to the organizer', async () => {
-    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN);
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, NO_DETAILS);
     expect(sendMail.mock.calls[0][0].replyTo).toBe('pat@example.com');
   });
 
   it('shows the hosted logo at a fixed size above the greeting', async () => {
-    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN);
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, NO_DETAILS);
 
     const { html } = sendMail.mock.calls[0][0];
 
@@ -71,13 +74,63 @@ describe('sendMatchEmail', () => {
   });
 
   it('keeps the match name out of the first lines of the body', async () => {
-    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN);
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, NO_DETAILS);
 
     const { text } = sendMail.mock.calls[0][0];
     const opening = text.split('\n').slice(0, 3).join('\n');
 
     expect(opening).toContain('Hi Alex,');
     expect(opening).not.toContain('Sam');
+  });
+
+  it('goes straight to the match when no details are set', async () => {
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, NO_DETAILS);
+
+    const { html, text } = sendMail.mock.calls[0][0];
+
+    expect(text).toContain("your match is below.\n\nYou have drawn Sam's name for the gift exchange!\n\n");
+    expect(html).not.toContain('First, some details:');
+    expect(html).not.toContain('big reveal');
+    expect(html).toContain('<p style="font-size: 20px; line-height: 1.5; margin-top: 32px;">');
+  });
+
+  it('puts the note, budget and date before the match, the note escaped in HTML', async () => {
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, DETAILS);
+
+    const { html, text } = sendMail.mock.calls[0][0];
+
+    expect(text).toContain([
+      'The Secret Santa draw is done, and your match is below.',
+      '',
+      'First, some details:',
+      'A note from your organizer:',
+      '"Wrap it & bring it"',
+      'Budget: $30',
+      'Exchange: Saturday, December 19',
+      '',
+      'And now the big reveal:',
+      '',
+      "You have drawn Sam's name for the gift exchange!",
+    ].join('\n'));
+
+    expect(html).toContain('&ldquo;Wrap it &amp; bring it&rdquo;');
+    expect(html).toContain('<strong>Budget:</strong> $30');
+    expect(html).toContain('<strong>Exchange:</strong> Saturday, December 19');
+    const order = ['First, some details:', 'A note from your organizer:', 'Budget:', 'Exchange:', 'And now the big reveal:', '<strong>Sam</strong>'];
+    const positions = order.map(part => html.indexOf(part));
+    expect(positions.every(p => p > 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it('leaves out each detail that is not set, and shows a $0 budget as "No limit set"', async () => {
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, { organizer_note: null, budget_cents: 0, exchange_date: null });
+
+    const { html, text } = sendMail.mock.calls[0][0];
+
+    expect(text).toContain('First, some details:\nBudget: No limit set\n\nAnd now the big reveal:');
+    expect(html).toContain('<strong>Budget:</strong> No limit set');
+    expect(html).not.toContain('A note from your organizer');
+    expect(html).not.toContain('Exchange:');
   });
 });
 
