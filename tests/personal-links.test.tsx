@@ -19,6 +19,6 @@ describe('personal links', () => {
     const href = screen.getByRole('link', { name: 'Text Sam their link' }).getAttribute('href')!;
     expect(href.startsWith('sms:?&body=')).toBe(true);
     expect(decodeURIComponent(href.slice('sms:?&body='.length)))
-      .toBe('Sam, your Secret Santa match is ready: https://example.com/secret-santa/reveal/k7Qm2xPa');
+      .toBe('Hi Sam, your Secret Santa match is ready: https://example.com/secret-santa/reveal/k7Qm2xPa');
   });
 });

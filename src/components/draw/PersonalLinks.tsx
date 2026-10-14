@@ -10,7 +10,7 @@ interface Props {
 
 // What the Text button fills in; the link goes last so the messages app shows a preview of it
 function textMessage(name: string, link: string): string {
-  return `${name}, your Secret Santa match is ready: ${link}`;
+  return `Hi ${name}, your Secret Santa match is ready: ${link}`;
 }
 
 // Each participant's personal reveal link, for the organizer to send by text or chat.
