@@ -339,6 +339,25 @@
   border-top: 1px solid var(--border);
 }
 
+.personalLinkActions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Only on phones and tablets, where sms: links open a messages app */
+.textLink {
+  display: none;
+  text-decoration: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .textLink {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
 .personalLinkText {
   display: flex;
   flex-direction: column;

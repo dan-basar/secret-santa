@@ -8,7 +8,13 @@ interface Props {
   linkFor: (revealToken: string) => string;
 }
 
-// Each participant's personal reveal link, for the organizer to send by text or chat
+// What the Text button fills in; the link goes last so the messages app shows a preview of it
+function textMessage(name: string, link: string): string {
+  return `Hi ${name}! Here's your Secret Santa link. Tap it to see who you drew, and keep it to yourself: ${link}`;
+}
+
+// Each participant's personal reveal link, for the organizer to send by text or chat.
+// On phones a Text button opens the messages app with the link filled in
 export default function PersonalLinks({ participants, emailsSent, linkFor }: Props) {
   const hasEmails = participants.some((p) => p.email);
   // The row whose copy button last settled, and whether the write worked
@@ -40,9 +46,19 @@ export default function PersonalLinks({ participants, emailsSent, linkFor }: Pro
               <span className={styles.name}>{p.name}</span>
               <span className={styles.shareUrl}>{linkFor(p.reveal_token)}</span>
             </div>
-            <button className="btn btn-secondary" onClick={() => handleCopy(p.reveal_token)}>
-              {copied?.token === p.reveal_token ? (copied.ok ? '✓ Copied' : 'Copy failed') : 'Copy'}
-            </button>
+            <div className={styles.personalLinkActions}>
+              <button className="btn btn-secondary" onClick={() => handleCopy(p.reveal_token)}>
+                {copied?.token === p.reveal_token ? (copied.ok ? '✓ Copied' : 'Copy failed') : 'Copy'}
+              </button>
+              {/* "?&body=" is the form both iPhone and Android read; no number, so they pick who */}
+              <a
+                className={`btn btn-secondary ${styles.textLink}`}
+                href={`sms:?&body=${encodeURIComponent(textMessage(p.name, linkFor(p.reveal_token)))}`}
+                aria-label={`Text ${p.name} their link`}
+              >
+                Text
+              </a>
+            </div>
           </li>
         ))}
       </ul>
