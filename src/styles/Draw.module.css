@@ -345,16 +345,34 @@
   flex-shrink: 0;
 }
 
-/* Only on phones and tablets, where sms: links open a messages app */
-.textLink {
+/* Only on phones and tablets, where sms: links open a messages app; the
+   Copy button's icon shows there too, so the two buttons match */
+.textLink,
+.phoneIcon {
   display: none;
+}
+
+.textLink {
   text-decoration: none;
 }
 
 @media (hover: none) and (pointer: coarse) {
   .textLink {
     display: inline-flex;
-    align-items: center;
+  }
+
+  .phoneIcon {
+    display: block;
+  }
+
+  /* With two buttons under each link, they share the row as equal halves */
+  .personalLinkActions {
+    align-self: stretch;
+  }
+
+  .personalLinkActions > * {
+    flex: 1;
+    justify-content: center;
   }
 }
 
