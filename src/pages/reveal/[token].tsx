@@ -6,6 +6,7 @@ import Image from 'next/image';
 import styles from '@/styles/Reveal.module.css';
 import logo from '../../../public/logo.svg';
 import { isRevealToken, isCutShort, REVEAL_TOKEN_LENGTH } from '@/lib/tokens';
+import { budgetLine, formatExchangeDate, hasDetails } from '@/lib/details';
 import type { RevealResponse } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'busy' | 'error';
@@ -94,6 +95,7 @@ export default function RevealPage() {
             <Image src={logo} alt="" width={82} height={96} className={styles.logo} />
           </div>
           <h1 style={{ fontSize: 26 }}>Hi {data.name},</h1>
+
           <p className={styles.lead}>you&rsquo;re the Secret Santa for&hellip;</p>
 
           {revealed ? (
@@ -102,6 +104,17 @@ export default function RevealPage() {
             <button className={`btn btn-primary ${styles.revealButton}`} onClick={() => setRevealed(true)}>
               Tap to reveal
             </button>
+          )}
+
+          {/* The organizer's note, budget and date sit below the reveal */}
+          {hasDetails(data) && (
+            <div className={styles.details}>
+              {data.organizer_note && (
+                <p><strong>A note from your organizer:</strong><br />&ldquo;{data.organizer_note}&rdquo;</p>
+              )}
+              {data.budget_cents !== null && <p><strong>Budget:</strong> {budgetLine(data.budget_cents)}</p>}
+              {data.exchange_date && <p><strong>Exchange:</strong> {formatExchangeDate(data.exchange_date)}</p>}
+            </div>
           )}
 
           <p className={styles.meta}>

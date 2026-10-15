@@ -33,8 +33,15 @@ export interface AdminMatch {
   receiver: number;
 }
 
+// The organizer's optional note, budget and exchange date (src/lib/details.ts)
+export interface ExchangeDetails {
+  organizer_note: string | null;
+  budget_cents: number | null; // 0 shows as "No limit set"
+  exchange_date: string | null; // YYYY-MM-DD
+}
+
 // GET /api/get-draw: the organizer's view of a draw
-export interface GetDrawResponse {
+export interface GetDrawResponse extends ExchangeDetails {
   id: string;
   created_at: string;
   emails_sent_at: string | null;
@@ -43,7 +50,7 @@ export interface GetDrawResponse {
 }
 
 // GET /api/reveal
-export interface RevealResponse {
+export interface RevealResponse extends ExchangeDetails {
   name: string;
   match_name: string;
   created_at: string;

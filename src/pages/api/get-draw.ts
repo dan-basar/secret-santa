@@ -1,8 +1,9 @@
 // GET /api/get-draw: the organizer's view of one draw, found by its admin key.
 // The key comes in the X-Admin-Key header, never the query string, so it stays
 // out of request logs. Returns the participants with their emails, groups,
-// reveal tokens and per-person email status, and the matches (as positions in
-// the participant list, which already carries each person's email and group).
+// reveal tokens and per-person email status, the matches (as positions in the
+// participant list, which already carries each person's email and group), and
+// the organizer's exchange details (note, budget and date) when set.
 // Returns 200; 404 missing, malformed or unknown key; 410 deleted draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
@@ -15,6 +16,9 @@ interface DrawRow {
   created_at: Date;
   emails_sent_at: Date | null;
   deleted_at: Date | null;
+  organizer_note: string | null;
+  budget_cents: number | null;
+  exchange_date: string | null;
 }
 
 interface ParticipantRow {
@@ -52,6 +56,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             ,created_at
             ,emails_sent_at
             ,deleted_at
+            ,organizer_note
+            ,budget_cents
+            ,to_char(exchange_date, 'YYYY-MM-DD') as exchange_date
         FROM Draws
         WHERE admin_key = ${key}
       `,
@@ -93,6 +100,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       id: draw.id,
       created_at: draw.created_at.toISOString(),
       emails_sent_at: draw.emails_sent_at?.toISOString() ?? null,
+      organizer_note: draw.organizer_note,
+      budget_cents: draw.budget_cents,
+      exchange_date: draw.exchange_date,
       participants: participantRows.map(p => ({
         name: p.name,
         email: p.email,

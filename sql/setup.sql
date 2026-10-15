@@ -14,12 +14,21 @@ CREATE TABLE Draws (
      -- Organizer fields are populated when emails are sent, not at draw creation
     ,organizer_name varchar(200) NULL
     ,organizer_email varchar(320) NULL
+     -- Exchange details the organizer can add on the organizer page: they go into each
+     -- match email and show on each personal link page (added by
+     -- migrations/009_exchange_details.sql). The note is plain text, up to 150
+     -- characters and no links. The budget is in cents; NULL = no budget set, and 0
+     -- shows as "No limit set". The date is the day of the exchange
+    ,organizer_note varchar(150) NULL
+    ,budget_cents integer NULL
+    ,exchange_date date NULL
      -- Secret key in the organizer's /draw#<admin_key> link: 14 letters and digits
      -- (src/lib/tokens.ts). get-draw finds the draw by it, so it is unique (NOT NULL
      -- since migrations/006_match_constraints.sql, unique since 008_short_links.sql).
      -- Draws from before 008 hold a uuid here, which no longer opens anything
     ,admin_key varchar(100) NOT NULL
     ,CONSTRAINT UQ_Draws_AdminKey UNIQUE (admin_key)
+    ,CONSTRAINT CK_Draws_BudgetCents CHECK (budget_cents BETWEEN 0 AND 1000000)
 );
 
 CREATE TABLE Participants (
