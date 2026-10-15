@@ -45,6 +45,7 @@ export interface GetDrawResponse extends ExchangeDetails {
   id: string;
   created_at: string;
   emails_sent_at: string | null;
+  organizer_name: string | null; // set by the first send
   participants: AdminParticipant[];
   matches: AdminMatch[];
 }

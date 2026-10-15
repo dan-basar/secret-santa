@@ -7,6 +7,7 @@ import { formFromParticipants } from '@/lib/groups';
 import { siteUrl } from '@/lib/site';
 import { isAdminKey, isCutShort, ADMIN_KEY_LENGTH } from '@/lib/tokens';
 import { formatBudget, isExchangeDate, noteError, parseBudget } from '@/lib/details';
+import { hasLink } from '@/lib/sanitize';
 import OrganizerLink from '@/components/draw/OrganizerLink';
 import MatchesTable from '@/components/draw/MatchesTable';
 import PersonalLinks from '@/components/draw/PersonalLinks';
@@ -284,6 +285,9 @@ export default function DrawPage() {
     budget_cents: typeof parsedBudget === 'number' ? parsedBudget : null,
     exchange_date: isExchangeDate(exchangeDate) ? exchangeDate : null,
   };
+  // The name saved by the first send, or the one typed in the email card before it
+  const typedName = organizerName.trim();
+  const listOrganizer = draw.organizer_name || (hasLink(typedName) ? '' : typedName);
 
   return (
     <>
@@ -292,7 +296,7 @@ export default function DrawPage() {
       </Head>
 
       {/* Printing the page prints this in its place once the matches are shown */}
-      {matchesShown && <PrintSheet draw={draw} details={listDetails} createdDate={createdDate} />}
+      {matchesShown && <PrintSheet draw={draw} details={listDetails} organizerName={listOrganizer} />}
       <div className={styles.page}>
         <header className={styles.header}>
           <div className={styles.headerInner}>
@@ -343,7 +347,7 @@ export default function DrawPage() {
             emailsSent={!!draw.emails_sent_at}
             linkFor={personalUrl}
           />
-          <MatchListExport draw={draw} details={listDetails} shown={matchesShown} />
+          <MatchListExport draw={draw} details={listDetails} organizerName={listOrganizer} shown={matchesShown} />
           <DeleteSection onDelete={handleDelete} loading={deleteLoading} error={deleteError} />
         </main>
 

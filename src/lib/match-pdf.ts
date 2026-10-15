@@ -1,5 +1,5 @@
 import type { jsPDF as JsPdf } from 'jspdf';
-import { detailLines, listColumns, sortedPairs } from '@/lib/match-list';
+import { detailLines, listColumns, listSubtitle, sortedPairs } from '@/lib/match-list';
 import type { GetDrawResponse, ExchangeDetails } from '@/types/api';
 
 // The organizer's list of matches as a PDF (F6), made in the browser so nobody's
@@ -28,7 +28,7 @@ export function pdfText(text: string): string {
 }
 
 /** The matches as a US Letter PDF: title, the details box if there is one, then the table */
-export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDetails): Promise<JsPdf> {
+export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDetails, organizerName: string): Promise<JsPdf> {
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -46,11 +46,10 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
   doc.text('Secret Santa matches', MARGIN, y + 16);
   y += 34;
 
-  const created = new Date(draw.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(...INK_LIGHT);
-  doc.text(`Draw created ${created}  ·  ${pairs.length} participant${pairs.length !== 1 ? 's' : ''}`, MARGIN, y);
+  doc.text(pdfText(listSubtitle(organizerName, draw.created_at, pairs.length)).replace(/ · /g, '  ·  '), MARGIN, y, { maxWidth: width });
   y += 22;
 
   // The details box: a warm panel with an accent bar, as the emails show it

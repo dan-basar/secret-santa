@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detailLines, exportFileName, matchesCsv, sortedPairs } from '@/lib/match-list';
+import { detailLines, exportFileName, listSubtitle, matchesCsv, sortedPairs } from '@/lib/match-list';
 import type { AdminParticipant } from '@/types/api';
 
 function person(name: string, group: string | null = null, email: string | null = null): AdminParticipant {
@@ -69,6 +69,13 @@ describe('detailLines', () => {
       { label: 'Budget', value: '$25.50' },
       { label: 'Exchange', value: 'Saturday, December 19' },
     ]);
+  });
+});
+
+describe('listSubtitle', () => {
+  it('starts with the organizer when there is one', () => {
+    expect(listSubtitle('Dan', '2026-10-15T12:00:00.000Z', 6)).toBe('Organized by Dan · Draw created October 15, 2026 · 6 participants');
+    expect(listSubtitle('', '2026-10-15T12:00:00.000Z', 1)).toBe('Draw created October 15, 2026 · 1 participant');
   });
 });
 

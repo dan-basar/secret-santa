@@ -6,6 +6,7 @@ import styles from '@/styles/Draw.module.css';
 interface Props {
   draw: GetDrawResponse;
   details: ExchangeDetails; // the note, budget and date as the email card holds them
+  organizerName: string; // for the "Organized by" line; '' when there is none
   shown: boolean; // whether the organizer has opened the matches table
 }
 
@@ -26,7 +27,7 @@ function saveFile(blob: Blob, fileName: string) {
 // The card below the personal links for taking the matches away: a CSV download, a PDF
 // and printing. Faded and disabled until Show all matches, so it never gives the list
 // away to an organizer who is taking part
-export default function MatchListExport({ draw, details, shown }: Props) {
+export default function MatchListExport({ draw, details, organizerName, shown }: Props) {
   const [pdfState, setPdfState] = useState<'idle' | 'saving' | 'failed'>('idle');
   const fileName = exportFileName(draw.created_at);
 
@@ -39,7 +40,7 @@ export default function MatchListExport({ draw, details, shown }: Props) {
     setPdfState('saving');
     try {
       const { buildMatchesPdf } = await import('@/lib/match-pdf');
-      const doc = await buildMatchesPdf(draw, details);
+      const doc = await buildMatchesPdf(draw, details, organizerName);
       saveFile(doc.output('blob'), `${fileName}.pdf`);
       setPdfState('idle');
     } catch {

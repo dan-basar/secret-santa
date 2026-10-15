@@ -70,6 +70,16 @@ export function matchesCsv(participants: AdminParticipant[], matches: AdminMatch
   return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
+/** The line under the printed title: "Organized by Dan · Draw created October 15, 2026 · 6 participants" */
+export function listSubtitle(organizerName: string, createdAt: string, count: number): string {
+  const created = new Date(createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return [
+    ...(organizerName ? [`Organized by ${organizerName}`] : []),
+    `Draw created ${created}`,
+    `${count} participant${count !== 1 ? 's' : ''}`,
+  ].join(' · ');
+}
+
 /** "secret-santa-matches-2026-10-15", from the day the draw was made */
 export function exportFileName(createdAt: string): string {
   return `secret-santa-matches-${createdAt.slice(0, 10)}`;

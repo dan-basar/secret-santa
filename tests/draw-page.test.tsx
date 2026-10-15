@@ -126,7 +126,7 @@ describe('draw page', () => {
     answer(200, {
       ...adminView,
       participants: [{ ...adminView.participants[0], name: 'Smith, Alex', email: 'alex@example.com' }, adminView.participants[1]],
-      organizer_note: 'Bring cocoa', budget_cents: 2500, exchange_date: '2026-12-19',
+      organizer_name: 'Dan', organizer_note: 'Bring cocoa', budget_cents: 2500, exchange_date: '2026-12-19',
     });
     const print = vi.fn();
     vi.stubGlobal('print', print);
@@ -141,6 +141,7 @@ describe('draw page', () => {
     // The sheet comes right before the page, which the print styles hide
     const sheet = container.firstElementChild!;
     expect(within(sheet as HTMLElement).getByText('Secret Santa matches')).toBeTruthy();
+    expect(within(sheet as HTMLElement).getByText(/^Organized by Dan · Draw created .+ · 2 participants$/)).toBeTruthy();
     expect(within(sheet as HTMLElement).getByText('Bring cocoa')).toBeTruthy();
     expect(within(sheet as HTMLElement).getByText('$25')).toBeTruthy();
     expect(within(sheet as HTMLElement).getByText('Saturday, December 19')).toBeTruthy();

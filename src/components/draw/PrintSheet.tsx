@@ -1,16 +1,16 @@
-import { detailLines, listColumns, sortedPairs } from '@/lib/match-list';
+import { detailLines, listColumns, listSubtitle, sortedPairs } from '@/lib/match-list';
 import type { ExchangeDetails, GetDrawResponse } from '@/types/api';
 import styles from '@/styles/Draw.module.css';
 
 interface Props {
   draw: GetDrawResponse;
   details: ExchangeDetails;
-  createdDate: string; // "October 15, 2026"
+  organizerName: string; // '' leaves out "Organized by"
 }
 
 // What the draw page prints once the matches are shown: a title, the details box if there
 // is one and the matches table, in place of the page. Hidden on screen (Draw.module.css)
-export default function PrintSheet({ draw, details, createdDate }: Props) {
+export default function PrintSheet({ draw, details, organizerName }: Props) {
   const cols = listColumns(draw.participants);
   const pairs = sortedPairs(draw.participants, draw.matches);
   const lines = detailLines(details);
@@ -18,9 +18,7 @@ export default function PrintSheet({ draw, details, createdDate }: Props) {
   return (
     <div className={styles.printSheet}>
       <h1 className={styles.printTitle}>Secret Santa matches</h1>
-      <p className={styles.printMeta}>
-        Draw created {createdDate} · {pairs.length} participant{pairs.length !== 1 ? 's' : ''}
-      </p>
+      <p className={styles.printMeta}>{listSubtitle(organizerName, draw.created_at, pairs.length)}</p>
       {lines.length > 0 && (
         <dl className={styles.printDetails}>
           {lines.map((line) => (
