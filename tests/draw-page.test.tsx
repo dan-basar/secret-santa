@@ -90,7 +90,7 @@ describe('draw page', () => {
   it('keeps the save and print card faded and disabled until the matches are shown', async () => {
     window.location.hash = `#${ADMIN_KEY}`;
     render(<DrawPage />);
-    const card = (await screen.findByRole('heading', { name: 'Save or print your Secret Santa' })).closest('section')!;
+    const card = (await screen.findByRole('heading', { name: 'Share or print your Secret Santa' })).closest('section')!;
     for (const name of ['Download CSV', 'Save PDF', 'Print']) {
       expect((within(card).getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
     }

@@ -80,7 +80,7 @@ export default function MatchListExport({ draw, details, organizerName, shown }:
 
   return (
     <section className={`card ${styles.section} ${shown ? '' : styles.exportLocked}`} aria-labelledby="exportTitle">
-      <h2 className={styles.sectionTitle} id="exportTitle">Save or print your Secret Santa</h2>
+      <h2 className={styles.sectionTitle} id="exportTitle">Share or print your Secret Santa</h2>
       <p className={styles.sectionDesc}>Export the full list of secret matches.</p>
       {/* Computers get CSV, PDF and Print; phones and tablets get Share and Print (Draw.module.css) */}
       <div className={styles.exportActions}>
