@@ -45,12 +45,12 @@ export default function PrintSheet({ draw, details, organizerName }: Props) {
                 <span className={styles.name}>{m.giver.name}</span>
                 {m.giver.email && <span className={styles.printEmail}>{m.giver.email}</span>}
               </td>
-              {cols.groups && <td>{m.giver.group_name}</td>}
+              {cols.groups && <td className={m.giver.group_name ? '' : styles.printNoGroup}>{m.giver.group_name || 'No Group'}</td>}
               <td>
                 <span className={styles.name}>{m.receiver.name}</span>
                 {m.receiver.email && <span className={styles.printEmail}>{m.receiver.email}</span>}
               </td>
-              {cols.groups && <td>{m.receiver.group_name}</td>}
+              {cols.groups && <td className={m.receiver.group_name ? '' : styles.printNoGroup}>{m.receiver.group_name || 'No Group'}</td>}
             </tr>
           ))}
         </tbody>
