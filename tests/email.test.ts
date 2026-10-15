@@ -134,6 +134,35 @@ describe('sendMatchEmail', () => {
   });
 });
 
+describe('Gmail trimming', () => {
+  it('gives every email its own X-Entity-Ref-ID so Gmail does not group them', async () => {
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, NO_DETAILS);
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, NO_DETAILS);
+    await sendOrganizerLinkEmail('Pat', 'pat@example.com', 'aB3dE5gH7jK9mN');
+
+    const ids = sendMail.mock.calls.map(call => call[0].headers['X-Entity-Ref-ID']);
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('ends the match email with its own personal link, after the button and footer', async () => {
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, NO_DETAILS);
+
+    const { html } = sendMail.mock.calls[0][0];
+    const link = `https://baseworkshop.app/secret-santa/reveal/${TOKEN}`;
+
+    expect(html).toMatch(new RegExp(`Your personal link: ${link}</p>\\s*</div>\\s*$`));
+    expect(html.indexOf('View your match')).toBeLessThan(html.indexOf('Happy Gifting'));
+    expect(html.indexOf('Happy Gifting')).toBeLessThan(html.indexOf('Your personal link'));
+  });
+
+  it('uses no quoted-reply markup Gmail could fold away', async () => {
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, DETAILS);
+    const { html } = sendMail.mock.calls[0][0];
+    expect(html).not.toMatch(/blockquote|gmail_quote|display:\s*none/i);
+  });
+});
+
 describe('transporter', () => {
   it('pools 3 reused SMTP connections', () => {
     expect(transportCalls).toHaveLength(1);
