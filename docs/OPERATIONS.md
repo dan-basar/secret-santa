@@ -90,11 +90,11 @@ Dependabot (`.github/dependabot.yml`) opens pull requests weekly: one grouped PR
 
 ## PDF font
 
-The organizer's PDF of the matches uses Noto Sans (SIL Open Font License, `public/fonts/OFL.txt`) so Croatian, Cyrillic and Greek names print as typed. The two files in `public/fonts/` are Noto Sans Regular and Bold cut down to Latin, Greek and Cyrillic with fontTools (`pip install fonttools`):
+The organizer's PDF of the matches uses Noto Sans (SIL Open Font License, `public/fonts/OFL.txt`) so Croatian, Cyrillic and Greek names print as typed. The three files in `public/fonts/` are Noto Sans Regular, Bold and Italic cut down to Latin, Greek and Cyrillic with fontTools (`pip install fonttools`):
 
 ```bash
 pyftsubset NotoSans-Regular.ttf --unicodes="U+0020-007E,U+00A0-024F,U+0300-036F,U+0370-03FF,U+0400-052F,U+1E00-1EFF,U+2000-206F,U+20A0-20CF,U+2122" \
   --layout-features='kern' --no-hinting --output-file=public/fonts/noto-sans-pdf-regular.ttf
 ```
 
-and the same for Bold. If the ranges change, change `NOTO_RANGES` in `src/lib/match-pdf.ts` to match. Letters outside them (Chinese, Arabic and so on) print as "?" in the PDF; Print and the CSV show everything. If the font can't be fetched, the PDF falls back to Helvetica, which covers only Western European letters.
+and the same for Bold and Italic (`noto-sans-pdf-bold.ttf`, `noto-sans-pdf-italic.ttf`). If the ranges change, change `NOTO_RANGES` in `src/lib/match-pdf.ts` to match. Letters outside them (Chinese, Arabic and so on) print as "?" in the PDF; Print and the CSV show everything. If the font can't be fetched, the PDF falls back to Helvetica, which covers only Western European letters.

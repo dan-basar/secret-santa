@@ -18,14 +18,15 @@ const EMAIL_SIZE = 8.5;
 const LINE_FACTOR = 1.15; // jsPDF's default line height
 
 // The PDF's text font. Noto Sans (SIL Open Font License, public/fonts/OFL.txt), cut down
-// to Latin, Greek and Cyrillic, so Croatian, Russian or Greek names print as typed. If it
+// to Latin, Greek and Cyrillic (regular, bold and italic), so Croatian, Russian or Greek names print as typed. If it
 // can't be loaded, jsPDF's built-in Helvetica stands in, which covers only Latin-1 and a
 // few more marks (curly quotes, dashes, €)
 export interface PdfFonts {
   regular: ArrayBuffer;
   bold: ArrayBuffer;
+  italic: ArrayBuffer;
 }
-export const PDF_FONT_FILES = { regular: 'noto-sans-pdf-regular.ttf', bold: 'noto-sans-pdf-bold.ttf' };
+export const PDF_FONT_FILES = { regular: 'noto-sans-pdf-regular.ttf', bold: 'noto-sans-pdf-bold.ttf', italic: 'noto-sans-pdf-italic.ttf' };
 
 // What public/fonts/noto-sans-pdf-*.ttf keep (the --unicodes given to pyftsubset; see docs/OPERATIONS.md, PDF font)
 const NOTO_RANGES: [number, number][] = [
@@ -56,12 +57,12 @@ export function pdfText(text: string, font: 'noto' | 'helvetica' = 'helvetica'):
 /** Fetches the PDF font from public/fonts; null if it can't be had, so the PDF falls back to Helvetica */
 export async function loadPdfFonts(basePath: string): Promise<PdfFonts | null> {
   try {
-    const [regular, bold] = await Promise.all([PDF_FONT_FILES.regular, PDF_FONT_FILES.bold].map(async (file) => {
+    const [regular, bold, italic] = await Promise.all([PDF_FONT_FILES.regular, PDF_FONT_FILES.bold, PDF_FONT_FILES.italic].map(async (file) => {
       const res = await fetch(`${basePath}/fonts/${file}`);
       if (!res.ok) throw new Error(`${file}: ${res.status}`);
       return res.arrayBuffer();
     }));
-    return { regular, bold };
+    return { regular, bold, italic };
   } catch {
     return null;
   }
@@ -92,6 +93,8 @@ export async function buildMatchesPdf(
     doc.addFont(PDF_FONT_FILES.regular, 'NotoSans', 'normal');
     doc.addFileToVFS(PDF_FONT_FILES.bold, base64(fonts.bold));
     doc.addFont(PDF_FONT_FILES.bold, 'NotoSans', 'bold');
+    doc.addFileToVFS(PDF_FONT_FILES.italic, base64(fonts.italic));
+    doc.addFont(PDF_FONT_FILES.italic, 'NotoSans', 'italic');
     font = 'NotoSans';
   }
   const text = (value: string) => pdfText(value, fonts ? 'noto' : 'helvetica');
@@ -141,7 +144,8 @@ export async function buildMatchesPdf(
     y += boxHeight + 20;
   }
 
-  const head = ['SECRET SANTA', ...(cols.groups ? ['GROUP'] : []), 'GIFTING TO', ...(cols.groups ? ['GROUP'] : [])];
+  // An empty narrow column before Gifting To holds each row's arrow, drawn as lines so it needs no font
+  const head = ['SECRET SANTA', ...(cols.groups ? ['GROUP'] : []), '', 'GIFTING TO', ...(cols.groups ? ['GROUP'] : [])];
   // Each name cell's email, drawn smaller and grey under the name, as on the page
   const emails = pairs.map((m) => [m.giver, m.receiver].map((p) => (p.email ? text(p.email) : '')));
   // A blank second line makes room for the email
@@ -149,11 +153,13 @@ export async function buildMatchesPdf(
   const body = pairs.map((m, i) => [
     nameCell(m.giver.name, emails[i][0]),
     ...(cols.groups ? [text(m.giver.group_name || 'No Group')] : []),
+    '',
     nameCell(m.receiver.name, emails[i][1]),
     ...(cols.groups ? [text(m.receiver.group_name || 'No Group')] : []),
   ]);
-  const groupCols = cols.groups ? [1, 3] : [];
-  const receiverCol = cols.groups ? 2 : 1;
+  const groupCols = cols.groups ? [1, 4] : [];
+  const arrowCol = cols.groups ? 2 : 1;
+  const receiverCol = arrowCol + 1;
 
   autoTable(doc, {
     startY: y,
@@ -166,18 +172,29 @@ export async function buildMatchesPdf(
       lineColor: BORDER, overflow: 'linebreak', valign: 'top',
     },
     headStyles: { fontSize: 9, fontStyle: 'bold', textColor: INK },
-    columnStyles: cols.groups ? { 1: { cellWidth: 100 }, 3: { cellWidth: 100 } } : {},
+    columnStyles: { [arrowCol]: { cellWidth: 22 }, ...(cols.groups ? { 1: { cellWidth: 100 }, 4: { cellWidth: 100 } } : {}) },
     didParseCell: (data) => {
       // A rule under the header and between rows, like the table on the page
       data.cell.styles.lineWidth = data.section === 'head' ? { bottom: 1.5 } : { bottom: 0.5 };
       if (data.section === 'body' && data.row.index === body.length - 1) data.cell.styles.lineWidth = 0;
       if (data.section === 'body' && groupCols.includes(data.column.index) && data.cell.raw === 'No Group') {
         data.cell.styles.textColor = INK_LIGHT;
-        // Noto Sans is loaded without an italic, to keep the download small
-        if (!fonts) data.cell.styles.fontStyle = 'italic';
+        data.cell.styles.fontStyle = 'italic';
       }
     },
     didDrawCell: (data) => {
+      if (data.section === 'body' && data.column.index === arrowCol && data.row.index >= 0) {
+        // A right-pointing arrow on the name's line, in the light ink
+        const midY = data.cell.y + data.cell.padding('top') + BODY_SIZE * 0.45;
+        const left = data.cell.x + 5;
+        const right = data.cell.x + data.cell.width - 5;
+        doc.setDrawColor(...INK_LIGHT);
+        doc.setLineWidth(0.9);
+        doc.line(left, midY, right, midY);
+        doc.line(right - 3.5, midY - 3, right, midY);
+        doc.line(right - 3.5, midY + 3, right, midY);
+        return;
+      }
       if (data.section !== 'body' || (data.column.index !== 0 && data.column.index !== receiverCol)) return;
       // autoTable also draws a stand-in row (index -1) when it measures a page break
       const email = emails[data.row.index]?.[data.column.index === 0 ? 0 : 1];

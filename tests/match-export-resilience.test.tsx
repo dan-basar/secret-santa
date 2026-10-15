@@ -103,6 +103,7 @@ describe('print sheet with odd names', () => {
   it('shows every name as plain text', () => {
     const { container } = render(<PrintSheet draw={draw} details={{ organizer_note: null, budget_cents: null, exchange_date: null }} organizerName="Dan" />);
     expect(container.querySelectorAll('tbody tr')).toHaveLength(participants.length);
+    expect([...container.querySelectorAll('tbody td')].filter((td) => td.textContent === '→')).toHaveLength(participants.length);
     expect(container.innerHTML).toContain('&lt;3 &amp; co');
     expect(container.textContent).toContain('李雷');
     expect(container.textContent).toContain('👨‍👩‍👧 Family');

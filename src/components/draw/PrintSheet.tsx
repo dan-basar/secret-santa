@@ -34,6 +34,7 @@ export default function PrintSheet({ draw, details, organizerName }: Props) {
           <tr>
             <th>Secret Santa</th>
             {cols.groups && <th>Group</th>}
+            <th className={styles.printArrow} aria-hidden="true" />
             <th>Gifting to</th>
             {cols.groups && <th>Group</th>}
           </tr>
@@ -46,6 +47,7 @@ export default function PrintSheet({ draw, details, organizerName }: Props) {
                 {m.giver.email && <span className={styles.printEmail}>{m.giver.email}</span>}
               </td>
               {cols.groups && <td className={m.giver.group_name ? '' : styles.printNoGroup}>{m.giver.group_name || 'No Group'}</td>}
+              <td className={styles.printArrow} aria-hidden="true">&rarr;</td>
               <td>
                 <span className={styles.name}>{m.receiver.name}</span>
                 {m.receiver.email && <span className={styles.printEmail}>{m.receiver.email}</span>}

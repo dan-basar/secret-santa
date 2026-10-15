@@ -54,6 +54,7 @@ describe('the PDF font', () => {
   const fonts = {
     regular: new Uint8Array(readFileSync('public/fonts/noto-sans-pdf-regular.ttf')).buffer,
     bold: new Uint8Array(readFileSync('public/fonts/noto-sans-pdf-bold.ttf')).buffer,
+    italic: new Uint8Array(readFileSync('public/fonts/noto-sans-pdf-italic.ttf')).buffer,
   };
 
   it('keeps Croatian, Cyrillic and Greek letters with Noto Sans, and still marks Chinese with ?', () => {

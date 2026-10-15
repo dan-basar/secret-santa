@@ -873,6 +873,16 @@
   font-style: italic;
 }
 
+/* The narrow column of arrows between Secret Santa and Gifting to */
+.printTable .printArrow {
+  width: 14pt;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+  color: var(--ink-light);
+}
+
 .printFoot {
   margin-top: 18pt;
   font-size: 8.5pt;
