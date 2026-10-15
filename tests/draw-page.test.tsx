@@ -90,7 +90,7 @@ describe('draw page', () => {
   it('keeps the save and print card faded and disabled until the matches are shown', async () => {
     window.location.hash = `#${ADMIN_KEY}`;
     render(<DrawPage />);
-    const card = (await screen.findByRole('heading', { name: 'Save or print your Secret Santa' })).closest('section')!;
+    const card = (await screen.findByRole('heading', { name: 'Share or print your Secret Santa' })).closest('section')!;
     for (const name of ['Download CSV', 'Save PDF', 'Print']) {
       expect((within(card).getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
     }
@@ -160,6 +160,8 @@ describe('draw page', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Show all matches' }));
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
     await vi.waitFor(() => expect(share).toHaveBeenCalledOnce());
+    // Only the file, so iOS doesn't save a second text file beside it
+    expect(Object.keys(share.mock.calls[0][0])).toEqual(['files']);
     const file = share.mock.calls[0][0].files![0];
     expect(file.name).toBe('secret-santa-matches-2026-10-01.pdf');
     expect(file.type).toBe('application/pdf');
