@@ -49,12 +49,8 @@ export default function MatchListExport({ draw, details, shown }: Props) {
 
   return (
     <section className={`card ${styles.section} ${shown ? '' : styles.exportLocked}`} aria-labelledby="exportTitle">
-      <h2 className={styles.sectionTitle} id="exportTitle">Save or print the matches</h2>
-      <p className={styles.sectionDesc}>
-        {shown
-          ? 'Download the list as a spreadsheet (CSV), save it as a PDF, or print it. Like the table above, it shows everyone’s match, so keep it to yourself.'
-          : 'Click Show all matches above to save or print the list.'}
-      </p>
+      <h2 className={styles.sectionTitle} id="exportTitle">Save or print your Secret Santa</h2>
+      <p className={styles.sectionDesc}>Export the full list of secret matches.</p>
       <div className={styles.exportActions}>
         <button className="btn btn-secondary" onClick={handleCsv} disabled={!shown}>
           Download CSV

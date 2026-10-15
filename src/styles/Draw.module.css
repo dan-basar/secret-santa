@@ -727,7 +727,7 @@
   }
 }
 
-/* Save or print the matches card: faded until Show all matches */
+/* Save or print your Secret Santa card: faded until Show all matches */
 .exportActions {
   display: flex;
   flex-wrap: wrap;

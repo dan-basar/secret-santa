@@ -48,13 +48,16 @@ export default function PrintSheet({ draw, details, createdDate }: Props) {
                 {m.giver.email && <span className={styles.printEmail}>{m.giver.email}</span>}
               </td>
               {cols.groups && <td className={m.giver.group_name ? '' : styles.printNoGroup}>{m.giver.group_name || 'No group'}</td>}
-              <td><span className={styles.name}>{m.receiver.name}</span></td>
+              <td>
+                <span className={styles.name}>{m.receiver.name}</span>
+                {m.receiver.email && <span className={styles.printEmail}>{m.receiver.email}</span>}
+              </td>
               {cols.groups && <td className={m.receiver.group_name ? '' : styles.printNoGroup}>{m.receiver.group_name || 'No group'}</td>}
             </tr>
           ))}
         </tbody>
       </table>
-      <p className={styles.printFoot}>Keep this list private: it shows everyone&rsquo;s match.</p>
+      <p className={styles.printFoot}>Keep this list private! It shows everyone&rsquo;s secret match.</p>
     </div>
   );
 }

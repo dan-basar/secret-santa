@@ -90,11 +90,11 @@ describe('draw page', () => {
   it('keeps the save and print card faded and disabled until the matches are shown', async () => {
     window.location.hash = `#${ADMIN_KEY}`;
     render(<DrawPage />);
-    const card = (await screen.findByRole('heading', { name: 'Save or print the matches' })).closest('section')!;
+    const card = (await screen.findByRole('heading', { name: 'Save or print your Secret Santa' })).closest('section')!;
     for (const name of ['Download CSV', 'Save PDF', 'Print']) {
       expect((within(card).getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
     }
-    expect(within(card).getByText(/Click Show all matches above/)).toBeTruthy();
+    expect(within(card).getByText('Export the full list of secret matches.')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show all matches' }));
     for (const name of ['Download CSV', 'Save PDF', 'Print']) {
@@ -123,7 +123,11 @@ describe('draw page', () => {
   });
 
   it('prints a sheet of the matches with the details box once they are shown', async () => {
-    answer(200, { ...adminView, organizer_note: 'Bring cocoa', budget_cents: 2500, exchange_date: '2026-12-19' });
+    answer(200, {
+      ...adminView,
+      participants: [{ ...adminView.participants[0], name: 'Smith, Alex', email: 'alex@example.com' }, adminView.participants[1]],
+      organizer_note: 'Bring cocoa', budget_cents: 2500, exchange_date: '2026-12-19',
+    });
     const print = vi.fn();
     vi.stubGlobal('print', print);
     window.location.hash = `#${ADMIN_KEY}`;
@@ -141,5 +145,9 @@ describe('draw page', () => {
     expect(within(sheet as HTMLElement).getByText('$25')).toBeTruthy();
     expect(within(sheet as HTMLElement).getByText('Saturday, December 19')).toBeTruthy();
     expect(within(sheet as HTMLElement).getAllByRole('row')).toHaveLength(3);
+    // Each person's email sits under their name, whether they give or receive
+    expect(within(sheet as HTMLElement).getAllByText('Smith, Alex')).toHaveLength(2);
+    expect(within(sheet as HTMLElement).getAllByText('alex@example.com')).toHaveLength(2);
+    expect(within(sheet as HTMLElement).getByText(/Keep this list private! It shows everyone.s secret match\./)).toBeTruthy();
   });
 });

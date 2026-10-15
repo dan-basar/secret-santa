@@ -79,15 +79,18 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
   }
 
   const head = ['SECRET SANTA', ...(cols.groups ? ['GROUP'] : []), 'GIFTING TO', ...(cols.groups ? ['GROUP'] : [])];
-  const giverEmails = pairs.map((m) => (m.giver.email ? pdfText(m.giver.email) : ''));
+  // Each name cell's email, drawn smaller and grey under the name, as on the page
+  const emails = pairs.map((m) => [m.giver, m.receiver].map((p) => (p.email ? pdfText(p.email) : '')));
+  // A blank second line makes room for the email
+  const nameCell = (name: string, email: string) => (email ? `${pdfText(name)}\n` : pdfText(name));
   const body = pairs.map((m, i) => [
-    // A blank second line makes room for the email, drawn smaller and grey below
-    giverEmails[i] ? [pdfText(m.giver.name), ''].join('\n') : pdfText(m.giver.name),
+    nameCell(m.giver.name, emails[i][0]),
     ...(cols.groups ? [pdfText(m.giver.group_name || 'No group')] : []),
-    pdfText(m.receiver.name),
+    nameCell(m.receiver.name, emails[i][1]),
     ...(cols.groups ? [pdfText(m.receiver.group_name || 'No group')] : []),
   ]);
   const groupCols = cols.groups ? [1, 3] : [];
+  const receiverCol = cols.groups ? 2 : 1;
 
   autoTable(doc, {
     startY: y,
@@ -111,7 +114,9 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
       }
     },
     didDrawCell: (data) => {
-      const email = data.section === 'body' && data.column.index === 0 ? giverEmails[data.row.index] : '';
+      if (data.section !== 'body' || (data.column.index !== 0 && data.column.index !== receiverCol)) return;
+      // autoTable also draws a stand-in row (index -1) when it measures a page break
+      const email = emails[data.row.index]?.[data.column.index === 0 ? 0 : 1];
       if (!email) return;
       doc.setFont('helvetica', 'normal');
       // A long address is set smaller to stay on its one line
@@ -131,7 +136,7 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(...INK_LIGHT);
-    doc.text('Keep this list private: it shows everyone’s match.', MARGIN, pageHeight - MARGIN + 14);
+    doc.text('Keep this list private! It shows everyone’s secret match.', MARGIN, pageHeight - MARGIN + 14);
     if (pages > 1) doc.text(`Page ${page} of ${pages}`, pageWidth - MARGIN, pageHeight - MARGIN + 14, { align: 'right' });
   }
 
