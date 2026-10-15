@@ -51,7 +51,7 @@ export default function MatchListExport({ draw, details, organizerName, shown }:
     }
   };
 
-  // Phones: the PDF goes to the share sheet, which can save it to Files, send it or print it.
+  // Phones: the PDF goes to the share sheet, which can save it to Files or send it.
   // Where files can't be shared, or the sheet won't open, the PDF downloads instead
   const handleShare = async () => {
     setPdfState('saving');
@@ -78,10 +78,10 @@ export default function MatchListExport({ draw, details, organizerName, shown }:
     <section className={`card ${styles.section} ${shown ? '' : styles.exportLocked}`} aria-labelledby="exportTitle">
       <h2 className={styles.sectionTitle} id="exportTitle">Save or print your Secret Santa</h2>
       <p className={styles.sectionDesc}>Export the full list of secret matches.</p>
-      {/* Computers get all three; phones and tablets get Share PDF alone (Draw.module.css) */}
+      {/* Computers get CSV, PDF and Print; phones and tablets get Share and Print (Draw.module.css) */}
       <div className={styles.exportActions}>
         <button className={`btn btn-secondary ${styles.sharePdf}`} onClick={handleShare} disabled={!shown || pdfState === 'saving'}>
-          {pdfState === 'saving' ? 'Making PDF…' : 'Share PDF'}
+          {pdfState === 'saving' ? 'Making PDF…' : 'Share'}
         </button>
         <button className={`btn btn-secondary ${styles.desktopExport}`} onClick={handleCsv} disabled={!shown}>
           Download CSV
@@ -90,7 +90,7 @@ export default function MatchListExport({ draw, details, organizerName, shown }:
           {pdfState === 'saving' ? 'Saving…' : 'Save PDF'}
         </button>
         {/* The page prints as the PrintSheet beside it once the matches are shown */}
-        <button className={`btn btn-secondary ${styles.desktopExport}`} onClick={() => window.print()} disabled={!shown}>
+        <button className="btn btn-secondary" onClick={() => window.print()} disabled={!shown}>
           Print
         </button>
       </div>

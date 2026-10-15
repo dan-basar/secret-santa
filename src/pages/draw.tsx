@@ -179,7 +179,7 @@ export default function DrawPage() {
 
   const handleShowMatches = () => {
     setMatchesShown(true);
-    // On phones Share PDF must open the share sheet soon after the tap, so load the PDF library now
+    // On phones Share must open the share sheet soon after the tap, so load the PDF library now
     if (window.matchMedia?.('(hover: none) and (pointer: coarse)').matches) {
       import('@/lib/match-pdf').then((m) => m.loadPdfLibrary()).catch(() => {});
     }

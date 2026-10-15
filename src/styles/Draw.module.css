@@ -746,7 +746,7 @@
   }
 }
 
-/* Touch screens get Share PDF alone, which opens the share sheet */
+/* Touch screens get Share (the PDF in the share sheet) and Print, side by side */
 .sharePdf {
   display: none;
 }
@@ -758,6 +758,11 @@
 
   .desktopExport {
     display: none;
+  }
+
+  .exportActions > * {
+    flex: 1 1 40%;
+    justify-content: center;
   }
 }
 
