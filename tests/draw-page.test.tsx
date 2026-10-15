@@ -160,6 +160,8 @@ describe('draw page', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Show all matches' }));
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
     await vi.waitFor(() => expect(share).toHaveBeenCalledOnce());
+    // Only the file, so iOS doesn't save a second text file beside it
+    expect(Object.keys(share.mock.calls[0][0])).toEqual(['files']);
     const file = share.mock.calls[0][0].files![0];
     expect(file.name).toBe('secret-santa-matches-2026-10-01.pdf');
     expect(file.type).toBe('application/pdf');

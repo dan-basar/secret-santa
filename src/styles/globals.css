@@ -37,6 +37,16 @@ body {
   min-height: 100vh;
 }
 
+/* Printing: Safari on phones keeps 100vh at the screen's height, which can push the
+   paper-coloured background onto an extra blank page */
+@media print {
+  html,
+  body {
+    min-height: 0;
+    background: white;
+  }
+}
+
 h1, h2, h3 {
   font-family: var(--font-serif);
   font-weight: 700;

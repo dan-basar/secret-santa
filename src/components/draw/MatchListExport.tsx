@@ -63,7 +63,8 @@ export default function MatchListExport({ draw, details, organizerName, shown }:
       const file = new File([blob], `${fileName}.pdf`, { type: 'application/pdf' });
       if (navigator.canShare?.({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: 'Secret Santa matches' });
+          // Only the file: iOS saves a title or text as a second file beside it in Files
+          await navigator.share({ files: [file] });
         } catch (err) {
           // AbortError: the organizer closed the sheet
           if ((err as Error).name !== 'AbortError') saveFile(blob, file.name);
