@@ -25,6 +25,7 @@ More detail:
 - **Note, budget and date** — the organizer can add a short note (150 characters, no links), a dollar budget and an exchange date; they go into each match email and show on each personal link page, and lock once the emails are sent
 - **Email notifications** — one-click emails to all participants, protected by Cloudflare Turnstile CAPTCHA; anyone whose email failed can be resent to later
 - **Admin access** — the creator gets a private organizer link, shown with a Copy button at the top of their page, and by email when they send, to see matches (hidden until they ask, so an organizer who is playing isn't spoiled), emails and personal links, send emails, delete the draw, or edit and redraw
+- **Save or print the matches** — once the organizer shows the matches, a card below the personal links offers a CSV download (Secret Santa, Group, Email, Match Name, Match Group, Match Email; the group or email columns are left out when nobody has one), a PDF and a print view with the note, budget and date; all three are made in the browser, so nothing is sent anywhere
 - **Soft-delete** — draws are hidden, not destroyed
 - **Rate limiting** — per-IP hourly limits on creating, emailing and deleting draws, and on opening organizer and personal links (which keeps their short secrets from being guessed)
 
@@ -39,6 +40,7 @@ More detail:
 | Email | Nodemailer + Gmail SMTP |
 | CAPTCHA | Cloudflare Turnstile |
 | Deployment | Vercel |
+| PDF | jsPDF + jspdf-autotable, loaded in the browser only when the organizer saves a PDF |
 | Tests | Vitest, React Testing Library, PGlite (in-memory Postgres) |
 
 ---
@@ -155,6 +157,8 @@ src/
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
     groups.ts         # Home page form state: groups by id, Edit & Redraw hand-off, the as-you-type draft (parseFormDraft)
     names.ts          # duplicateNames(): names must differ ignoring case and spaces (form and API)
+    match-list.ts     # The organizer's list of matches: table order, CSV columns, details lines
+    match-pdf.ts      # The matches as a PDF (jsPDF), made in the browser
     ip-prefix.ts      # rateLimitClient(): IPv4 address, or IPv6 /64, as one rate-limit client
   pages/
     api/
@@ -170,7 +174,8 @@ src/
     draw.tsx          # Organizer page (/draw#<adminKey>) — organizer link, matches, personal links, email, admin actions
     reveal/[token].tsx  # Participant's private tap-to-reveal page
   components/
-    draw/             # The results page's sections (organizer link, matches table, personal links, email, delete); state stays in the page.
+    draw/             # The results page's sections (organizer link, matches table, email, personal links, save and print, delete); state stays in the page.
+                      # PrintSheet.tsx is what the page prints once the matches are shown
                       # TurnstileWidget.tsx loads the CAPTCHA script, only where the send/resend form renders
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
   styles/             # globals.css design tokens + CSS Modules per page

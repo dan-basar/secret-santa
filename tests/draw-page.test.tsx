@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent, within } from '@testing-library/react';
 
 const router = { isReady: true, query: {}, basePath: '/secret-santa', replace: vi.fn(), push: vi.fn() };
 vi.mock('next/router', () => ({ useRouter: () => router }));
@@ -85,5 +85,61 @@ describe('draw page', () => {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
     await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.at(-1)![1]).toEqual({ headers: { 'X-Admin-Key': otherKey } }));
+  });
+
+  it('keeps the save and print card faded and disabled until the matches are shown', async () => {
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    const card = (await screen.findByRole('heading', { name: 'Save or print the matches' })).closest('section')!;
+    for (const name of ['Download CSV', 'Save PDF', 'Print']) {
+      expect((within(card).getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(within(card).getByText(/Click Show all matches above/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all matches' }));
+    for (const name of ['Download CSV', 'Save PDF', 'Print']) {
+      expect((within(card).getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false);
+    }
+  });
+
+  it('downloads the matches as a CSV file', async () => {
+    let saved: Blob | undefined;
+    vi.stubGlobal('URL', Object.assign(URL, {
+      createObjectURL: vi.fn((blob: Blob) => { saved = blob; return 'blob:matches'; }),
+      revokeObjectURL: vi.fn(),
+    }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.download).toBe('secret-santa-matches-2026-10-01.csv');
+    });
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all matches' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+    expect(click).toHaveBeenCalledOnce();
+    // Starts with the UTF-8 byte order mark, which text() drops, so Excel reads accents right
+    expect([...new Uint8Array(await saved!.arrayBuffer()).slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(await saved!.text()).toBe('Secret Santa,Match Name\r\nAlex,Sam\r\nSam,Alex\r\n');
+    click.mockRestore();
+  });
+
+  it('prints a sheet of the matches with the details box once they are shown', async () => {
+    answer(200, { ...adminView, organizer_note: 'Bring cocoa', budget_cents: 2500, exchange_date: '2026-12-19' });
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    window.location.hash = `#${ADMIN_KEY}`;
+    const { container } = render(<DrawPage />);
+    await screen.findByText('Your organizer link', { exact: true });
+    expect(screen.queryByText('Secret Santa matches')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all matches' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    expect(print).toHaveBeenCalledOnce();
+    // The sheet comes right before the page, which the print styles hide
+    const sheet = container.firstElementChild!;
+    expect(within(sheet as HTMLElement).getByText('Secret Santa matches')).toBeTruthy();
+    expect(within(sheet as HTMLElement).getByText('Bring cocoa')).toBeTruthy();
+    expect(within(sheet as HTMLElement).getByText('$25')).toBeTruthy();
+    expect(within(sheet as HTMLElement).getByText('Saturday, December 19')).toBeTruthy();
+    expect(within(sheet as HTMLElement).getAllByRole('row')).toHaveLength(3);
   });
 });

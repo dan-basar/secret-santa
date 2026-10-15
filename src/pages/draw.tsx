@@ -6,15 +6,17 @@ import Image from 'next/image';
 import { formFromParticipants } from '@/lib/groups';
 import { siteUrl } from '@/lib/site';
 import { isAdminKey, isCutShort, ADMIN_KEY_LENGTH } from '@/lib/tokens';
-import { formatBudget } from '@/lib/details';
+import { formatBudget, isExchangeDate, noteError, parseBudget } from '@/lib/details';
 import OrganizerLink from '@/components/draw/OrganizerLink';
 import MatchesTable from '@/components/draw/MatchesTable';
 import PersonalLinks from '@/components/draw/PersonalLinks';
 import EmailSection from '@/components/draw/EmailSection';
+import MatchListExport from '@/components/draw/MatchListExport';
+import PrintSheet from '@/components/draw/PrintSheet';
 import DeleteSection from '@/components/draw/DeleteSection';
 import styles from '@/styles/Draw.module.css';
 import logo from '../../public/logo.svg';
-import type { ApiError, GetDrawResponse, SendEmailsError, SendEmailsResponse } from '@/types/api';
+import type { ApiError, ExchangeDetails, GetDrawResponse, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'busy' | 'error';
 
@@ -44,6 +46,9 @@ export default function DrawPage() {
   const [exchangeDate, setExchangeDate] = useState('');
   // Filled from the saved details once per draw, so a reload after a send never wipes what's typed
   const detailsLoadedFor = useRef<string | null>(null);
+
+  // Whether the organizer has opened the matches table; it also unlocks saving and printing them
+  const [matchesShown, setMatchesShown] = useState(false);
 
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleted, setDeleted] = useState(false);
@@ -271,12 +276,23 @@ export default function DrawPage() {
     month: 'long', day: 'numeric', year: 'numeric',
   });
 
+  // The saved and printed list carries the details as the email card shows them, leaving
+  // out any the server would refuse
+  const parsedBudget = parseBudget(budget);
+  const listDetails: ExchangeDetails = {
+    organizer_note: organizerNote.trim() && !noteError(organizerNote.trim()) ? organizerNote.trim() : null,
+    budget_cents: typeof parsedBudget === 'number' ? parsedBudget : null,
+    exchange_date: isExchangeDate(exchangeDate) ? exchangeDate : null,
+  };
+
   return (
     <>
       <Head>
         <title>Draw results — Secret Santa Picker</title>
       </Head>
 
+      {/* Printing the page prints this in its place once the matches are shown */}
+      {matchesShown && <PrintSheet draw={draw} details={listDetails} createdDate={createdDate} />}
       <div className={styles.page}>
         <header className={styles.header}>
           <div className={styles.headerInner}>
@@ -298,6 +314,8 @@ export default function DrawPage() {
             matches={draw.matches}
             emailsSent={!!draw.emails_sent_at}
             onEditAndRedraw={handleEditAndRedraw}
+            shown={matchesShown}
+            onShow={() => setMatchesShown(true)}
           />
           <EmailSection
             draw={draw}
@@ -325,6 +343,7 @@ export default function DrawPage() {
             emailsSent={!!draw.emails_sent_at}
             linkFor={personalUrl}
           />
+          <MatchListExport draw={draw} details={listDetails} shown={matchesShown} />
           <DeleteSection onDelete={handleDelete} loading={deleteLoading} error={deleteError} />
         </main>
 
