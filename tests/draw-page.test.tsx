@@ -151,4 +151,34 @@ describe('draw page', () => {
     expect(within(sheet as HTMLElement).getAllByText('alex@example.com')).toHaveLength(2);
     expect(within(sheet as HTMLElement).getByText(/Keep this list private! It shows everyone.s secret match\./)).toBeTruthy();
   });
+
+  it('shares the PDF through the share sheet on phones', async () => {
+    const share = vi.fn(async (_data: ShareData) => {});
+    Object.assign(navigator, { canShare: () => true, share });
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all matches' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Share PDF' }));
+    await vi.waitFor(() => expect(share).toHaveBeenCalledOnce());
+    const file = share.mock.calls[0][0].files![0];
+    expect(file.name).toBe('secret-santa-matches-2026-10-01.pdf');
+    expect(file.type).toBe('application/pdf');
+    expect(new TextDecoder().decode(new Uint8Array(await file.arrayBuffer()).slice(0, 5))).toBe('%PDF-');
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Share PDF' })).toBeTruthy());
+    Object.assign(navigator, { canShare: undefined, share: undefined });
+  });
+
+  it('downloads the PDF instead where files can\'t be shared', async () => {
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:pdf'), revokeObjectURL: vi.fn() }));
+    const names: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all matches' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Share PDF' }));
+    await vi.waitFor(() => expect(names).toEqual(['secret-santa-matches-2026-10-01.pdf']));
+    click.mockRestore();
+  });
 });

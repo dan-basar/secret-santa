@@ -72,6 +72,9 @@ export default function DrawPage() {
     return () => window.removeEventListener('hashchange', readKey);
   }, []);
 
+  // Another organizer link pasted into this tab opens with its matches hidden again
+  useEffect(() => setMatchesShown(false), [adminKey]);
+
   const loadDraw = useCallback(async () => {
     if (adminKey === null) return;
     // Too short: almost always a link cut short when pasted
@@ -173,6 +176,14 @@ export default function DrawPage() {
   // who opened the page on another address (vercel.app) still copies the public one
   const organizerUrl = siteUrl(`/draw#${adminKey ?? ''}`);
   const personalUrl = (token: string) => siteUrl(`/reveal/${encodeURIComponent(token)}`);
+
+  const handleShowMatches = () => {
+    setMatchesShown(true);
+    // On phones Share PDF must open the share sheet soon after the tap, so load the PDF library now
+    if (window.matchMedia?.('(hover: none) and (pointer: coarse)').matches) {
+      import('@/lib/match-pdf').then((m) => m.loadPdfLibrary()).catch(() => {});
+    }
+  };
 
   const handleEditAndRedraw = () => {
     // Emails can't be taken back, so a redraw after sending would leave people
@@ -319,7 +330,7 @@ export default function DrawPage() {
             emailsSent={!!draw.emails_sent_at}
             onEditAndRedraw={handleEditAndRedraw}
             shown={matchesShown}
-            onShow={() => setMatchesShown(true)}
+            onShow={handleShowMatches}
           />
           <EmailSection
             draw={draw}

@@ -36,12 +36,38 @@ export default function MatchListExport({ draw, details, organizerName, shown }:
     saveFile(new Blob(['\ufeff' + matchesCsv(draw.participants, draw.matches)], { type: 'text/csv;charset=utf-8' }), `${fileName}.csv`);
   };
 
+  const makePdf = async () => {
+    const { buildMatchesPdf } = await import('@/lib/match-pdf');
+    return (await buildMatchesPdf(draw, details, organizerName)).output('blob');
+  };
+
   const handlePdf = async () => {
     setPdfState('saving');
     try {
-      const { buildMatchesPdf } = await import('@/lib/match-pdf');
-      const doc = await buildMatchesPdf(draw, details, organizerName);
-      saveFile(doc.output('blob'), `${fileName}.pdf`);
+      saveFile(await makePdf(), `${fileName}.pdf`);
+      setPdfState('idle');
+    } catch {
+      setPdfState('failed');
+    }
+  };
+
+  // Phones: the PDF goes to the share sheet, which can save it to Files, send it or print it.
+  // Where files can't be shared, or the sheet won't open, the PDF downloads instead
+  const handleShare = async () => {
+    setPdfState('saving');
+    try {
+      const blob = await makePdf();
+      const file = new File([blob], `${fileName}.pdf`, { type: 'application/pdf' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Secret Santa matches' });
+        } catch (err) {
+          // AbortError: the organizer closed the sheet
+          if ((err as Error).name !== 'AbortError') saveFile(blob, file.name);
+        }
+      } else {
+        saveFile(blob, file.name);
+      }
       setPdfState('idle');
     } catch {
       setPdfState('failed');
@@ -52,20 +78,24 @@ export default function MatchListExport({ draw, details, organizerName, shown }:
     <section className={`card ${styles.section} ${shown ? '' : styles.exportLocked}`} aria-labelledby="exportTitle">
       <h2 className={styles.sectionTitle} id="exportTitle">Save or print your Secret Santa</h2>
       <p className={styles.sectionDesc}>Export the full list of secret matches.</p>
+      {/* Computers get all three; phones and tablets get Share PDF alone (Draw.module.css) */}
       <div className={styles.exportActions}>
-        <button className="btn btn-secondary" onClick={handleCsv} disabled={!shown}>
+        <button className={`btn btn-secondary ${styles.sharePdf}`} onClick={handleShare} disabled={!shown || pdfState === 'saving'}>
+          {pdfState === 'saving' ? 'Making PDF…' : 'Share PDF'}
+        </button>
+        <button className={`btn btn-secondary ${styles.desktopExport}`} onClick={handleCsv} disabled={!shown}>
           Download CSV
         </button>
-        <button className="btn btn-secondary" onClick={handlePdf} disabled={!shown || pdfState === 'saving'}>
+        <button className={`btn btn-secondary ${styles.desktopExport}`} onClick={handlePdf} disabled={!shown || pdfState === 'saving'}>
           {pdfState === 'saving' ? 'Saving…' : 'Save PDF'}
         </button>
         {/* The page prints as the PrintSheet beside it once the matches are shown */}
-        <button className="btn btn-secondary" onClick={() => window.print()} disabled={!shown}>
+        <button className={`btn btn-secondary ${styles.desktopExport}`} onClick={() => window.print()} disabled={!shown}>
           Print
         </button>
       </div>
       {pdfState === 'failed' && (
-        <p className="error-msg" style={{ marginTop: 12 }}>The PDF couldn&rsquo;t be made. Please try again, or use Print and choose Save as PDF.</p>
+        <p className="error-msg" style={{ marginTop: 12 }}>The PDF couldn&rsquo;t be made. Please try again.</p>
       )}
     </section>
   );

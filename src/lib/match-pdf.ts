@@ -18,18 +18,31 @@ const EMAIL_SIZE = 8.5;
 const LINE_FACTOR = 1.15; // jsPDF's default line height
 
 // jsPDF's built-in fonts cover Latin-1 and a few more marks (curly quotes, dashes, €).
-// Anything else would print as garbage: an emoji is left out, and a letter from another script shows as "?"
+// Anything else would print as garbage, so a name is cleaned up first: accents are
+// composed (e + ´ becomes é), tabs and line breaks become spaces, invisible marks
+// (zero-width spaces, direction overrides) and emoji are left out, and any other
+// letter, such as one from another script, shows as "?". A name that was all emoji shows as "?"
 const WIN_ANSI_EXTRAS = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+const EMOJI = /[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u20e3\ufe00-\ufe0f]/gu;
 export function pdfText(text: string): string {
-  return Array.from(text.replace(/[\p{Extended_Pictographic}‍️]/gu, ''), (ch) => {
-    const code = ch.codePointAt(0)!;
-    return (code >= 0x20 && code <= 0xff && !(code >= 0x7f && code < 0xa0)) || WIN_ANSI_EXTRAS.includes(ch) ? ch : '?';
-  }).join('').replace(/\s+/g, ' ').trim();
+  const cleaned = Array.from(
+    text.normalize('NFC').replace(/[\p{Cc}\s]/gu, ' ').replace(/\p{Cf}/gu, '').replace(EMOJI, ''),
+    (ch) => {
+      const code = ch.codePointAt(0)!;
+      return (code >= 0x20 && code <= 0xff && !(code >= 0x7f && code < 0xa0)) || WIN_ANSI_EXTRAS.includes(ch) ? ch : '?';
+    },
+  ).join('').replace(/ +/g, ' ').trim();
+  return cleaned || (text.trim() ? '?' : '');
+}
+
+/** Loads jsPDF; the page calls it early on phones, where the share sheet must open soon after the tap */
+export function loadPdfLibrary() {
+  return Promise.all([import('jspdf'), import('jspdf-autotable')]);
 }
 
 /** The matches as a US Letter PDF: title, the details box if there is one, then the table */
 export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDetails, organizerName: string): Promise<JsPdf> {
-  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+  const [{ jsPDF }, { autoTable }] = await loadPdfLibrary();
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -117,6 +130,8 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
       // autoTable also draws a stand-in row (index -1) when it measures a page break
       const email = emails[data.row.index]?.[data.column.index === 0 ? 0 : 1];
       if (!email) return;
+      // The blank last line kept for it, below a name that may wrap onto several lines
+      const emailLine = data.cell.text.length - 1;
       doc.setFont('helvetica', 'normal');
       // A long address is set smaller to stay on its one line
       const room = data.cell.width - data.cell.padding('horizontal');
@@ -124,7 +139,7 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
       const size = Math.max(6, Math.min(EMAIL_SIZE, (EMAIL_SIZE * room) / doc.getTextWidth(email)));
       doc.setFontSize(size);
       doc.setTextColor(...INK_LIGHT);
-      doc.text(email, data.cell.x + data.cell.padding('left'), data.cell.y + data.cell.padding('top') + BODY_SIZE * LINE_FACTOR + size * 0.85);
+      doc.text(email, data.cell.x + data.cell.padding('left'), data.cell.y + data.cell.padding('top') + emailLine * BODY_SIZE * LINE_FACTOR + size * 0.85);
     },
   });
 

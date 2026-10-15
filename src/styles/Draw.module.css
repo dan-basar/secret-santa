@@ -738,11 +738,26 @@
   opacity: 0.55;
 }
 
-/* Phones: the buttons share the width, two to a row */
+/* Narrow windows: the buttons share the width, two to a row */
 @media (max-width: 600px) {
   .exportActions > * {
     flex: 1 1 40%;
     justify-content: center;
+  }
+}
+
+/* Touch screens get Share PDF alone, which opens the share sheet */
+.sharePdf {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .sharePdf {
+    display: inline-flex;
+  }
+
+  .desktopExport {
+    display: none;
   }
 }
 
@@ -806,6 +821,7 @@
 
 .printDetails dd {
   white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .printTable {
@@ -825,6 +841,10 @@
 
 .printTable td {
   padding: 8pt;
+  /* A long name with no spaces wraps instead of running off the page; the
+     minimum width keeps short values such as "No group" on one line */
+  overflow-wrap: anywhere;
+  min-width: 72pt;
   border-bottom: 0.5pt solid var(--border);
   vertical-align: top;
 }
