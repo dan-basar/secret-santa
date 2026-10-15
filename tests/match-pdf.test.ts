@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { buildMatchesPdf, pdfText } from '@/lib/match-pdf';
 import type { GetDrawResponse } from '@/types/api';
@@ -22,7 +23,7 @@ describe('pdfText', () => {
 
 describe('buildMatchesPdf', () => {
   it('makes a one-page PDF with the details box, the table and both people\'s emails', async () => {
-    const doc = await buildMatchesPdf(draw, { organizer_note: 'Wrap it nicely', budget_cents: 3000, exchange_date: '2026-12-19' }, 'Dan');
+    const doc = await buildMatchesPdf(draw, { organizer_note: 'Wrap it nicely', budget_cents: 3000, exchange_date: '2026-12-19' }, 'Dan', null);
     expect(doc.getNumberOfPages()).toBe(1);
     const pdf = doc.output();
     expect(pdf.startsWith('%PDF-')).toBe(true);
@@ -39,10 +40,43 @@ describe('buildMatchesPdf', () => {
       { ...draw, participants, matches: participants.map((_, i) => ({ giver: i, receiver: (i + 1) % 50 })) },
       { organizer_note: null, budget_cents: null, exchange_date: null },
       '',
+      null,
     );
     expect(doc.output()).toContain('Draw created October 15, 2026  ·  50 participants');
     expect(doc.output()).not.toContain('Organized by');
     expect(doc.getNumberOfPages()).toBeGreaterThan(1);
     expect(doc.output()).toContain(`Page 1 of ${doc.getNumberOfPages()}`);
+  });
+});
+
+describe('the PDF font', () => {
+  // The files the page fetches from /fonts
+  const fonts = {
+    regular: new Uint8Array(readFileSync('public/fonts/noto-sans-pdf-regular.ttf')).buffer,
+    bold: new Uint8Array(readFileSync('public/fonts/noto-sans-pdf-bold.ttf')).buffer,
+  };
+
+  it('keeps Croatian, Cyrillic and Greek letters with Noto Sans, and still marks Chinese with ?', () => {
+    expect(pdfText('Ivana Čačić-Đurđević', 'noto')).toBe('Ivana Čačić-Đurđević');
+    expect(pdfText('Иван Петров', 'noto')).toBe('Иван Петров');
+    expect(pdfText('Ελένη', 'noto')).toBe('Ελένη');
+    expect(pdfText('李雷 🎄', 'noto')).toBe('??');
+    // Without it, Helvetica has only some of them
+    expect(pdfText('Čačić Šimić', 'helvetica')).toBe('?a?i? Šimi?');
+  });
+
+  it('embeds Noto Sans when the font files load', async () => {
+    const people = ['Ivana Čačić', 'Иван Петров', 'Ελένη'].map((name, i) => ({
+      name, email: null, group_name: null, reveal_token: `Tok${i}`, email_sent_at: null,
+    }));
+    const doc = await buildMatchesPdf(
+      { ...draw, participants: people, matches: people.map((_, i) => ({ giver: i, receiver: (i + 1) % 3 })) },
+      { organizer_note: 'Встреча в 18:00', budget_cents: null, exchange_date: null },
+      'Đuro',
+      fonts,
+    );
+    const pdf = doc.output();
+    expect(pdf).toContain('/BaseFont /NotoSans');
+    expect(pdf).toContain('/Identity-H');
   });
 });

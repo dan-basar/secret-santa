@@ -17,22 +17,62 @@ const BODY_SIZE = 10.5;
 const EMAIL_SIZE = 8.5;
 const LINE_FACTOR = 1.15; // jsPDF's default line height
 
-// jsPDF's built-in fonts cover Latin-1 and a few more marks (curly quotes, dashes, €).
-// Anything else would print as garbage, so a name is cleaned up first: accents are
-// composed (e + ´ becomes é), tabs and line breaks become spaces, invisible marks
-// (zero-width spaces, direction overrides) and emoji are left out, and any other
-// letter, such as one from another script, shows as "?". A name that was all emoji shows as "?"
+// The PDF's text font. Noto Sans (SIL Open Font License, public/fonts/OFL.txt), cut down
+// to Latin, Greek and Cyrillic, so Croatian, Russian or Greek names print as typed. If it
+// can't be loaded, jsPDF's built-in Helvetica stands in, which covers only Latin-1 and a
+// few more marks (curly quotes, dashes, €)
+export interface PdfFonts {
+  regular: ArrayBuffer;
+  bold: ArrayBuffer;
+}
+export const PDF_FONT_FILES = { regular: 'noto-sans-pdf-regular.ttf', bold: 'noto-sans-pdf-bold.ttf' };
+
+// What public/fonts/noto-sans-pdf-*.ttf keep (the --unicodes given to pyftsubset; see docs/OPERATIONS.md, PDF font)
+const NOTO_RANGES: [number, number][] = [
+  [0x20, 0x7e], [0xa0, 0x24f], [0x300, 0x36f], [0x370, 0x3ff], [0x400, 0x52f],
+  [0x1e00, 0x1eff], [0x2000, 0x206f], [0x20a0, 0x20cf], [0x2122, 0x2122],
+];
 const WIN_ANSI_EXTRAS = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+const inNoto = (code: number) => NOTO_RANGES.some(([from, to]) => code >= from && code <= to);
+const inHelvetica = (ch: string, code: number) =>
+  (code >= 0x20 && code <= 0xff && !(code >= 0x7f && code < 0xa0)) || WIN_ANSI_EXTRAS.includes(ch);
+
+// A name is cleaned up for the font first: accents are composed (e + ´ becomes é), tabs and
+// line breaks become spaces, invisible marks (zero-width spaces, direction overrides) and
+// emoji are left out, and a letter the font doesn't have, such as Chinese, shows as "?".
+// A name that was all emoji shows as "?"
 const EMOJI = /[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u20e3\ufe00-\ufe0f]/gu;
-export function pdfText(text: string): string {
+export function pdfText(text: string, font: 'noto' | 'helvetica' = 'helvetica'): string {
   const cleaned = Array.from(
     text.normalize('NFC').replace(/[\p{Cc}\s]/gu, ' ').replace(/\p{Cf}/gu, '').replace(EMOJI, ''),
     (ch) => {
       const code = ch.codePointAt(0)!;
-      return (code >= 0x20 && code <= 0xff && !(code >= 0x7f && code < 0xa0)) || WIN_ANSI_EXTRAS.includes(ch) ? ch : '?';
+      return (font === 'noto' ? inNoto(code) : inHelvetica(ch, code)) ? ch : '?';
     },
   ).join('').replace(/ +/g, ' ').trim();
   return cleaned || (text.trim() ? '?' : '');
+}
+
+/** Fetches the PDF font from public/fonts; null if it can't be had, so the PDF falls back to Helvetica */
+export async function loadPdfFonts(basePath: string): Promise<PdfFonts | null> {
+  try {
+    const [regular, bold] = await Promise.all([PDF_FONT_FILES.regular, PDF_FONT_FILES.bold].map(async (file) => {
+      const res = await fetch(`${basePath}/fonts/${file}`);
+      if (!res.ok) throw new Error(`${file}: ${res.status}`);
+      return res.arrayBuffer();
+    }));
+    return { regular, bold };
+  } catch {
+    return null;
+  }
+}
+
+// jsPDF takes a font file as a base64 string
+function base64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 }
 
 /** Loads jsPDF; the page calls it early on phones, where the share sheet must open soon after the tap */
@@ -41,9 +81,20 @@ export function loadPdfLibrary() {
 }
 
 /** The matches as a US Letter PDF: title, the details box if there is one, then the table */
-export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDetails, organizerName: string): Promise<JsPdf> {
+export async function buildMatchesPdf(
+  draw: GetDrawResponse, details: ExchangeDetails, organizerName: string, fonts: PdfFonts | null,
+): Promise<JsPdf> {
   const [{ jsPDF }, { autoTable }] = await loadPdfLibrary();
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  let font = 'helvetica';
+  if (fonts) {
+    doc.addFileToVFS(PDF_FONT_FILES.regular, base64(fonts.regular));
+    doc.addFont(PDF_FONT_FILES.regular, 'NotoSans', 'normal');
+    doc.addFileToVFS(PDF_FONT_FILES.bold, base64(fonts.bold));
+    doc.addFont(PDF_FONT_FILES.bold, 'NotoSans', 'bold');
+    font = 'NotoSans';
+  }
+  const text = (value: string) => pdfText(value, fonts ? 'noto' : 'helvetica');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const width = pageWidth - MARGIN * 2;
@@ -59,10 +110,10 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
   doc.text('Secret Santa matches', MARGIN, y + 16);
   y += 34;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(font, 'normal');
   doc.setFontSize(10);
   doc.setTextColor(...INK_LIGHT);
-  doc.text(pdfText(listSubtitle(organizerName, draw.created_at, pairs.length)).replace(/ · /g, '  ·  '), MARGIN, y, { maxWidth: width });
+  doc.text(text(listSubtitle(organizerName, draw.created_at, pairs.length)).replace(/ · /g, '  ·  '), MARGIN, y, { maxWidth: width });
   y += 22;
 
   // The details box: a warm panel with an accent bar, as the emails show it
@@ -71,7 +122,7 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
     const pad = 12;
     const labelWidth = 62;
     doc.setFontSize(BODY_SIZE);
-    const wrapped = lines.map((line) => doc.splitTextToSize(pdfText(line.value), width - pad * 2 - labelWidth - 4) as string[]);
+    const wrapped = lines.map((line) => doc.splitTextToSize(text(line.value), width - pad * 2 - labelWidth - 4) as string[]);
     const lineHeight = BODY_SIZE * LINE_FACTOR;
     const boxHeight = pad * 2 + wrapped.reduce((sum, w) => sum + w.length * lineHeight, 0) + (lines.length - 1) * 4;
     doc.setFillColor(...PAPER_WARM);
@@ -80,10 +131,10 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
     doc.rect(MARGIN, y, 3, boxHeight, 'F');
     let lineY = y + pad + BODY_SIZE * 0.8;
     lines.forEach((line, i) => {
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(font, 'bold');
       doc.setTextColor(...INK);
       doc.text(line.label, MARGIN + pad, lineY);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(font, 'normal');
       doc.text(wrapped[i], MARGIN + pad + labelWidth, lineY);
       lineY += wrapped[i].length * lineHeight + 4;
     });
@@ -92,14 +143,14 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
 
   const head = ['SECRET SANTA', ...(cols.groups ? ['GROUP'] : []), 'GIFTING TO', ...(cols.groups ? ['GROUP'] : [])];
   // Each name cell's email, drawn smaller and grey under the name, as on the page
-  const emails = pairs.map((m) => [m.giver, m.receiver].map((p) => (p.email ? pdfText(p.email) : '')));
+  const emails = pairs.map((m) => [m.giver, m.receiver].map((p) => (p.email ? text(p.email) : '')));
   // A blank second line makes room for the email
-  const nameCell = (name: string, email: string) => (email ? `${pdfText(name)}\n` : pdfText(name));
+  const nameCell = (name: string, email: string) => (email ? `${text(name)}\n` : text(name));
   const body = pairs.map((m, i) => [
     nameCell(m.giver.name, emails[i][0]),
-    ...(cols.groups ? [pdfText(m.giver.group_name || 'No group')] : []),
+    ...(cols.groups ? [text(m.giver.group_name || 'No group')] : []),
     nameCell(m.receiver.name, emails[i][1]),
-    ...(cols.groups ? [pdfText(m.receiver.group_name || 'No group')] : []),
+    ...(cols.groups ? [text(m.receiver.group_name || 'No group')] : []),
   ]);
   const groupCols = cols.groups ? [1, 3] : [];
   const receiverCol = cols.groups ? 2 : 1;
@@ -111,7 +162,7 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
     margin: { left: MARGIN, right: MARGIN, top: MARGIN, bottom: MARGIN + 10 },
     theme: 'plain',
     styles: {
-      font: 'helvetica', fontSize: BODY_SIZE, textColor: INK, cellPadding: { top: 8, bottom: 8, left: 8, right: 8 },
+      font, fontSize: BODY_SIZE, textColor: INK, cellPadding: { top: 8, bottom: 8, left: 8, right: 8 },
       lineColor: BORDER, overflow: 'linebreak', valign: 'top',
     },
     headStyles: { fontSize: 9, fontStyle: 'bold', textColor: INK },
@@ -122,7 +173,8 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
       if (data.section === 'body' && data.row.index === body.length - 1) data.cell.styles.lineWidth = 0;
       if (data.section === 'body' && groupCols.includes(data.column.index) && data.cell.raw === 'No group') {
         data.cell.styles.textColor = INK_LIGHT;
-        data.cell.styles.fontStyle = 'italic';
+        // Noto Sans is loaded without an italic, to keep the download small
+        if (!fonts) data.cell.styles.fontStyle = 'italic';
       }
     },
     didDrawCell: (data) => {
@@ -132,7 +184,7 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
       if (!email) return;
       // The blank last line kept for it, below a name that may wrap onto several lines
       const emailLine = data.cell.text.length - 1;
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(font, 'normal');
       // A long address is set smaller to stay on its one line
       const room = data.cell.width - data.cell.padding('horizontal');
       doc.setFontSize(EMAIL_SIZE);
@@ -147,7 +199,7 @@ export async function buildMatchesPdf(draw: GetDrawResponse, details: ExchangeDe
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page++) {
     doc.setPage(page);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(font, 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(...INK_LIGHT);
     doc.text('Keep this list private! It shows everyone’s secret match.', MARGIN, pageHeight - MARGIN + 14);

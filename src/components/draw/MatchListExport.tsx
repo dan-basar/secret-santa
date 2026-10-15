@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'next/router';
 import { exportFileName, matchesCsv } from '@/lib/match-list';
 import type { ExchangeDetails, GetDrawResponse } from '@/types/api';
 import styles from '@/styles/Draw.module.css';
@@ -28,6 +29,7 @@ function saveFile(blob: Blob, fileName: string) {
 // and printing. Faded and disabled until Show all matches, so it never gives the list
 // away to an organizer who is taking part
 export default function MatchListExport({ draw, details, organizerName, shown }: Props) {
+  const router = useRouter();
   const [pdfState, setPdfState] = useState<'idle' | 'saving' | 'failed'>('idle');
   const fileName = exportFileName(draw.created_at);
 
@@ -37,8 +39,9 @@ export default function MatchListExport({ draw, details, organizerName, shown }:
   };
 
   const makePdf = async () => {
-    const { buildMatchesPdf } = await import('@/lib/match-pdf');
-    return (await buildMatchesPdf(draw, details, organizerName)).output('blob');
+    const { buildMatchesPdf, loadPdfFonts } = await import('@/lib/match-pdf');
+    const fonts = await loadPdfFonts(router.basePath);
+    return (await buildMatchesPdf(draw, details, organizerName, fonts)).output('blob');
   };
 
   const handlePdf = async () => {

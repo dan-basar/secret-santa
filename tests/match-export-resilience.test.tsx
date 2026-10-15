@@ -89,7 +89,7 @@ describe('pdfText', () => {
 
 describe('PDF with odd names', () => {
   it('builds, keeps every row and only uses characters its font has', async () => {
-    const doc = await buildMatchesPdf(draw, { organizer_note: 'Line one\nline two 🎄', budget_cents: 0, exchange_date: null }, draw.organizer_name!);
+    const doc = await buildMatchesPdf(draw, { organizer_note: 'Line one\nline two 🎄', budget_cents: 0, exchange_date: null }, draw.organizer_name!, null);
     const pdf = doc.output();
     expect(pdf).toContain('Smith, Jo');
     expect(pdf).toContain('Organized by Dan, "the" organizer');
