@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { sortedPairs } from '@/lib/match-list';
 import type { AdminMatch, AdminParticipant } from '@/types/api';
 import styles from '@/styles/Draw.module.css';
 
@@ -7,26 +7,17 @@ interface Props {
   matches: AdminMatch[];
   emailsSent: boolean;
   onEditAndRedraw: () => void;
+  shown: boolean; // kept by the page, which also unlocks the save and print card with it
+  onShow: () => void;
 }
 
 // The organizer's matches table, with Edit & Redraw until emails are sent. Group columns appear only
 // when someone is in a group. The table starts hidden: an organizer who is also taking part would
 // otherwise see who has them as soon as the page opens
-export default function MatchesTable({ participants, matches, emailsSent, onEditAndRedraw }: Props) {
-  const [shown, setShown] = useState(false);
-  const pairs = matches.map((m) => ({ giver: participants[m.giver], receiver: participants[m.receiver] }));
+export default function MatchesTable({ participants, matches, emailsSent, onEditAndRedraw, shown, onShow }: Props) {
   const hasGroups = participants.some((p) => p.group_name);
-
   // Grouped people first, by group, then by giver name
-  const sorted = pairs.sort((a, b) => {
-    const aGroup = a.giver.group_name || '';
-    const bGroup = b.giver.group_name || '';
-    if (aGroup && !bGroup) return -1;
-    if (!aGroup && bGroup) return 1;
-    const groupCmp = aGroup.localeCompare(bGroup);
-    if (groupCmp !== 0) return groupCmp;
-    return a.giver.name.localeCompare(b.giver.name);
-  });
+  const sorted = sortedPairs(participants, matches);
 
   return (
     <section className={`card ${styles.section}`}>
@@ -46,7 +37,7 @@ export default function MatchesTable({ participants, matches, emailsSent, onEdit
 
       {!shown ? (
         <div className={styles.matchesHidden}>
-          <button className="btn btn-primary" onClick={() => setShown(true)}>
+          <button className="btn btn-primary" onClick={onShow}>
             Show all matches
           </button>
           <p className={styles.sectionDesc}>

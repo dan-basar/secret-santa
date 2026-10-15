@@ -24,6 +24,7 @@ const drawRow = {
   created_at: new Date('2026-10-01T12:00:00.000Z'),
   emails_sent_at: null,
   deleted_at: null,
+  organizer_name: 'Dan',
 };
 
 // Positions with gaps, so the test shows matches map by position, not by row number
@@ -88,6 +89,7 @@ describe('GET /api/get-draw', () => {
       id: DRAW_ID,
       created_at: '2026-10-01T12:00:00.000Z',
       emails_sent_at: null,
+      organizer_name: 'Dan',
       participants: participantRows.map(({ position: _position, ...p }) => ({ ...p, email_sent_at: p.email_sent_at?.toISOString() ?? null })),
       // Indexes into participants, which already carry each email and group
       matches: [{ giver: 0, receiver: 1 }, { giver: 1, receiver: 2 }, { giver: 2, receiver: 0 }],

@@ -25,6 +25,7 @@ More detail:
 - **Note, budget and date** — the organizer can add a short note (150 characters, no links), a dollar budget and an exchange date; they go into each match email and show on each personal link page, and lock once the emails are sent
 - **Email notifications** — one-click emails to all participants, protected by Cloudflare Turnstile CAPTCHA; anyone whose email failed can be resent to later
 - **Admin access** — the creator gets a private organizer link, shown with a Copy button at the top of their page, and by email when they send, to see matches (hidden until they ask, so an organizer who is playing isn't spoiled), emails and personal links, send emails, delete the draw, or edit and redraw
+- **Save or print your Secret Santa** — once the organizer shows the matches, a card below the personal links offers a CSV download (Secret Santa, Group, Email, Match Name, Match Group, Match Email; the group or email columns are left out when nobody has one), a PDF and a print view with the note, budget and date and each person's email under their name; phones and tablets get Share (the PDF in the share sheet) and Print instead. Everything is made in the browser, so nothing is sent anywhere
 - **Soft-delete** — draws are hidden, not destroyed
 - **Rate limiting** — per-IP hourly limits on creating, emailing and deleting draws, and on opening organizer and personal links (which keeps their short secrets from being guessed)
 
@@ -39,6 +40,7 @@ More detail:
 | Email | Nodemailer + Gmail SMTP |
 | CAPTCHA | Cloudflare Turnstile |
 | Deployment | Vercel |
+| PDF | jsPDF + jspdf-autotable with Noto Sans (Latin, Greek, Cyrillic), loaded in the browser only when the organizer saves or shares a PDF |
 | Tests | Vitest, React Testing Library, PGlite (in-memory Postgres) |
 
 ---
@@ -155,6 +157,8 @@ src/
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
     groups.ts         # Home page form state: groups by id, Edit & Redraw hand-off, the as-you-type draft (parseFormDraft)
     names.ts          # duplicateNames(): names must differ ignoring case and spaces (form and API)
+    match-list.ts     # The organizer's list of matches: table order, CSV columns, details lines
+    match-pdf.ts      # The matches as a PDF (jsPDF), made in the browser
     ip-prefix.ts      # rateLimitClient(): IPv4 address, or IPv6 /64, as one rate-limit client
   pages/
     api/
@@ -170,7 +174,8 @@ src/
     draw.tsx          # Organizer page (/draw#<adminKey>) — organizer link, matches, personal links, email, admin actions
     reveal/[token].tsx  # Participant's private tap-to-reveal page
   components/
-    draw/             # The results page's sections (organizer link, matches table, personal links, email, delete); state stays in the page.
+    draw/             # The results page's sections (organizer link, matches table, email, personal links, save and print, delete); state stays in the page.
+                      # PrintSheet.tsx is what the page prints once the matches are shown
                       # TurnstileWidget.tsx loads the CAPTCHA script, only where the send/resend form renders
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
   styles/             # globals.css design tokens + CSS Modules per page
@@ -179,7 +184,7 @@ src/
     turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
 tests/                # Vitest tests: lib, every API route, and the home form (React Testing Library, jsdom)
   real-sql.test.ts    # The routes' real SQL against sql/setup.sql in PGlite
-public/               # Logo, favicons, app icons and link-preview image
+public/               # Logo, favicons, app icons, link-preview image, and fonts/ (Noto Sans for the PDF; docs/OPERATIONS.md)
 sql/
   setup.sql           # Database schema (Postgres)
   migrations/         # One-off schema changes for existing databases, each with a _check.sql
@@ -196,7 +201,7 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`; names may not contain HTML or a web address, since they go into the emails, and must differ ignoring case and spaces, so each person can tell who they drew), generate matches, persist in a transaction. Returns `{ adminKey }`, retrying with fresh tokens in the rare case one repeats a saved one. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction. |
-| `GET` | `/api/get-draw` | *Rate limited (60/h).* The organizer's view of a draw, found by the header `X-Admin-Key: <adminKey>` (never the query string): its id, participants with emails, groups, reveal tokens and per-person email status, matches, each as `{ giver, receiver }` indexes into `participants`, and `organizer_note`, `budget_cents` and `exchange_date` (`YYYY-MM-DD`), each `null` when not set. `404` for a missing, malformed or unknown key, `410` for deleted draws. |
+| `GET` | `/api/get-draw` | *Rate limited (60/h).* The organizer's view of a draw, found by the header `X-Admin-Key: <adminKey>` (never the query string): its id, participants with emails, groups, reveal tokens and per-person email status, matches, each as `{ giver, receiver }` indexes into `participants`, `organizer_name` (set by the first send), and `organizer_note`, `budget_cents` and `exchange_date` (`YYYY-MM-DD`), each `null` when not set. `404` for a missing, malformed or unknown key, `410` for deleted draws. |
 | `GET` | `/api/reveal?token=<token>` | *Rate limited (60/h).* One participant's name, their match, the draw date, the organizer (once emails are sent), and the note, budget and exchange date (whenever set). `404` for unknown or malformed tokens, `410` for deleted draws. |
 | `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail, organizerNote?, budget?, exchangeDate? }` (budget is a dollar amount as typed, like `"25.50"`; the date is `YYYY-MM-DD`; the saved details are used on a resend), or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Also emails the organizer their organizer link on the first send, or only that when no participant has an email (the draw then stays unsent). Returns `{ success, totalSent, totalFailed, failedNames, organizerLinkSent }`. `400` bad input (including an organizer name over 200 characters or containing HTML or a web address, or an email over 320; a note over 150 characters or containing HTML or a web address; a budget that isn't a dollar amount of $10,000 or less; a date that isn't a real day), `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `404` unknown or malformed id, `409` already sent (or nothing to resend), `410` deleted, `503` cap of 495 emails in 24 hours reached. |
 | `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ id, key }`. Soft-delete a draw. Idempotent. `403` wrong key, `404` unknown or malformed id. |

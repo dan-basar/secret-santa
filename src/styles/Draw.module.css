@@ -726,3 +726,165 @@
     transition: none;
   }
 }
+
+/* Save or print your Secret Santa card: faded until Show all matches */
+.exportActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exportLocked {
+  opacity: 0.55;
+}
+
+/* Narrow windows: the buttons share the width, two to a row */
+@media (max-width: 600px) {
+  .exportActions > * {
+    flex: 1 1 40%;
+    justify-content: center;
+  }
+}
+
+/* Touch screens get Share (the PDF in the share sheet) and Print, side by side */
+.sharePdf {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .sharePdf {
+    display: inline-flex;
+  }
+
+  .desktopExport {
+    display: none;
+  }
+
+  .exportActions > * {
+    flex: 1 1 40%;
+    justify-content: center;
+  }
+}
+
+/* The printed list of matches (PrintSheet): hidden on screen; once the matches are
+   shown it prints in place of the page */
+.printSheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.75in;
+  }
+
+  .printSheet {
+    display: block;
+    color: var(--ink);
+    font-size: 11pt;
+  }
+
+  .printSheet + .page {
+    display: none;
+  }
+}
+
+.printTitle {
+  font-size: 22pt;
+  margin-bottom: 4pt;
+}
+
+.printMeta {
+  font-size: 10pt;
+  color: var(--ink-light);
+  margin-bottom: 18pt;
+}
+
+/* The details box, as the emails show it; colours forced so it prints */
+.printDetails {
+  background: var(--paper-warm);
+  border-left: 3px solid var(--accent);
+  padding: 10pt 12pt;
+  margin-bottom: 18pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.printDetails div {
+  display: flex;
+  gap: 12pt;
+}
+
+.printDetails div + div {
+  margin-top: 4pt;
+}
+
+.printDetails dt {
+  font-weight: 700;
+  flex: 0 0 62pt;
+}
+
+.printDetails dd {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.printTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.printTable th {
+  text-align: left;
+  font-size: 9pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0 8pt 6pt;
+  border-bottom: 1.5pt solid var(--border);
+}
+
+.printTable td {
+  padding: 8pt;
+  /* A long name with no spaces wraps instead of running off the page; the
+     minimum width keeps short values such as "No Group" on one line */
+  overflow-wrap: anywhere;
+  min-width: 72pt;
+  border-bottom: 0.5pt solid var(--border);
+  vertical-align: top;
+}
+
+.printTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.printTable tr {
+  break-inside: avoid;
+}
+
+.printEmail {
+  display: block;
+  font-size: 8.5pt;
+  color: var(--ink-light);
+}
+
+.printNoGroup {
+  color: var(--ink-light);
+  font-style: italic;
+}
+
+/* The narrow column of arrows between Secret Santa and Gifting to */
+.printTable .printArrow {
+  width: 14pt;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+  color: var(--ink-light);
+}
+
+.printFoot {
+  margin-top: 18pt;
+  font-size: 8.5pt;
+  color: var(--ink-light);
+}

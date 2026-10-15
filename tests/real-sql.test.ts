@@ -140,7 +140,7 @@ describe('routes against a real Postgres', () => {
     expect(sendMatchEmail.mock.calls.every(c => JSON.stringify((c as unknown[])[6]) === JSON.stringify(details))).toBe(true);
 
     const view = await adminView(adminKey);
-    expect(view).toMatchObject(details);
+    expect(view).toMatchObject({ ...details, organizer_name: 'Pat' });
     const r = await call(reveal, { method: 'GET', query: { token: view.participants[0].reveal_token } });
     expect(r.body).toMatchObject(details);
   });

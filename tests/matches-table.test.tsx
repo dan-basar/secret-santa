@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import MatchesTable from '@/components/draw/MatchesTable';
@@ -10,9 +11,24 @@ const participants: AdminParticipant[] = ['Alex', 'Sam'].map((name, i) => ({
   name, email: null, group_name: null, reveal_token: `token-${i}`, email_sent_at: null,
 }));
 
+// The page keeps whether the table is shown
+function Table() {
+  const [shown, setShown] = useState(false);
+  return (
+    <MatchesTable
+      participants={participants}
+      matches={[{ giver: 0, receiver: 1 }, { giver: 1, receiver: 0 }]}
+      emailsSent={false}
+      onEditAndRedraw={() => {}}
+      shown={shown}
+      onShow={() => setShown(true)}
+    />
+  );
+}
+
 describe('MatchesTable', () => {
   it('keeps the pairings hidden until the organizer asks to see them', () => {
-    render(<MatchesTable participants={participants} matches={[{ giver: 0, receiver: 1 }, { giver: 1, receiver: 0 }]} emailsSent={false} onEditAndRedraw={() => {}} />);
+    render(<Table />);
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByText('Sam')).toBeNull();
 

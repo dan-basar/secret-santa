@@ -87,3 +87,14 @@ Two gaps to know about: a PR whose CI went green before the freeze started keeps
 ## Dependency updates
 
 Dependabot (`.github/dependabot.yml`) opens pull requests weekly: one grouped PR for npm minor and patch updates, separate PRs for npm major updates (except `@types/node`, which stays on Node 24, and React and its types, whose move to 19 is a deliberate migration), and PRs for the GitHub Actions used by CI (which are pinned to commit SHAs, with the version in a comment). Each runs CI like any other PR; read the changelog for majors, then squash-merge. Closing a Dependabot PR without merging tells it to skip that version.
+
+## PDF font
+
+The organizer's PDF of the matches uses Noto Sans (SIL Open Font License, `public/fonts/OFL.txt`) so Croatian, Cyrillic and Greek names print as typed. The three files in `public/fonts/` are Noto Sans Regular, Bold and Italic cut down to Latin, Greek and Cyrillic with fontTools (`pip install fonttools`):
+
+```bash
+pyftsubset NotoSans-Regular.ttf --unicodes="U+0020-007E,U+00A0-024F,U+0300-036F,U+0370-03FF,U+0400-052F,U+1E00-1EFF,U+2000-206F,U+20A0-20CF,U+2122" \
+  --layout-features='kern' --no-hinting --output-file=public/fonts/noto-sans-pdf-regular.ttf
+```
+
+and the same for Bold and Italic (`noto-sans-pdf-bold.ttf`, `noto-sans-pdf-italic.ttf`). If the ranges change, change `NOTO_RANGES` in `src/lib/match-pdf.ts` to match. Letters outside them (Chinese, Arabic and so on) print as "?" in the PDF; Print and the CSV show everything. If the font can't be fetched, the PDF falls back to Helvetica, which covers only Western European letters.
