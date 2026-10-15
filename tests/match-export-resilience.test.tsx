@@ -69,7 +69,7 @@ describe('CSV with odd names', () => {
     expect(new Set(giverNames)).toEqual(new Set(NAMES.map(asWritten)));
     for (const row of rows.slice(1)) {
       const giver = participants.find((p) => asWritten(p.name) === row[0])!;
-      expect(row[1]).toBe(asWritten(giver.group_name ?? 'No group'));
+      expect(row[1]).toBe(asWritten(giver.group_name ?? ''));
       expect(row[2]).toBe(asWritten(giver.email ?? 'No email'));
     }
   });

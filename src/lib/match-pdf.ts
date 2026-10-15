@@ -148,11 +148,10 @@ export async function buildMatchesPdf(
   const nameCell = (name: string, email: string) => (email ? `${text(name)}\n` : text(name));
   const body = pairs.map((m, i) => [
     nameCell(m.giver.name, emails[i][0]),
-    ...(cols.groups ? [text(m.giver.group_name || 'No group')] : []),
+    ...(cols.groups ? [text(m.giver.group_name ?? '')] : []),
     nameCell(m.receiver.name, emails[i][1]),
-    ...(cols.groups ? [text(m.receiver.group_name || 'No group')] : []),
+    ...(cols.groups ? [text(m.receiver.group_name ?? '')] : []),
   ]);
-  const groupCols = cols.groups ? [1, 3] : [];
   const receiverCol = cols.groups ? 2 : 1;
 
   autoTable(doc, {
@@ -171,11 +170,6 @@ export async function buildMatchesPdf(
       // A rule under the header and between rows, like the table on the page
       data.cell.styles.lineWidth = data.section === 'head' ? { bottom: 1.5 } : { bottom: 0.5 };
       if (data.section === 'body' && data.row.index === body.length - 1) data.cell.styles.lineWidth = 0;
-      if (data.section === 'body' && groupCols.includes(data.column.index) && data.cell.raw === 'No group') {
-        data.cell.styles.textColor = INK_LIGHT;
-        // Noto Sans is loaded without an italic, to keep the download small
-        if (!fonts) data.cell.styles.fontStyle = 'italic';
-      }
     },
     didDrawCell: (data) => {
       if (data.section !== 'body' || (data.column.index !== 0 && data.column.index !== receiverCol)) return;

@@ -21,9 +21,14 @@ describe('matchesCsv', () => {
     expect(lines).toEqual([
       'Secret Santa,Group,Email,Match Name,Match Group,Match Email',
       'Riley,Lees,No email,Alex,Smiths,alex@example.com',
-      'Alex,Smiths,alex@example.com,Sam,No group,No email',
-      'Sam,No group,No email,Riley,Lees,No email',
+      'Alex,Smiths,alex@example.com,Sam,,No email',
+      'Sam,,No email,Riley,Lees,No email',
     ]);
+  });
+
+  it('leaves a blank for no group, so a group really called "No group" stays distinct', () => {
+    const lines = csvLines([person('Alex', 'No group'), person('Sam')]);
+    expect(lines).toEqual(['Secret Santa,Group,Match Name,Match Group', 'Alex,No group,Sam,', 'Sam,,Alex,No group']);
   });
 
   it('leaves out the group columns when nobody has a group', () => {

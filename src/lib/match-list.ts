@@ -52,7 +52,8 @@ function csvCell(value: string): string {
 /**
  * One row per Secret Santa: Secret Santa, Group, Email, Match Name, Match Group,
  * Match Email. The group columns are left out when nobody has a group and the
- * email columns when nobody has an email; otherwise a blank reads "No group" or "No email"
+ * email columns when nobody has an email. Someone with no group gets a blank cell, so a group
+ * really called "No group" can't be mistaken for none; someone with no email reads "No email"
  */
 export function matchesCsv(participants: AdminParticipant[], matches: AdminMatch[]): string {
   const cols = listColumns(participants);
@@ -62,7 +63,7 @@ export function matchesCsv(participants: AdminParticipant[], matches: AdminMatch
   ];
   const person = (p: AdminParticipant) => [
     p.name,
-    ...(cols.groups ? [p.group_name || 'No group'] : []),
+    ...(cols.groups ? [p.group_name ?? ''] : []),
     ...(cols.emails ? [p.email || 'No email'] : []),
   ];
   const rows = sortedPairs(participants, matches).map((m) => [...person(m.giver), ...person(m.receiver)]);

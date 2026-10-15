@@ -847,7 +847,7 @@
 .printTable td {
   padding: 8pt;
   /* A long name with no spaces wraps instead of running off the page; the
-     minimum width keeps short values such as "No group" on one line */
+     minimum width keeps short group names on one line */
   overflow-wrap: anywhere;
   min-width: 72pt;
   border-bottom: 0.5pt solid var(--border);
@@ -868,10 +868,6 @@
   color: var(--ink-light);
 }
 
-.printNoGroup {
-  color: var(--ink-light);
-  font-style: italic;
-}
 
 .printFoot {
   margin-top: 18pt;

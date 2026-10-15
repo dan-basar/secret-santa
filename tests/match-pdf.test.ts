@@ -27,7 +27,7 @@ describe('buildMatchesPdf', () => {
     expect(doc.getNumberOfPages()).toBe(1);
     const pdf = doc.output();
     expect(pdf.startsWith('%PDF-')).toBe(true);
-    for (const text of ['Secret Santa matches', 'Wrap it nicely', 'Saturday, December 19', 'GIFTING TO', 'Smiths', 'No group', 'alex@example.com', 'jose@example.com', 'Smith, José', 'Keep this list private! It shows everyone', 'Organized by Dan  ·  Draw created October 15, 2026  ·  3 participants']) {
+    for (const text of ['Secret Santa matches', 'Wrap it nicely', 'Saturday, December 19', 'GIFTING TO', 'Smiths', 'alex@example.com', 'jose@example.com', 'Smith, José', 'Keep this list private! It shows everyone', 'Organized by Dan  ·  Draw created October 15, 2026  ·  3 participants']) {
       expect(pdf).toContain(text);
     }
   });
