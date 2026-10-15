@@ -24,6 +24,17 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Gmail groups emails with the same subject from the same sender into one
+// conversation, then hides the parts of each new email that match an earlier
+// one behind a "..." toggle, which swallowed the "View your match" button when
+// one inbox got several draws' emails. A fresh X-Entity-Ref-ID on every email
+// keeps Gmail from grouping them (an unofficial header Gmail honors; other
+// providers ignore it), and each email also ends with its own link, so the
+// closing lines never match an earlier email even where grouping still happens
+function ungroupedHeaders(): Record<string, string> {
+  return { 'X-Entity-Ref-ID': crypto.randomUUID() };
+}
+
 /** Public URL of a participant's private reveal page */
 export function revealUrl(revealToken: string): string {
   return siteUrl(`/reveal/${encodeURIComponent(revealToken)}`);
@@ -84,6 +95,7 @@ export async function sendMatchEmail(
     // A participant who hits Reply reaches the organizer, not the app's Gmail inbox
     replyTo: organizerEmail,
     subject: "🎁 Your Secret Santa Match",
+    headers: ungroupedHeaders(),
     text: `Hi ${toName},\n\nThe Secret Santa draw is done, and your match is below.\n\n${textDetails}You have drawn ${matchName}'s name for the gift exchange!\n\nView your match any time: ${link}\n\nThis secret message was sent by ${organizerName}. You can contact the organizer at ${organizerEmail} if you need to. Happy Gifting!!`,
     html: `
       <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a;">
@@ -97,6 +109,7 @@ export async function sendMatchEmail(
           <a href="${htmlLink}" style="display: inline-block; padding: 12px 24px; background: #c84b2f; color: #ffffff; text-decoration: none; border-radius: 6px; font-family: Arial, sans-serif; font-size: 16px;">View your match</a>
         </p>
         <p style="font-size: 14px; color: #888; margin-top: 32px;">This secret message was sent by ${htmlOrganizerName}. You can contact the organizer at ${htmlOrganizerEmail} if you need to. Happy Gifting!!</p>
+        <p style="font-size: 13px; color: #888; margin-top: 16px; word-break: break-all;">Your personal link: ${htmlLink}</p>
       </div>
     `,
   });
@@ -124,6 +137,7 @@ export async function sendOrganizerLinkEmail(
     from: `Secret Santa <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject: "🎁 Your Secret Santa organizer link",
+    headers: ungroupedHeaders(),
     text: `Hi ${toName},\n\nHere is your organizer link for your Secret Santa draw. Keep it private: it shows everyone's matches! It's the only way back to your draw's page.\n\nYour organizer link: ${link}\n\nHappy Gifting!!`,
     html: `
       <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a;">
