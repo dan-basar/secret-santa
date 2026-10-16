@@ -37,7 +37,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 - `.env.development.local` holds Cloudflare's always-pass Turnstile test keys so emails can be sent from `npm run dev` (the real keys reject `localhost`). Never put real keys there.
 - **Only send email for draws you create, to addresses you were given.**
 - Schema changes go in a new `sql/migrations/NNN_name.sql` with a read-only `NNN_name_check.sql`, and are folded into `sql/setup.sql`. Never apply them to production yourself; the runbook is in docs/OPERATIONS.md.
-- All env vars are required except `RATE_LIMIT_IP_WHITELIST`; there are no defaults. A missing `RATE_LIMIT_HASH_SECRET` makes the proxy skip rate limiting (it fails open and logs). The list, with placeholders, is in `.env.example`.
+- All env vars are required except `RATE_LIMIT_IP_WHITELIST`; there are no defaults. A missing `RATE_LIMIT_HASH_SECRET` makes the proxy skip rate limiting and send-emails skip the per-IP email budget (both fail open and log). The list, with placeholders, is in `.env.example`.
 
 ## Conventions
 
@@ -54,7 +54,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 
 ### API
 - Keep routes focused: validate input → query DB → return response. Each route file starts with a short comment giving its contract; keep it current
-- Error responses always use `{ error: string }` JSON, with status codes 400 (bad input), 403 (wrong admin key), 404 (not found), 405 (wrong method, with an `Allow` header), 409 (conflict), 410 (deleted), 422 (unprocessable), 429 (rate limited, from `src/proxy.ts`), 500 (server error)
+- Error responses always use `{ error: string }` JSON, with status codes 400 (bad input), 403 (wrong admin key), 404 (not found), 405 (wrong method, with an `Allow` header), 409 (conflict), 410 (deleted), 422 (unprocessable), 429 (rate limited, from `src/proxy.ts`, or over its IP's email budget, from send-emails), 500 (server error)
 - Anything that reveals matches, emails or reveal tokens, or changes a draw, requires the draw's admin key
 - Response shapes live in `src/types/api.ts`: routes type their `res` with them (`NextApiResponse<RevealResponse | ApiError>`) and pages import the same types, so a shape is written once
 

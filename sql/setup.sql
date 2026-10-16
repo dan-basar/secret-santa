@@ -92,7 +92,8 @@ CREATE TABLE EmailSendLog (
 );
 
 -- One hit counter per hashed IP + route per hour, shared by every Vercel instance
--- (src/proxy.ts). Counter rows older than 2 days are hard-deleted by the proxy: they
+-- (src/proxy.ts). send-emails also counts emails per hashed IP per hour here, under
+-- its own 'email-budget' scope, for the 100-in-24-hours budget. Counter rows older than 2 days are hard-deleted by the proxy: they
 -- hold no one's data, so they're an exception to the soft-delete rule.
 CREATE TABLE RateLimits (
      bucket varchar(200) NOT NULL        -- SHA-256 hex of IP + route; raw IPs are never stored
