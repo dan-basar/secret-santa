@@ -28,6 +28,18 @@
 html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
+  /* Stop Safari on iPhones enlarging some text and not other text when a line runs wide */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* A long word with no spaces (a note typed as one run of letters) breaks
+   wherever it must to stay inside its box. word-break covers Safari on
+   iPhones, which let such a note run out of its box with overflow-wrap alone */
+.break-anywhere {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 body {

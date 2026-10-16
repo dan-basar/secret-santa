@@ -110,7 +110,7 @@ export default function RevealPage() {
           {hasDetails(data) && (
             <div className={styles.details}>
               {data.organizer_note && (
-                <p><strong>A note from your organizer:</strong><br />&ldquo;{data.organizer_note}&rdquo;</p>
+                <p className="break-anywhere"><strong>A note from your organizer:</strong><br />&ldquo;{data.organizer_note}&rdquo;</p>
               )}
               {data.budget_cents !== null && <p><strong>Budget:</strong> {budgetLine(data.budget_cents)}</p>}
               {data.exchange_date && <p><strong>Exchange:</strong> {formatExchangeDate(data.exchange_date)}</p>}

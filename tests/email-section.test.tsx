@@ -117,6 +117,14 @@ describe('exchange details row', () => {
     expect(screen.getByText('This secret message was sent by Pat.')).toBeTruthy();
   });
 
+  it('lets a long note with no spaces break inside the preview box', () => {
+    renderSection(drawWith(['a@example.com', 'b@example.com']));
+    fireEvent.click(toggle());
+    const note = 'A' + 'a'.repeat(149);
+    fireEvent.change(screen.getByLabelText('Organizer Note'), { target: { value: note } });
+    expect(screen.getByText(`“${note}”`).className).toContain('break-anywhere');
+  });
+
   it('shows a $0 budget as "No limit set" in the preview', () => {
     renderSection(drawWith(['a@example.com', 'b@example.com']));
     fireEvent.click(toggle());
