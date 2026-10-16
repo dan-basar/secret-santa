@@ -80,10 +80,6 @@ function FirstSendForm({
   const detailsOk = !noteError(organizerNote.trim()) && budgetCents !== 'invalid';
   const canSend = name.length > 0 && !nameHasLink && email.length > 0 && !emailInvalid && detailsOk;
 
-  // The preview shows the first person with an email and their match, as the organizer already sees them all
-  const firstWithEmail = draw.participants.findIndex((p) => p.email);
-  const firstMatch = draw.matches.find((m) => m.giver === firstWithEmail);
-
   return (
     <>
       {hasEmails ? (
@@ -132,10 +128,8 @@ function FirstSendForm({
           )}
         </div>
       </div>
-      {hasEmails && firstMatch && (
+      {hasEmails && (
         <MessagePreview
-          toName={draw.participants[firstWithEmail].name}
-          matchName={draw.participants[firstMatch.receiver].name}
           organizerName={name}
           note={organizerNote}
           budgetCents={typeof budgetCents === 'number' ? budgetCents : null}

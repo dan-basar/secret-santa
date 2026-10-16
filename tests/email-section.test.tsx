@@ -120,14 +120,17 @@ describe('details card and message preview', () => {
 
   it('shows the message preview in the email card without opening the details', () => {
     renderSection(drawWith(['a@example.com', 'b@example.com']));
-    const preview = screen.getByText('Message preview');
+    const preview = screen.getByText(/^Message preview/);
     expect(preview.closest('section')!.textContent).toContain('Email notifications');
   });
 
   it('updates the summary and the message preview as the organizer types', () => {
     renderSection(drawWith(['a@example.com', 'b@example.com']));
     fireEvent.click(toggle());
-    expect(screen.getByText(/You have drawn/).textContent).toBe('You have drawn P1’s name for the gift exchange!');
+    // Sample names, never a real person and their match, so the preview gives nothing away
+    expect(screen.getByText(/You have drawn/).textContent).toBe('You have drawn Sam’s name for the gift exchange!');
+    expect(screen.getByText('Hi Alex,')).toBeTruthy();
+    expect(screen.queryByText(/P0|P1/)).toBeNull();
     expect(screen.queryByText('First, some details:')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Organizer note'), { target: { value: 'Bring it wrapped' } });
@@ -170,7 +173,7 @@ describe('details card and message preview', () => {
     renderSection(drawWith([null, null]));
     fireEvent.click(toggle());
     expect(screen.getByLabelText('Organizer note')).toBeTruthy();
-    expect(screen.queryByText('Message preview')).toBeNull();
+    expect(screen.queryByText(/^Message preview/)).toBeNull();
   });
 
   it('saves only when something changed, and says whether it is saved', () => {
