@@ -40,7 +40,7 @@ Browser
   ▼
 Vercel (region cle1)
   │
-  ├─ src/proxy.ts ── runs on /api/* only
+  ├─ src/proxy.ts ── runs only on the six limited routes (health skips it)
   │     create-draw, send-emails, save-details, delete-draw, get-draw, reveal: per-IP hourly limit,
   │     counted in the RateLimits table → 429 when over; fails open on DB error
   │
