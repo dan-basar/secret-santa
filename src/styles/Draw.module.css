@@ -690,6 +690,13 @@
   margin-bottom: 0;
 }
 
+/* A bigger fold triangle, nudged into the card's left margin */
+.detailsCard .detailsChevron {
+  font-size: 22px;
+  line-height: 1;
+  margin-left: -8px;
+}
+
 .detailsSave {
   display: flex;
   align-items: center;
