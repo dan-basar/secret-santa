@@ -50,7 +50,7 @@ Never put real keys in `.env.development.local`; it keeps the test keys.
 
 `src/proxy.ts` limits each route per IP per hour, but it runs as a Vercel function and asks Neon on every request, including the ones it refuses. A flood of requests would still keep Neon awake and spend function invocations. A Vercel Firewall rule refuses floods at the edge first, before any function or database runs. It lives in the Vercel dashboard, not in this repo, so a new project or a lost setting needs these steps again.
 
-1. Vercel dashboard → the project that serves `www.baseworkshop.app` → **Firewall** → **Configure** → **New Rule**.
+1. Vercel dashboard → **baseworkshop-home** (the project that owns `www.baseworkshop.app` and passes `/secret-santa` on to this app; this app's own project only has its `.vercel.app` address) → **Firewall** → **Configure** → **New Rule**.
 2. Name it `API flood backstop`. **If** *Request Path* *Starts with* `/secret-santa/api/`.
 3. **Then** *Rate Limit*: *Fixed Window*, **60 seconds**, **60 requests**, keyed on **IP**, action **Too Many Requests (429)**.
 4. **Save Rule**, then **Review Changes** → **Publish**.
