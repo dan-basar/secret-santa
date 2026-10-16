@@ -180,7 +180,7 @@ export default function Home() {
     setStatusMsg('Randomizing...');
     setLoading(true);
     slowTimerRef.current = setTimeout(() => {
-      setStatusMsg('Randomizing... Connection to the database is taking longer than usual, please stand by...');
+      setStatusMsg('Randomizing... Still working, please stand by...');
     }, 8000);
     try {
       const res = await fetch(`${router.basePath}/api/create-draw`, {
