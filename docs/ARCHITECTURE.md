@@ -40,7 +40,10 @@ Browser
   ▼
 Vercel (region cle1)
   │
-  ├─ src/proxy.ts ── runs on /api/* only
+  ├─ Vercel Firewall ── /secret-santa/api/*: 60 requests a minute per IP → 429,
+  │     before any function runs (set on the baseworkshop-home project; docs/OPERATIONS.md)
+  │
+  ├─ src/proxy.ts ── runs only on the six limited routes (health skips it)
   │     create-draw, send-emails, save-details, delete-draw, get-draw, reveal: per-IP hourly limit,
   │     counted in the RateLimits table → 429 when over; fails open on DB error
   │

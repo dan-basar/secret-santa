@@ -84,7 +84,8 @@ CREATE INDEX IX_Matches_DrawId ON Matches(draw_id);
 -- Emails sent per hour, across all draws. send-emails.ts sums the rows from the last
 -- 24 hours against Gmail's rolling daily limit, reserving a send's count before it
 -- sends. The primary key lets it upsert atomically with ON CONFLICT (added by
--- migrations/007_email_send_log.sql, replacing the per-day DailyEmailLog).
+-- migrations/007_email_send_log.sql, replacing the per-day DailyEmailLog, which
+-- migrations/010_drop_daily_email_log.sql drops).
 CREATE TABLE EmailSendLog (
      hour_start timestamptz PRIMARY KEY
     ,emails_sent integer NOT NULL DEFAULT 0

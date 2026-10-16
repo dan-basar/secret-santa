@@ -46,6 +46,17 @@ Never put real keys in `.env.development.local`; it keeps the test keys.
 1. Generate a new random value (`openssl rand -hex 32`), replace it in Vercel and redeploy.
 2. Every bucket gets a new hash, so current hourly counts start again from zero; the old rows are deleted after 2 days as usual. Rotating it also resets each IP's 24-hour email budget. If the variable is missing, rate limiting and the email budget are skipped (they fail open and log an error), so set it before deploying.
 
+## Edge rate limit (Vercel Firewall)
+
+`src/proxy.ts` limits each route per IP per hour, but it runs as a Vercel function and asks Neon on every request, including the ones it refuses. A flood of requests would still keep Neon awake and spend function invocations. A Vercel Firewall rule refuses floods at the edge first, before any function or database runs. It lives in the Vercel dashboard, not in this repo, so a new project or a lost setting needs these steps again.
+
+1. Vercel dashboard → **baseworkshop-home** (the project that owns `www.baseworkshop.app` and passes `/secret-santa` on to this app; this app's own project only has its `.vercel.app` address) → **Firewall** → **Configure** → **New Rule**.
+2. Name it `API flood backstop`. **If** *Request Path* *Starts with* `/secret-santa/api/`.
+3. **Then** *Rate Limit*: *Fixed Window*, **60 seconds**, **60 requests**, keyed on **IP**, action **Too Many Requests (429)**.
+4. **Save Rule**, then **Review Changes** → **Publish**.
+
+60 a minute per IP is far above anything a real organizer or household sends (each page makes one or two API calls), and well below a flood. The Hobby plan allows one rate-limit rule per project, fixed window only (10 seconds to 10 minutes), and 1,000,000 allowed requests a month; requests the rule refuses aren't billed as function invocations. The edge `429` doesn't carry the app's `{ error }` JSON, which the pages already handle: the organizer and personal link pages show their "busy" message for any `429`, and the other calls fall back to their generic error. To check it, Firewall → **Overview** shows the rule's matches and rate-limited requests.
+
 ## When Gmail stops sending
 
 Symptoms: `send-emails` reports failures (`failedNames`), or `503` "The site's email limit is reached for now".
@@ -57,7 +68,7 @@ Symptoms: `send-emails` reports failures (`failedNames`), or `503` "The site's e
   FROM EmailSendLog as emailSendLog
   WHERE emailSendLog.hour_start > now() - interval '25 hours'
   ```
-  There is no midnight reset: room comes back as each hour rolls out of the window. `DailyEmailLog`, the old per-day count, is no longer read or written.
+  There is no midnight reset: room comes back as each hour rolls out of the window.
 - **One connection's budget.** A `429` "You've sent the most emails allowed from your connection for now" means that IP (or IPv6 /64) has had 100 emails in the last 24 hours (`IP_EMAIL_BUDGET`), counted in `RateLimits` like the cap above. It frees up as each hour rolls out; to let one organizer past it, add their IP to `RATE_LIMIT_IP_WHITELIST` and redeploy.
 - **Gmail itself blocked or throttled the account** (sending limits, suspicious-activity lock, revoked app password). Check the Gmail account's inbox for a notice and the Vercel function logs for the SMTP error. A revoked or changed password needs the rotation steps above.
 
@@ -67,7 +78,7 @@ Meanwhile nobody is stuck: organizers can copy each person's **personal link** f
 
 Vercel keeps every deployment. In the Vercel dashboard → Deployments, pick the last good production deployment and use **Instant Rollback** (or ⋯ → **Promote to Production**). This swaps traffic in seconds without a rebuild. Then fix forward with a new PR; the next merge to `main` deploys normally.
 
-A rollback does not touch the database. If the bad deploy came with a migration, the older code must still work with the newer schema (migrations here only add columns or tables, so it does).
+A rollback does not touch the database. If the bad deploy came with a migration, the older code must still work with the newer schema (migrations here add columns or tables, or drop ones no deployed code has used since an earlier migration, so it does).
 
 ## Health check
 
