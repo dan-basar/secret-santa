@@ -44,7 +44,7 @@ Never put real keys in `.env.development.local`; it keeps the test keys.
 
 **Rate-limit hash secret** (`RATE_LIMIT_HASH_SECRET`)
 1. Generate a new random value (`openssl rand -hex 32`), replace it in Vercel and redeploy.
-2. Every bucket gets a new hash, so current hourly counts start again from zero; the old rows are deleted after 2 days as usual. If the variable is missing, rate limiting is skipped (the proxy fails open and logs an error), so set it before deploying.
+2. Every bucket gets a new hash, so current hourly counts start again from zero; the old rows are deleted after 2 days as usual. Rotating it also resets each IP's 24-hour email budget. If the variable is missing, rate limiting and the email budget are skipped (they fail open and log an error), so set it before deploying.
 
 ## When Gmail stops sending
 
@@ -58,6 +58,7 @@ Symptoms: `send-emails` reports failures (`failedNames`), or `503` "The site's e
   WHERE emailSendLog.hour_start > now() - interval '25 hours'
   ```
   There is no midnight reset: room comes back as each hour rolls out of the window. `DailyEmailLog`, the old per-day count, is no longer read or written.
+- **One connection's budget.** A `429` "You've sent the most emails allowed from your connection for now" means that IP (or IPv6 /64) has had 100 emails in the last 24 hours (`IP_EMAIL_BUDGET`), counted in `RateLimits` like the cap above. It frees up as each hour rolls out; to let one organizer past it, add their IP to `RATE_LIMIT_IP_WHITELIST` and redeploy.
 - **Gmail itself blocked or throttled the account** (sending limits, suspicious-activity lock, revoked app password). Check the Gmail account's inbox for a notice and the Vercel function logs for the SMTP error. A revoked or changed password needs the rotation steps above.
 
 Meanwhile nobody is stuck: organizers can copy each person's **personal link** from their organizer page and send it by text or chat. Failed emails are released (and anyone left claimed by a send that timed out is released after 5 minutes), so once Gmail works again the organizer can press **Resend** to reach just the people who were missed.

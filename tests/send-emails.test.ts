@@ -16,16 +16,21 @@ const db = vi.hoisted(() => ({
   participants: [] as FakeParticipant[],
   receiverOf: {} as Record<number, number>,
   emailLog: [] as { hour: number; sent: number }[],
+  // Emails counted against each IP's budget, by RateLimits bucket
+  ipLog: [] as { bucket: string; hour: number; hits: number }[],
   // Each awaited query or transaction is one HTTPS request to Neon
   roundTrips: 0,
 }));
 
-const { HOUR, hourOf, emailsCounted } = vi.hoisted(() => {
+const { HOUR, hourOf, emailsCounted, ipEmailsCounted } = vi.hoisted(() => {
   const HOUR = 3_600_000;
   const hourOf = (ms: number) => Math.floor(ms / HOUR) * HOUR;
   // What the cap counts: every hourly row that can hold a send from the last 24 hours
   const emailsCounted = () => db.emailLog.filter(r => r.hour > db.now - 25 * HOUR).reduce((sum, r) => sum + r.sent, 0);
-  return { HOUR, hourOf, emailsCounted };
+  // The same window for one IP's budget; a null bucket means the budget is skipped
+  const ipEmailsCounted = (bucket: string | null) =>
+    db.ipLog.filter(r => r.bucket === bucket && r.hour > db.now - 25 * HOUR).reduce((sum, r) => sum + r.hits, 0);
+  return { HOUR, hourOf, emailsCounted, ipEmailsCounted };
 });
 
 vi.mock('@/lib/db', async (importOriginal) => {
@@ -39,16 +44,26 @@ vi.mock('@/lib/db', async (importOriginal) => {
     return new Date(hour);
   }
 
+  function reserveIp(bucket: string | null, count: number) {
+    if (bucket === null) return;
+    const hour = hourOf(db.now);
+    const row = db.ipLog.find(r => r.bucket === bucket && r.hour === hour);
+    if (row) row.hits += count;
+    else db.ipLog.push({ bucket, hour, hits: count });
+  }
+
   function run(text: string, values: unknown[]): unknown[] {
     // The one statement that checks the cap, claims the draw and participants,
     // and reserves the cap for whoever was claimed
     if (text.includes('WITH cap AS')) {
-      const [count, limit, organizerName, organizerEmail, note, budgetCents, exchangeDate, , retryFailed, ids, expiryMinutes] =
-        values as [number, number, string, string, string | null, number | null, string | null, string, boolean, number[], number];
+      const [count, limit, bucket, , ipLimit, , organizerName, organizerEmail, note, budgetCents, exchangeDate, , retryFailed, ids, expiryMinutes] =
+        values as [number, number, string | null, number, number, string | null, string, string, string | null, number | null, string | null, string, boolean, number[], number];
       // The organizer's own link email, reserved with the claims on a first send
-      const organizerCount = values[values.length - 1] as number;
+      const organizerCount = values[values.length - 2] as number;
       const capOk = emailsCounted() + count <= limit;
-      const drawClaimed = capOk && !retryFailed && !db.draw.emails_sent_at;
+      const ipOk = bucket === null || ipEmailsCounted(bucket) + count <= ipLimit;
+      const allowed = capOk && ipOk;
+      const drawClaimed = allowed && !retryFailed && !db.draw.emails_sent_at;
       if (drawClaimed) {
         db.draw.emails_sent_at = 'now';
         db.draw.organizer_name = organizerName;
@@ -57,7 +72,7 @@ vi.mock('@/lib/db', async (importOriginal) => {
         db.draw.budget_cents = budgetCents;
         db.draw.exchange_date = exchangeDate;
       }
-      const claimed = capOk && (retryFailed || drawClaimed)
+      const claimed = allowed && (retryFailed || drawClaimed)
         ? db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at
           && (p.email_claimed_at === null || p.email_claimed_at < db.now - expiryMinutes * 60_000))
         : [];
@@ -65,20 +80,25 @@ vi.mock('@/lib/db', async (importOriginal) => {
       let reservedHour: Date | null = null;
       if (claimed.length) {
         reservedHour = reserve(claimed.length + organizerCount);
+        reserveIp(bucket, claimed.length + organizerCount);
       }
-      return [{ cap_ok: capOk, draw_claimed: drawClaimed, claimed_ids: claimed.map(p => p.id), reserved_hour: reservedHour }];
+      return [{ cap_ok: capOk, ip_ok: ipOk, draw_claimed: drawClaimed, claimed_ids: claimed.map(p => p.id), reserved_hour: reservedHour }];
     }
     // A first send with nobody to email: reserve one email for the organizer's
     // link, and save the exchange details
     if (text.includes('WITH organizer_cap AS')) {
-      const [limit, note, budgetCents, exchangeDate] = values as [number, string | null, number | null, string | null];
+      const [limit, bucket, ipLimit, , , , note, budgetCents, exchangeDate] =
+        values as [number, string | null, number, string | null, string | null, string | null, string | null, number | null, string | null];
       const capOk = emailsCounted() + 1 <= limit;
-      if (capOk && !db.draw.emails_sent_at) {
+      const ipOk = bucket === null || ipEmailsCounted(bucket) + 1 <= ipLimit;
+      const allowed = capOk && ipOk;
+      if (allowed) reserveIp(bucket, 1);
+      if (allowed && !db.draw.emails_sent_at) {
         db.draw.organizer_note = note;
         db.draw.budget_cents = budgetCents;
         db.draw.exchange_date = exchangeDate;
       }
-      return [{ cap_ok: capOk, reserved_hour: capOk ? reserve(1) : null }];
+      return [{ cap_ok: capOk, ip_ok: ipOk, reserved_hour: allowed ? reserve(1) : null }];
     }
     if (text.includes('FROM Draws')) return [{ ...db.draw }];
     if (text.includes('FROM Matches')) {
@@ -95,6 +115,12 @@ vi.mock('@/lib/db', async (importOriginal) => {
     if (text.includes('UPDATE EmailSendLog')) {
       const [count, hour] = values as [number, Date];
       db.emailLog.find(r => r.hour === hour.getTime())!.sent -= count;
+      return [];
+    }
+    if (text.includes('UPDATE RateLimits')) {
+      const [count, bucket, hour] = values as [number, string | null, Date];
+      const row = db.ipLog.find(r => r.bucket === bucket && r.hour === hour.getTime());
+      if (row) row.hits -= count;
       return [];
     }
     if (text.includes('UPDATE Draws') && text.includes('emails_sent_at = NULL')) {
@@ -135,11 +161,12 @@ const sendOrganizerLinkEmail = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/email', () => ({ sendMatchEmail, sendOrganizerLinkEmail }));
 
 import handler from '@/pages/api/send-emails';
+import { rateLimitBucket } from '@/lib/rate-limit';
 
 const DRAW_ID = '0b6f1c2a-8d3e-4f5a-9b7c-1d2e3f4a5b6c';
 const ADMIN_KEY = 'admin-key-123';
 
-async function post(body: Record<string, unknown>) {
+async function post(body: Record<string, unknown>, ip = '203.0.113.5') {
   const res = {
     statusCode: 0,
     body: undefined as unknown as Record<string, unknown>,
@@ -155,7 +182,7 @@ async function post(body: Record<string, unknown>) {
       return this;
     },
   };
-  await handler({ method: 'POST', body } as NextApiRequest, res as unknown as NextApiResponse);
+  await handler({ method: 'POST', body, headers: { 'x-forwarded-for': ip } } as unknown as NextApiRequest, res as unknown as NextApiResponse);
   return res;
 }
 
@@ -195,6 +222,7 @@ beforeEach(() => {
   ];
   db.receiverOf = { 1: 2, 2: 3, 3: 4, 4: 1 };
   db.emailLog = [];
+  db.ipLog = [];
   db.now = Date.UTC(2026, 11, 1);
   db.roundTrips = 0;
   sendMatchEmail.mockReset();
@@ -202,6 +230,7 @@ beforeEach(() => {
   sendOrganizerLinkEmail.mockImplementation(async () => {});
   failFor();
   vi.stubEnv('NEXT_PUBLIC_BASE_URL', 'https://baseworkshop.app');
+  vi.stubEnv('RATE_LIMIT_HASH_SECRET', 'test-secret');
   vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({ success: true }) })));
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -637,5 +666,99 @@ describe('exchange details', () => {
       expect(res.statusCode).toBe(400);
     }
     expect(sendMatchEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('per-IP email budget', () => {
+  const IP = '203.0.113.5';
+
+  // Fills this IP's budget to `used` emails, counted an hour ago
+  async function used(count: number, ip = IP) {
+    db.ipLog.push({ bucket: await rateLimitBucket(ip, 'email-budget'), hour: hourOf(db.now) - HOUR, hits: count });
+  }
+
+  it('counts every email a send reserves, the organizer link included', async () => {
+    await post(firstSend);
+    expect(ipEmailsCounted(await rateLimitBucket(IP, 'email-budget'))).toBe(4);
+  });
+
+  it('refuses a send that would go over 100 with 429, claiming and sending nothing', async () => {
+    await used(97);
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual({
+      error: "You've sent the most emails allowed from your connection for now (100 in 24 hours). Try again later, or send each person their personal link below.",
+    });
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+    expect(sendOrganizerLinkEmail).not.toHaveBeenCalled();
+    expect(claimedNames()).toEqual([]);
+    expect(db.draw.emails_sent_at).toBeNull();
+    expect(emailsCounted()).toBe(0);
+  });
+
+  it('sends right up to 100', async () => {
+    await used(96);
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(200);
+    expect(ipEmailsCounted(await rateLimitBucket(IP, 'email-budget'))).toBe(100);
+  });
+
+  it('lets emails from more than 24 hours ago roll out of the budget', async () => {
+    db.ipLog.push({ bucket: await rateLimitBucket(IP, 'email-budget'), hour: hourOf(db.now) - 25 * HOUR, hits: 100 });
+    expect((await post(firstSend)).statusCode).toBe(200);
+  });
+
+  it('leaves another IP unaffected', async () => {
+    await used(100, '198.51.100.7');
+    expect((await post(firstSend)).statusCode).toBe(200);
+  });
+
+  it('gives back the budget for emails that failed', async () => {
+    failFor('sam@example.com');
+    sendOrganizerLinkEmail.mockImplementation(async () => { throw new Error('SMTP refused pat@example.com'); });
+    await post(firstSend);
+    expect(ipEmailsCounted(await rateLimitBucket(IP, 'email-budget'))).toBe(2);
+  });
+
+  it('counts a resend against the budget too', async () => {
+    failFor('sam@example.com');
+    await post(firstSend);
+    await used(97);
+    const res = await post(resend);
+    expect(res.statusCode).toBe(429);
+    expect(sentNames()).toEqual(['Alex', 'Jo']);
+  });
+
+  it('refuses the organizer link email with 429 when the budget is used up', async () => {
+    for (const p of db.participants) p.email = null;
+    await used(100);
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual({
+      error: "You've sent the most emails allowed from your connection for now (100 in 24 hours). Try again later, or copy your organizer link above.",
+    });
+    expect(sendOrganizerLinkEmail).not.toHaveBeenCalled();
+    expect(emailsCounted()).toBe(0);
+  });
+
+  it('gives back the organizer link email\'s budget when it fails', async () => {
+    for (const p of db.participants) p.email = null;
+    sendOrganizerLinkEmail.mockImplementation(async () => { throw new Error('SMTP refused pat@example.com'); });
+    await post(firstSend);
+    expect(ipEmailsCounted(await rateLimitBucket(IP, 'email-budget'))).toBe(0);
+  });
+
+  it('skips the budget for a whitelisted IP', async () => {
+    vi.stubEnv('RATE_LIMIT_IP_WHITELIST', `198.51.100.1, ${IP}`);
+    await used(100);
+    expect((await post(firstSend)).statusCode).toBe(200);
+  });
+
+  it('skips the budget, still sending, when the hash secret is missing', async () => {
+    await used(100);
+    vi.stubEnv('RATE_LIMIT_HASH_SECRET', '');
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(200);
+    expect(console.error).toHaveBeenCalledWith('Email budget check skipped', expect.any(Error));
   });
 });

@@ -20,6 +20,7 @@ vi.mock('@/lib/turnstile', () => ({ verifyTurnstile: async () => true }));
 import { NextRequest } from 'next/server';
 import { sql } from '@/lib/db';
 import { proxy } from '@/proxy';
+import { rateLimitBucket } from '@/lib/rate-limit';
 import { BASE_PATH } from '@/lib/site';
 import createDraw from '@/pages/api/create-draw';
 import getDraw from '@/pages/api/get-draw';
@@ -206,6 +207,34 @@ describe('routes against a real Postgres', () => {
     expect(retry.statusCode).toBe(200);
     expect(sendMatchEmail.mock.calls.map(c => (c as unknown[])[1])).toEqual(['kim@example.com']);
     expect((await adminView(adminKey)).participants.every(p => !p.email || p.email_sent_at)).toBe(true);
+  });
+
+  it('counts each IP\'s emails, gives back the failed ones, and refuses a send over 100 with 429', async () => {
+    const ip = '203.0.113.77';
+    const headers = { 'x-forwarded-for': ip };
+    const bucket = await rateLimitBucket(ip, 'email-budget');
+    const used = async () => (await sql`SELECT COALESCE(SUM(hits), 0)::int as hits FROM RateLimits WHERE bucket = ${bucket}`)[0].hits;
+    const { adminKey } = await create();
+    const drawId = (await adminView(adminKey)).id;
+    sendMatchEmail.mockImplementation(async (...args: unknown[]) => {
+      if (args[1] === 'kim@example.com') throw new Error('SMTP down');
+    });
+    const first = await call(sendEmails, { method: 'POST', headers, body: { id: drawId, key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't' } });
+    expect(first.statusCode).toBe(200);
+    // Two match emails and the organizer's link; Kim's failed email is given back
+    expect(await used()).toBe(3);
+
+    await sql`UPDATE RateLimits SET hits = 100 WHERE bucket = ${bucket}`;
+    sendMatchEmail.mockReset();
+    const retry = await call(sendEmails, { method: 'POST', headers, body: { id: drawId, key: adminKey, retryFailed: true, turnstileToken: 't' } });
+    expect(retry.statusCode).toBe(429);
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+    expect(await sql`SELECT 1 FROM Participants WHERE draw_id = ${drawId} AND email_claimed_at IS NOT NULL`).toEqual([]);
+
+    const noEmails = await create({ participants: people.map(p => ({ ...p, email: '' })) });
+    const organizerOnly = await call(sendEmails, { method: 'POST', headers, body: { id: (await adminView(noEmails.adminKey)).id, key: noEmails.adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't' } });
+    expect(organizerOnly.statusCode).toBe(429);
+    expect(await used()).toBe(100);
   });
 
   it('redraws by replacing the old draw, then refuses to replace it twice', async () => {

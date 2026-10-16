@@ -9,6 +9,7 @@
 // they are saved with each organizer link email, for the personal link pages.
 // Returns 200 { success, totalSent, totalFailed, failedNames, organizerLinkSent }; 400 bad input;
 // 403 wrong key or CAPTCHA; 409 already sent / nothing to resend; 410 deleted;
+// 429 the sender's IP has used its email budget (100 emails in any 24 hours);
 // 503 daily cap hit (495 emails in any 24 hours, across all draws).
 
 import type { NextApiRequest, NextApiResponse } from 'next';
@@ -18,11 +19,16 @@ import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { readDetails } from '@/lib/details';
+import { clientIp, isWhitelisted, rateLimitBucket } from '@/lib/rate-limit';
 import type { ExchangeDetails, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
 // Gmail's free SMTP plan allows ~500 emails in a rolling 24 hours; 495 gives a
 // 5-email safety margin
 const DAILY_EMAIL_LIMIT = 495;
+
+// Each IP's share of the cap, so one person can't use up everyone's emails:
+// at most this many in any 24 hours, counted the same way as the cap
+const IP_EMAIL_BUDGET = 100;
 
 // Any fixed number: the advisory lock that makes cap reservations take turns
 const EMAIL_CAP_LOCK_ID = 495;
@@ -55,14 +61,43 @@ interface MatchRow {
 
 interface ReserveRow {
   cap_ok: boolean;
+  ip_ok: boolean;
   reserved_hour: Date | null;
 }
 
 interface ClaimRow {
   cap_ok: boolean;
+  ip_ok: boolean;
   draw_claimed: boolean;
   claimed_ids: number[];
   reserved_hour: Date | null;
+}
+
+const IP_BUDGET_ERROR = `You've sent the most emails allowed from your connection for now (${IP_EMAIL_BUDGET} in 24 hours).`;
+
+// Hands back reserved emails that weren't sent, from the cap and from the IP's
+// budget. Both reservations were made in the same hour, so that hour's rows hold
+// them. A failure here only leaves a count too high for a day, so it never fails
+// the request
+async function releaseReserved(count: number, reservedHour: Date | null, budgetBucket: string | null) {
+  if (count <= 0 || !reservedHour) return;
+  try {
+    await sql.transaction([
+      sql`
+        UPDATE EmailSendLog
+        SET emails_sent = emails_sent - ${count}::int
+        WHERE hour_start = ${reservedHour}::timestamptz
+      `,
+      sql`
+        UPDATE RateLimits
+        SET hits = hits - ${count}::int
+        WHERE bucket = ${budgetBucket}
+             AND window_start = ${reservedHour}::timestamptz
+      `,
+    ]);
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<SendEmailsResponse | SendEmailsError>) {
@@ -121,6 +156,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   // Also false when Cloudflare can't be reached; the organizer just tries again
   if (!(await verifyTurnstile(turnstileToken))) {
     return res.status(403).json({ error: 'CAPTCHA verification failed.' });
+  }
+
+  // The RateLimits bucket that counts this IP's emails against IP_EMAIL_BUDGET;
+  // null skips the budget, for a whitelisted IP or (failing open, like the
+  // proxy) when the bucket can't be worked out
+  const ip = clientIp(String(req.headers['x-forwarded-for'] ?? ''), String(req.headers['x-real-ip'] ?? ''));
+  let budgetBucket: string | null = null;
+  if (!isWhitelisted(ip)) {
+    try {
+      budgetBucket = await rateLimitBucket(ip, 'email-budget');
+    } catch (err) {
+      console.error('Email budget check skipped', err);
+    }
   }
 
   try {
@@ -188,41 +236,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                SELECT COALESCE(SUM(emailSendLog.emails_sent), 0) + 1 <= ${DAILY_EMAIL_LIMIT}::int as ok
                FROM EmailSendLog as emailSendLog
                WHERE emailSendLog.hour_start > now() - interval '25 hours'
+          ), ip_budget AS (
+               SELECT ${budgetBucket}::text IS NULL OR COALESCE(SUM(rateLimits.hits), 0) + 1 <= ${IP_EMAIL_BUDGET}::int as ok
+               FROM RateLimits as rateLimits
+               WHERE rateLimits.bucket = ${budgetBucket}
+                    AND rateLimits.window_start > now() - interval '25 hours'
+          ), allowed AS (
+               SELECT (SELECT ok FROM organizer_cap) AND (SELECT ok FROM ip_budget) as ok
           ), reserve AS (
                INSERT INTO EmailSendLog (hour_start, emails_sent)
                SELECT date_trunc('hour', now()), 1
-               WHERE (SELECT ok FROM organizer_cap)
+               WHERE (SELECT ok FROM allowed)
                ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
                RETURNING hour_start
+          ), ip_reserve AS (
+               INSERT INTO RateLimits (bucket, window_start, hits)
+               SELECT ${budgetBucket}, date_trunc('hour', now()), 1
+               WHERE (SELECT ok FROM allowed) AND ${budgetBucket}::text IS NOT NULL
+               ON CONFLICT (bucket, window_start) DO UPDATE SET hits = RateLimits.hits + EXCLUDED.hits
           ), details AS (
                UPDATE Draws
                SET organizer_note = ${details.organizer_note}, budget_cents = ${details.budget_cents}::int, exchange_date = ${details.exchange_date}::date
                WHERE id = ${id}::uuid
                     AND emails_sent_at IS NULL
-                    AND (SELECT ok FROM organizer_cap)
+                    AND (SELECT ok FROM allowed)
           )
           SELECT
                (SELECT ok FROM organizer_cap) as cap_ok
+              ,(SELECT ok FROM ip_budget) as ip_ok
               ,(SELECT hour_start FROM reserve) as reserved_hour
         `,
       ]) as [unknown, ReserveRow[]];
       const reserved = reserveRows[0];
 
       if (!reserved.cap_ok) return res.status(503).json({ error: 'The site\'s email limit is reached for now. Try again in a few hours, or copy your organizer link above.' });
+      if (!reserved.ip_ok) return res.status(429).json({ error: IP_BUDGET_ERROR + ' Try again later, or copy your organizer link above.' });
 
       try {
         await sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, draw.admin_key);
       } catch (err) {
         console.error(err);
-        try {
-          await sql`
-            UPDATE EmailSendLog
-            SET emails_sent = emails_sent - ${1}::int
-            WHERE hour_start = ${reserved.reserved_hour}::timestamptz
-          `;
-        } catch (releaseErr) {
-          console.error(releaseErr);
-        }
+        await releaseReserved(1, reserved.reserved_hour, budgetBucket);
         return res.status(500).json({ error: 'Failed to send your organizer link. Please try again.' });
       }
 
@@ -257,6 +311,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
              SELECT COALESCE(SUM(emailSendLog.emails_sent), 0) + ${unsent.length + organizerCount}::int <= ${DAILY_EMAIL_LIMIT}::int as ok
              FROM EmailSendLog as emailSendLog
              WHERE emailSendLog.hour_start > now() - interval '25 hours'
+        ), ip_budget AS (
+             SELECT ${budgetBucket}::text IS NULL OR COALESCE(SUM(rateLimits.hits), 0) + ${unsent.length + organizerCount}::int <= ${IP_EMAIL_BUDGET}::int as ok
+             FROM RateLimits as rateLimits
+             WHERE rateLimits.bucket = ${budgetBucket}
+                  AND rateLimits.window_start > now() - interval '25 hours'
+        ), allowed AS (
+             SELECT (SELECT ok FROM cap) AND (SELECT ok FROM ip_budget) as ok
         ), draw_claim AS (
              UPDATE Draws
              SET emails_sent_at = now(), organizer_name = ${safeOrganizerName}, organizer_email = ${safeOrganizerEmail}
@@ -264,7 +325,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
              WHERE id = ${id}::uuid
                   AND emails_sent_at IS NULL
                   AND NOT ${!!retryFailed}::boolean
-                  AND (SELECT ok FROM cap)
+                  AND (SELECT ok FROM allowed)
              RETURNING id
         ), participant_claim AS (
              UPDATE Participants
@@ -272,7 +333,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
              WHERE id = ANY(${unsent.map(match => match.giver_id)}::int[])
                   AND email_sent_at IS NULL
                   AND (email_claimed_at IS NULL OR email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}))
-                  AND (SELECT ok FROM cap)
+                  AND (SELECT ok FROM allowed)
                   AND (${!!retryFailed}::boolean OR EXISTS (SELECT 1 FROM draw_claim))
              RETURNING id
         ), reserve AS (
@@ -282,9 +343,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
              HAVING COUNT(*) > 0
              ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
              RETURNING hour_start
+        ), ip_reserve AS (
+             INSERT INTO RateLimits (bucket, window_start, hits)
+             SELECT ${budgetBucket}, date_trunc('hour', now()), COUNT(*)::int + ${organizerCount}::int
+             FROM participant_claim
+             HAVING COUNT(*) > 0 AND ${budgetBucket}::text IS NOT NULL
+             ON CONFLICT (bucket, window_start) DO UPDATE SET hits = RateLimits.hits + EXCLUDED.hits
         )
         SELECT
              (SELECT ok FROM cap) as cap_ok
+            ,(SELECT ok FROM ip_budget) as ip_ok
             ,EXISTS (SELECT 1 FROM draw_claim) as draw_claimed
             ,ARRAY(SELECT id FROM participant_claim) as claimed_ids
             ,(SELECT hour_start FROM reserve) as reserved_hour
@@ -298,27 +366,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       });
     }
 
+    if (!claim.ip_ok) {
+      return res.status(429).json({ error: IP_BUDGET_ERROR + ' Try again later, or send each person their personal link below.' });
+    }
+
     if (!retryFailed && !claim.draw_claimed) return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
 
     const claimedIds = new Set(claim.claimed_ids);
     const toSend = unsent.filter(match => claimedIds.has(match.giver_id));
 
     if (retryFailed && !toSend.length) return res.status(409).json({ error: 'These emails are already being sent.' });
-
-    // Hands back reserved emails that weren't sent. A failure here only leaves
-    // the cap counting too many for a day, so it never fails the request
-    const releaseReserved = async (count: number) => {
-      if (count <= 0 || !claim.reserved_hour) return;
-      try {
-        await sql`
-          UPDATE EmailSendLog
-          SET emails_sent = emails_sent - ${count}::int
-          WHERE hour_start = ${claim.reserved_hour}::timestamptz
-        `;
-      } catch (err) {
-        console.error(err);
-      }
-    };
 
     // On the first send the organizer's link goes out alongside; if it fails the
     // send still stands, and the page tells the organizer to copy their link
@@ -371,7 +428,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const failed = toSend.filter((_, i) => !delivered[i]);
     const failedNames: string[] = failed.map(match => match.giver_name);
     const actualSent = toSend.length - failed.length;
-    await releaseReserved(failed.length + (organizerCount && !organizerLinkSent ? 1 : 0));
+    await releaseReserved(failed.length + (organizerCount && !organizerLinkSent ? 1 : 0), claim.reserved_hour, budgetBucket);
 
     const allFailed = failed.length > 0 && failed.length === toSend.length;
 
