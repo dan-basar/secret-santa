@@ -8,6 +8,7 @@ import { siteUrl } from '@/lib/site';
 import { isAdminKey, isCutShort, ADMIN_KEY_LENGTH } from '@/lib/tokens';
 import { formatBudget, isExchangeDate, noteError, parseBudget } from '@/lib/details';
 import { hasLink } from '@/lib/sanitize';
+import { EMAIL_DRAFT_KEY, readEmailDraft, type EmailDraft } from '@/lib/email-draft';
 import OrganizerLink from '@/components/draw/OrganizerLink';
 import MatchesTable from '@/components/draw/MatchesTable';
 import PersonalLinks from '@/components/draw/PersonalLinks';
@@ -24,22 +25,6 @@ type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' |
 // When a send's outcome is unknown: the people it reached show as sent once the
 // page reloads, and anyone still being emailed shows as sent within minutes
 const MAYBE_SENT = 'We couldn\'t confirm the send. Some emails may still be going out, so check the list below again in a few minutes before resending.';
-
-// The email card as it is typed before the first send, so a refresh keeps it. One per
-// tab rather than per draw, so the same exchange's details carry over an Edit & Redraw
-const EMAIL_DRAFT_KEY = 'drawEmailDraft';
-interface EmailDraft { organizerName: string; organizerEmail: string; organizerNote: string; budget: string; exchangeDate: string }
-
-function readEmailDraft(): EmailDraft | null {
-  try {
-    const d = JSON.parse(sessionStorage.getItem(EMAIL_DRAFT_KEY) ?? '');
-    const fields = [d?.organizerName, d?.organizerEmail, d?.organizerNote, d?.budget, d?.exchangeDate];
-    return fields.every((f) => typeof f === 'string') ? d : null;
-  } catch {
-    // Nothing saved, something this page didn't write, or storage blocked
-    return null;
-  }
-}
 
 export default function DrawPage() {
   const router = useRouter();
@@ -63,6 +48,8 @@ export default function DrawPage() {
   const [exchangeDate, setExchangeDate] = useState('');
   // Filled from the saved details once per draw, so a reload after a send never wipes what's typed
   const detailsLoadedFor = useRef<string | null>(null);
+  // The admin key the loaded draw was fetched with: adminKey changes before its draw arrives
+  const drawKey = useRef<string | null>(null);
 
   // Whether the organizer has opened the matches table; it also unlocks saving and printing them
   const [matchesShown, setMatchesShown] = useState(false);
@@ -111,7 +98,7 @@ export default function DrawPage() {
         setBudget(data.budget_cents !== null ? formatBudget(data.budget_cents).slice(1) : '');
         setExchangeDate(data.exchange_date ?? '');
         // Before the first send nothing is saved on the server, so take what was typed in this tab
-        const typed = data.emails_sent_at ? null : readEmailDraft();
+        const typed = data.emails_sent_at ? null : readEmailDraft(adminKey);
         if (typed) {
           setOrganizerName(typed.organizerName);
           setOrganizerEmail(typed.organizerEmail);
@@ -120,6 +107,7 @@ export default function DrawPage() {
           setExchangeDate(typed.exchangeDate);
         }
       }
+      drawKey.current = adminKey;
       setDraw(data);
       setState('loaded');
     } catch {
@@ -134,13 +122,15 @@ export default function DrawPage() {
   // Save the email card as it is typed. Waits until the draft has been read back for
   // this draw, or the empty card would overwrite it, and stops once the emails are sent
   useEffect(() => {
-    if (!draw || draw.emails_sent_at || detailsLoadedFor.current !== draw.id) return;
+    const key = drawKey.current;
+    if (!draw || !key || draw.emails_sent_at || detailsLoadedFor.current !== draw.id) return;
     try {
       const fields = [organizerName, organizerEmail, organizerNote, budget, exchangeDate];
       if (fields.some((f) => f)) {
-        const draft: EmailDraft = { organizerName, organizerEmail, organizerNote, budget, exchangeDate };
+        const draft: EmailDraft = { drawKey: key, organizerName, organizerEmail, organizerNote, budget, exchangeDate };
         sessionStorage.setItem(EMAIL_DRAFT_KEY, JSON.stringify(draft));
-      } else {
+      } else if (readEmailDraft(key)) {
+        // Emptied by hand; another draw's draft is left alone
         sessionStorage.removeItem(EMAIL_DRAFT_KEY);
       }
     } catch {

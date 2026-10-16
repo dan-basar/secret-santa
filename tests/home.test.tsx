@@ -242,6 +242,35 @@ describe('home form', () => {
       expect(screen.getByText(/This will replace your earlier draw/)).toBeTruthy();
     });
 
+    describe('the email card typed on the draw page', () => {
+      const card = (drawKey: string) => JSON.stringify({
+        drawKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', organizerNote: 'Wrap it', budget: '30', exchangeDate: '',
+      });
+      const savedFor = () => JSON.parse(sessionStorage.getItem('drawEmailDraft')!).drawKey;
+      const participants = [{ id: 'c', name: 'Cy', email: '', groupId: '' }, { id: 'd', name: 'Di', email: '', groupId: '' }];
+
+      it('comes along to the replacement draw after Edit & Redraw', async () => {
+        sessionStorage.setItem('drawEmailDraft', card('old-key'));
+        sessionStorage.setItem('editDraftData', JSON.stringify({
+          groups: [{ id: 'g1', name: '' }], participants, replacesDrawId: 'draw-1', replacesKey: 'old-key',
+        }));
+        render(<Home />);
+        fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
+        await vi.waitFor(() => expect(router.push).toHaveBeenCalledWith('/draw#key-1'));
+        expect(savedFor()).toBe('key-1');
+      });
+
+      it('stays with its own draw when an unrelated draw is created', async () => {
+        sessionStorage.setItem('drawEmailDraft', card('old-key'));
+        render(<Home />);
+        type('Person 1 name', 'Ann');
+        type('Person 2 name', 'Bob');
+        fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
+        await vi.waitFor(() => expect(router.push).toHaveBeenCalledWith('/draw#key-1'));
+        expect(savedFor()).toBe('old-key');
+      });
+    });
+
     it('still works when storage is blocked', () => {
       const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
       const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });

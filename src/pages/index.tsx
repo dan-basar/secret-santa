@@ -7,6 +7,7 @@ import { siteUrl } from '@/lib/site';
 import { isValidEmail } from '@/lib/email-address';
 import { hasLink } from '@/lib/sanitize';
 import { duplicateNames, duplicateNamesMessage } from '@/lib/names';
+import { moveEmailDraft } from '@/lib/email-draft';
 import { FormGroup, FormParticipant, MAX_GROUPS, MAX_PARTICIPANTS, groupNameFor, newId, parseFormDraft } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
 import logo from '../../public/logo.svg';
@@ -205,6 +206,8 @@ export default function Home() {
       const data: CreateDrawResponse = await res.json();
       // The draw exists now; coming back to this page starts a fresh form
       try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* storage blocked */ }
+      // A redraw is the same exchange, so the email card typed for the old draw comes along
+      if (replaces) moveEmailDraft(replaces.key, data.adminKey);
       // In the fragment, never the query string, so the key stays out of server logs
       router.push(`/draw#${data.adminKey}`);
     } catch {
