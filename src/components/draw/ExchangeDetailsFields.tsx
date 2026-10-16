@@ -67,7 +67,7 @@ export default function ExchangeDetailsFields({
       <div id="exchangeDetails" className={styles.detailsBodySingle} hidden={!open}>
         <div className={styles.detailsFields}>
           <div className={styles.organizerField}>
-            <label className={styles.organizerLabel} htmlFor="organizerNote">Organizer Note</label>
+            <label className={styles.organizerLabel} htmlFor="organizerNote">Organizer note</label>
             <textarea
               id="organizerNote"
               className={`${styles.organizerInput} ${styles.noteInput}`}

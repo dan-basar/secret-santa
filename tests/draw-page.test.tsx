@@ -137,7 +137,7 @@ describe('draw page', () => {
     // The name and email are only ever in the draft
     expect((await screen.findByLabelText<HTMLInputElement>('Organizer Name')).value).toBe('Pat');
     expect(screen.getByLabelText<HTMLInputElement>('Budget in dollars').value).toBe('25');
-    expect(screen.getByLabelText<HTMLTextAreaElement>('Organizer Note').value).toBe('');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Organizer note').value).toBe('');
     expect(screen.getByText('✓ Saved')).toBeTruthy();
   });
 
@@ -147,7 +147,7 @@ describe('draw page', () => {
     }));
     window.location.hash = `#${ADMIN_KEY}`;
     render(<DrawPage />);
-    expect((await screen.findByLabelText<HTMLTextAreaElement>('Organizer Note')).value).toBe('Wrap it');
+    expect((await screen.findByLabelText<HTMLTextAreaElement>('Organizer note')).value).toBe('Wrap it');
     expect(screen.getByText('Not saved yet')).toBeTruthy();
   });
 
@@ -162,7 +162,7 @@ describe('draw page', () => {
     window.location.hash = `#${ADMIN_KEY}`;
     render(<DrawPage />);
     fireEvent.click(await screen.findByRole('button', { name: /Add a note, budget, or date/ }));
-    fireEvent.change(screen.getByLabelText('Organizer Note'), { target: { value: 'Wrap it ' } });
+    fireEvent.change(screen.getByLabelText('Organizer note'), { target: { value: 'Wrap it ' } });
     expect(screen.getByText('Not saved yet')).toBeTruthy();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save details' })); });
     const [url, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
@@ -177,7 +177,7 @@ describe('draw page', () => {
     window.location.hash = `#${ADMIN_KEY}`;
     const { container } = render(<DrawPage />);
     fireEvent.click(await screen.findByRole('button', { name: /Add a note, budget, or date/ }));
-    fireEvent.change(screen.getByLabelText('Organizer Note'), { target: { value: 'Typed note' } });
+    fireEvent.change(screen.getByLabelText('Organizer note'), { target: { value: 'Typed note' } });
     fireEvent.click(screen.getByRole('button', { name: 'Show all matches' }));
     const sheet = container.firstElementChild as HTMLElement;
     expect(within(sheet).getByText('Saved note')).toBeTruthy();

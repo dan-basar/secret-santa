@@ -130,7 +130,7 @@ describe('details card and message preview', () => {
     expect(screen.getByText(/You have drawn/).textContent).toBe('You have drawn P1’s name for the gift exchange!');
     expect(screen.queryByText('First, some details:')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Organizer Note'), { target: { value: 'Bring it wrapped' } });
+    fireEvent.change(screen.getByLabelText('Organizer note'), { target: { value: 'Bring it wrapped' } });
     fireEvent.change(screen.getByLabelText('Budget in dollars'), { target: { value: '30' } });
     fireEvent.change(screen.getByLabelText('Date of the exchange'), { target: { value: '2026-12-19' } });
 
@@ -146,7 +146,7 @@ describe('details card and message preview', () => {
     renderSection(drawWith(['a@example.com', 'b@example.com']));
     fireEvent.click(toggle());
     const note = 'A' + 'a'.repeat(149);
-    fireEvent.change(screen.getByLabelText('Organizer Note'), { target: { value: note } });
+    fireEvent.change(screen.getByLabelText('Organizer note'), { target: { value: note } });
     expect(screen.getByText(`“${note}”`).className).toContain('break-anywhere');
   });
 
@@ -161,7 +161,7 @@ describe('details card and message preview', () => {
   it('blocks sending while the note has a link', () => {
     renderSection(drawWith(['a@example.com', 'b@example.com']));
     fireEvent.click(toggle());
-    fireEvent.change(screen.getByLabelText('Organizer Note'), { target: { value: 'Ideas at bit.ly/gifts' } });
+    fireEvent.change(screen.getByLabelText('Organizer note'), { target: { value: 'Ideas at bit.ly/gifts' } });
     expect(screen.getByText('Links aren’t allowed in the note.')).toBeTruthy();
     expect((screen.getByRole('button', { name: /Send emails to 2 participants/ }) as HTMLButtonElement).disabled).toBe(true);
   });
@@ -169,7 +169,7 @@ describe('details card and message preview', () => {
   it('has no message preview when nobody has an email', () => {
     renderSection(drawWith([null, null]));
     fireEvent.click(toggle());
-    expect(screen.getByLabelText('Organizer Note')).toBeTruthy();
+    expect(screen.getByLabelText('Organizer note')).toBeTruthy();
     expect(screen.queryByText('Message preview')).toBeNull();
   });
 
