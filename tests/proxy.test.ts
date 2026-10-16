@@ -7,7 +7,9 @@ vi.mock('@/lib/db', async (importOriginal) => {
   return { ...actual, sql: vi.fn(async () => []) };
 });
 
-import { proxy } from '@/proxy';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { proxy, config } from '@/proxy';
 import { sql } from '@/lib/db';
 import { BASE_PATH } from '@/lib/site';
 
@@ -121,5 +123,23 @@ describe('proxy rate limiting', () => {
     const res = await proxy(request('/api/health'));
     expect(res.status).toBe(200);
     expect(vi.mocked(sql)).not.toHaveBeenCalled();
+  });
+});
+
+describe('proxy matcher', () => {
+  const apiRoutes = readdirSync(join(__dirname, '..', 'src/pages/api'))
+    .filter((file) => file.endsWith('.ts'))
+    .map((file) => `/api/${file.slice(0, -3)}`);
+
+  it('lists exactly the API routes the proxy limits, so unlimited ones skip it', async () => {
+    const limited: string[] = [];
+    for (const route of apiRoutes) {
+      vi.mocked(sql).mockClear();
+      vi.mocked(sql).mockResolvedValueOnce([{ hits: 1 }]);
+      await proxy(request(route));
+      if (vi.mocked(sql).mock.calls.length > 0) limited.push(route);
+    }
+    expect([...config.matcher].sort()).toEqual(limited.sort());
+    expect(config.matcher).not.toContain('/api/health');
   });
 });

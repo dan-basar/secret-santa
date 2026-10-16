@@ -93,7 +93,17 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Only run proxy on API routes
+// Only run on the routes in RATE_LIMITS: on Vercel the proxy is its own
+// invocation, so an unlimited route (health) skips it entirely. Next reads this
+// list at build time, so it has to be written out; tests/proxy.test.ts checks it
+// matches RATE_LIMITS
 export const config = {
-  matcher: '/api/:path*',
+  matcher: [
+    '/api/create-draw',
+    '/api/send-emails',
+    '/api/delete-draw',
+    '/api/get-draw',
+    '/api/reveal',
+    '/api/save-details',
+  ],
 };

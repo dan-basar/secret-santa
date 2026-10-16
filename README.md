@@ -90,9 +90,10 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 | `004_email_status.sql` | `Participants.email_sent_at`, for per-person email tracking and resend |
 | `005_email_claims.sql` | `Participants.email_claimed_at`, so a send that dies midway leaves nobody wrongly marked as emailed |
 | `006_match_constraints.sql` | `Draws.admin_key` becomes `NOT NULL`; `UNIQUE` on each of `Matches.giver_participant_id` and `receiver_participant_id` |
-| `007_email_send_log.sql` | The `EmailSendLog` table, for the rolling 24-hour email cap (replaces `DailyEmailLog`, which is no longer read) |
+| `007_email_send_log.sql` | The `EmailSendLog` table, for the rolling 24-hour email cap (replaces `DailyEmailLog`, dropped by 010) |
 | `008_short_links.sql` | `Participants.reveal_code`, the 8-character personal link token (the uuid `reveal_token` is retired), and `UNIQUE` on `Draws.admin_key`, which get-draw now looks draws up by |
 | `009_exchange_details.sql` | `Draws.organizer_note`, `budget_cents` and `exchange_date`, the optional details shown in match emails and on personal link pages |
+| `010_drop_daily_email_log.sql` | Removes the unused `DailyEmailLog` table that 007 left behind, so older databases match `setup.sql` |
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 
@@ -136,7 +137,7 @@ Draw creation returns a random 14-character `adminKey` (letters and digits, [`sr
 
 ### Rate Limiting
 
-[`src/proxy.ts`](src/proxy.ts) limits each IP per hour: 10 for `create-draw`, 5 for `send-emails`, 10 for `delete-draw`, 30 for `save-details`, and 60 each for `get-draw` and `reveal`, the lookups behind organizer and personal links; over the limit it returns `429`. Counts live in the Neon `RateLimits` table, so every Vercel instance shares them: one row per HMAC-SHA-256 hash of client + route per hour, keyed with `RATE_LIMIT_HASH_SECRET`, so raw IPs are never stored and the hashes can't be reversed without the secret. A client is an IPv4 address, or an IPv6 /64 block (one household or phone can hold millions of IPv6 addresses). Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails or the secret is missing, the request is allowed through (fails open) and the error is logged. IPs in `RATE_LIMIT_IP_WHITELIST` are never limited. In front of all this, a Vercel Firewall rule refuses more than 60 API requests a minute from one IP at the edge, before any function or database runs (set in the Vercel dashboard; see [docs/OPERATIONS.md](docs/OPERATIONS.md#edge-rate-limit-vercel-firewall)).
+[`src/proxy.ts`](src/proxy.ts) limits each IP per hour: 10 for `create-draw`, 5 for `send-emails`, 10 for `delete-draw`, 30 for `save-details`, and 60 each for `get-draw` and `reveal`, the lookups behind organizer and personal links; over the limit it returns `429`. Counts live in the Neon `RateLimits` table, so every Vercel instance shares them: one row per HMAC-SHA-256 hash of client + route per hour, keyed with `RATE_LIMIT_HASH_SECRET`, so raw IPs are never stored and the hashes can't be reversed without the secret. A client is an IPv4 address, or an IPv6 /64 block (one household or phone can hold millions of IPv6 addresses). Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails or the secret is missing, the request is allowed through (fails open) and the error is logged. IPs in `RATE_LIMIT_IP_WHITELIST` are never limited. The proxy's `matcher` lists only these six routes, so `health` doesn't go through it at all. In front of all this, a Vercel Firewall rule refuses more than 60 API requests a minute from one IP at the edge, before any function or database runs (set in the Vercel dashboard; see [docs/OPERATIONS.md](docs/OPERATIONS.md#edge-rate-limit-vercel-firewall)).
 
 ---
 
