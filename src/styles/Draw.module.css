@@ -466,7 +466,7 @@
 }
 
 .detailsSummary {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   color: var(--ink-light);
 }
@@ -674,7 +674,12 @@
   color: var(--ink-light);
 }
 
-/* The details card: just the folded row until it is opened */
+/* The details card: just the folded row until it is opened. Its title and
+   summary match the other cards' headings and descriptions */
+.detailsTitle {
+  font: 700 20px/1.2 var(--font-serif);
+}
+
 .detailsCard {
   padding: 16px 24px;
 }

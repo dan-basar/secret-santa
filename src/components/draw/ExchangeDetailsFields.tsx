@@ -60,7 +60,7 @@ export default function ExchangeDetailsFields({
         onClick={() => setOpen((o) => !o)}
       >
         <span className={styles.detailsChevron} aria-hidden="true">▸</span>
-        <span>Add a note, budget, or date</span>
+        <span className={styles.detailsTitle}>Add a note, budget, or date</span>
         <span className={styles.detailsSummary}><span className={styles.detailsDot}>· </span>{summary}</span>
       </button>
 
