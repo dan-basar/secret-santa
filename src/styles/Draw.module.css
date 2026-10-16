@@ -674,6 +674,42 @@
   color: var(--ink-light);
 }
 
+/* The details card: just the folded row until it is opened */
+.detailsCard {
+  padding: 16px 24px;
+}
+
+.detailsCard .details {
+  margin-bottom: 0;
+}
+
+.detailsSave {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.detailsSaveStatus {
+  font-size: 13px;
+  color: var(--ink-light);
+}
+
+.detailsSaved {
+  color: var(--success);
+}
+
+.detailsSaveHint {
+  margin-top: -8px;
+  font-size: 12px;
+  color: var(--ink-light);
+}
+
+/* In the email card, between the organizer fields and the CAPTCHA */
+.previewInCard {
+  margin-bottom: 16px;
+}
+
 /* After sending: the details that went out, read-only */
 .detailsSent {
   display: grid;

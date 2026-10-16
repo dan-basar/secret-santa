@@ -69,3 +69,40 @@ export function noteError(note: string): string {
 export function hasDetails(details: ExchangeDetails): boolean {
   return !!details.organizer_note || details.budget_cents !== null || !!details.exchange_date;
 }
+
+/**
+ * Checks the details as a request body sends them (organizerNote, budget in dollars
+ * as typed, exchangeDate YYYY-MM-DD; each optional, empty meaning not set). Returns
+ * the details to save, or the 400 message. Shared by send-emails and save-details.
+ */
+export function readDetails(body: { organizerNote?: unknown; budget?: unknown; exchangeDate?: unknown }): ExchangeDetails | string {
+  const { organizerNote, budget, exchangeDate } = body;
+  if (organizerNote != null && typeof organizerNote !== 'string') return 'The note must be text.';
+  if (budget != null && typeof budget !== 'string') return 'The budget must be text.';
+  if (exchangeDate != null && typeof exchangeDate !== 'string') return 'The exchange date must be text.';
+
+  const note = (organizerNote ?? '').trim();
+  const badNote = noteError(note);
+  if (badNote) return badNote;
+  const budgetCents = parseBudget(budget ?? '');
+  if (budgetCents === 'invalid') return 'The budget must be a dollar amount of $10,000 or less.';
+  const date = (exchangeDate ?? '').trim();
+  if (date && !isExchangeDate(date)) return 'The exchange date is not a valid date.';
+
+  return { organizer_note: note || null, budget_cents: budgetCents, exchange_date: date || null };
+}
+
+/** The details as typed on the organizer page, leaving out any value the server would refuse */
+export function typedDetails(note: string, budget: string, exchangeDate: string): ExchangeDetails {
+  const trimmed = note.trim();
+  const cents = parseBudget(budget);
+  return {
+    organizer_note: trimmed && !noteError(trimmed) ? trimmed : null,
+    budget_cents: typeof cents === 'number' ? cents : null,
+    exchange_date: isExchangeDate(exchangeDate) ? exchangeDate : null,
+  };
+}
+
+export function sameDetails(a: ExchangeDetails, b: ExchangeDetails): boolean {
+  return a.organizer_note === b.organizer_note && a.budget_cents === b.budget_cents && a.exchange_date === b.exchange_date;
+}

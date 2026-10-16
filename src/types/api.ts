@@ -73,5 +73,8 @@ export interface SendEmailsError extends ApiError {
   failedNames?: string[];
 }
 
+// POST /api/save-details: the details as saved
+export type SaveDetailsResponse = ExchangeDetails;
+
 // GET /api/health
 export type HealthResponse = { ok: true } | { ok: false; error: string };

@@ -1,9 +1,9 @@
 import type { GetDrawResponse } from '@/types/api';
 import { isValidEmail } from '@/lib/email-address';
 import { hasLink } from '@/lib/sanitize';
-import { budgetLine, formatExchangeDate, hasDetails, noteError, parseBudget } from '@/lib/details';
+import { noteError, parseBudget } from '@/lib/details';
 import TurnstileWidget from '@/components/draw/TurnstileWidget';
-import ExchangeDetailsFields from '@/components/draw/ExchangeDetailsFields';
+import MessagePreview from '@/components/draw/MessagePreview';
 import styles from '@/styles/Draw.module.css';
 
 interface Props {
@@ -14,13 +14,10 @@ interface Props {
   organizerEmail: string;
   onOrganizerNameChange: (value: string) => void;
   onOrganizerEmailChange: (value: string) => void;
-  // The optional exchange details, sent with the first send
+  // The optional exchange details as typed in the details card, sent with the first send
   organizerNote: string;
   budget: string;
   exchangeDate: string;
-  onOrganizerNoteChange: (value: string) => void;
-  onBudgetChange: (value: string) => void;
-  onExchangeDateChange: (value: string) => void;
   loading: boolean;
   error: string;
   // After a first send: whether the organizer's own link was emailed to them
@@ -34,8 +31,8 @@ interface Props {
 
 // Email notifications: the first send (which also emails the organizer their
 // link, or only that when nobody has an email), then a resend for anyone not
-// reached, then a confirmation once everyone has their email. Once sent, the
-// exchange details that went out are shown read-only
+// reached, then a confirmation once everyone has their email. Before the first
+// send it previews the match email with the details typed in the card above
 export default function EmailSection(props: Props) {
   const { draw, unsentCount, organizerLinkNotice } = props;
 
@@ -64,25 +61,13 @@ export default function EmailSection(props: Props) {
         </p>
       )}
       {content}
-      {draw.emails_sent_at && hasDetails(draw) && <SentDetails draw={draw} />}
     </section>
-  );
-}
-
-function SentDetails({ draw }: { draw: GetDrawResponse }) {
-  return (
-    <dl className={styles.detailsSent} aria-label="Details sent">
-      {draw.organizer_note && <><dt>Note</dt><dd>{draw.organizer_note}</dd></>}
-      {draw.budget_cents !== null && <><dt>Budget</dt><dd>{budgetLine(draw.budget_cents)}</dd></>}
-      {draw.exchange_date && <><dt>Exchange</dt><dd>{formatExchangeDate(draw.exchange_date)}</dd></>}
-    </dl>
   );
 }
 
 function FirstSendForm({
   draw, organizerName, organizerEmail, onOrganizerNameChange, onOrganizerEmailChange,
-  organizerNote, budget, exchangeDate, onOrganizerNoteChange, onBudgetChange, onExchangeDateChange,
-  loading, error, turnstileKey, onTurnstileToken, hasTurnstileToken, onSend,
+  organizerNote, budget, exchangeDate, loading, error, turnstileKey, onTurnstileToken, hasTurnstileToken, onSend,
 }: Props) {
   const emailCount = draw.participants.filter((p) => p.email).length;
   const hasEmails = emailCount > 0;
@@ -91,15 +76,13 @@ function FirstSendForm({
   const emailInvalid = email.length > 0 && !isValidEmail(email);
   // The name goes into every email, so the server refuses a web address in it
   const nameHasLink = hasLink(name);
-  const detailsOk = !noteError(organizerNote.trim()) && parseBudget(budget) !== 'invalid';
+  const budgetCents = parseBudget(budget);
+  const detailsOk = !noteError(organizerNote.trim()) && budgetCents !== 'invalid';
   const canSend = name.length > 0 && !nameHasLink && email.length > 0 && !emailInvalid && detailsOk;
 
   // The preview shows the first person with an email and their match, as the organizer already sees them all
   const firstWithEmail = draw.participants.findIndex((p) => p.email);
   const firstMatch = draw.matches.find((m) => m.giver === firstWithEmail);
-  const preview = hasEmails && firstMatch
-    ? { toName: draw.participants[firstWithEmail].name, matchName: draw.participants[firstMatch.receiver].name, organizerName: name }
-    : null;
 
   return (
     <>
@@ -112,7 +95,7 @@ function FirstSendForm({
           <p className={styles.sectionDesc} style={{ marginBottom: 8 }}>
             No participants have an email address, so there are no match emails to send.
           </p>
-          <p className={styles.sectionDesc}>Enter your name and email to get your organizer link by email. A note, budget or date you add shows on each personal link.</p>
+          <p className={styles.sectionDesc}>Enter your name and email to get your organizer link by email. A note, budget or date you save above shows on each personal link.</p>
         </>
       )}
       <div className={styles.organizerFields}>
@@ -149,16 +132,16 @@ function FirstSendForm({
           )}
         </div>
       </div>
-      <ExchangeDetailsFields
-        note={organizerNote}
-        budget={budget}
-        exchangeDate={exchangeDate}
-        onNoteChange={onOrganizerNoteChange}
-        onBudgetChange={onBudgetChange}
-        onExchangeDateChange={onExchangeDateChange}
-        disabled={loading}
-        preview={preview}
-      />
+      {hasEmails && firstMatch && (
+        <MessagePreview
+          toName={draw.participants[firstWithEmail].name}
+          matchName={draw.participants[firstMatch.receiver].name}
+          organizerName={name}
+          note={organizerNote}
+          budgetCents={typeof budgetCents === 'number' ? budgetCents : null}
+          exchangeDate={exchangeDate}
+        />
+      )}
       {error && <p className="error-msg" role="alert" style={{ marginBottom: 12 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
         <TurnstileWidget key={turnstileKey} onToken={onTurnstileToken} />
@@ -166,7 +149,7 @@ function FirstSendForm({
           className="btn btn-success"
           onClick={() => onSend(false)}
           disabled={loading || !canSend || !hasTurnstileToken}
-          title={!name || !email ? 'Enter your name and email to send' : !detailsOk ? 'Fix the note or budget to send' : undefined}
+          title={!name || !email ? 'Enter your name and email to send' : !detailsOk ? 'Fix the note or budget above to send' : undefined}
         >
           {loading ? 'Sending…' : hasEmails
             ? `📧 Send emails to ${emailCount} participant${emailCount !== 1 ? 's' : ''}`

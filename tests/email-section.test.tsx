@@ -8,6 +8,8 @@ import type { GetDrawResponse } from '@/types/api';
 vi.mock('@/components/draw/TurnstileWidget', () => ({ default: () => <div data-testid="turnstile" /> }));
 
 import EmailSection from '@/components/draw/EmailSection';
+import DetailsCard from '@/components/draw/DetailsCard';
+import { sameDetails, typedDetails } from '@/lib/details';
 
 function drawWith(emails: Array<string | null>): GetDrawResponse {
   return {
@@ -23,38 +25,55 @@ function drawWith(emails: Array<string | null>): GetDrawResponse {
   };
 }
 
-// Holds the details as the draw page does, so typing updates the row and preview
-function Section({ draw, organizerLinkNotice }: { draw: GetDrawResponse; organizerLinkNotice: string }) {
+// Holds the details as the draw page does, so typing updates the details card above
+// and the message preview in the email card
+function Section({ draw, organizerLinkNotice, onSave = () => {} }: { draw: GetDrawResponse; organizerLinkNotice: string; onSave?: () => void }) {
   const [note, setNote] = useState('');
   const [budget, setBudget] = useState('');
   const [date, setDate] = useState('');
+  const saved = { organizer_note: draw.organizer_note, budget_cents: draw.budget_cents, exchange_date: draw.exchange_date };
   return (
-    <EmailSection
-      draw={draw}
-      unsentCount={draw.participants.filter((p) => p.email && !p.email_sent_at).length}
-      organizerName="Pat"
-      organizerEmail="pat@example.com"
-      onOrganizerNameChange={() => {}}
-      onOrganizerEmailChange={() => {}}
-      organizerNote={note}
-      budget={budget}
-      exchangeDate={date}
-      onOrganizerNoteChange={setNote}
-      onBudgetChange={setBudget}
-      onExchangeDateChange={setDate}
-      loading={false}
-      error=""
-      organizerLinkNotice={organizerLinkNotice}
-      turnstileKey={0}
-      onTurnstileToken={() => {}}
-      hasTurnstileToken
-      onSend={() => {}}
-    />
+    <>
+      <DetailsCard
+        saved={saved}
+        emailsSent={!!draw.emails_sent_at}
+        note={note}
+        budget={budget}
+        exchangeDate={date}
+        onNoteChange={setNote}
+        onBudgetChange={setBudget}
+        onExchangeDateChange={setDate}
+        unsaved={!sameDetails(typedDetails(note, budget, date), saved)}
+        valid
+        saving={false}
+        disabled={false}
+        error=""
+        onSave={onSave}
+      />
+      <EmailSection
+        draw={draw}
+        unsentCount={draw.participants.filter((p) => p.email && !p.email_sent_at).length}
+        organizerName="Pat"
+        organizerEmail="pat@example.com"
+        onOrganizerNameChange={() => {}}
+        onOrganizerEmailChange={() => {}}
+        organizerNote={note}
+        budget={budget}
+        exchangeDate={date}
+        loading={false}
+        error=""
+        organizerLinkNotice={organizerLinkNotice}
+        turnstileKey={0}
+        onTurnstileToken={() => {}}
+        hasTurnstileToken
+        onSend={() => {}}
+      />
+    </>
   );
 }
 
-function renderSection(draw: GetDrawResponse, organizerLinkNotice = '') {
-  render(<Section draw={draw} organizerLinkNotice={organizerLinkNotice} />);
+function renderSection(draw: GetDrawResponse, organizerLinkNotice = '', onSave?: () => void) {
+  render(<Section draw={draw} organizerLinkNotice={organizerLinkNotice} onSave={onSave} />);
 }
 
 const toggle = () => screen.getByRole('button', { name: /Add a note, budget, or date/ });
@@ -91,12 +110,18 @@ describe('email section before the first send', () => {
   });
 });
 
-describe('exchange details row', () => {
+describe('details card and message preview', () => {
   it('starts folded, summing up the defaults in lowercase', () => {
     renderSection(drawWith(['a@example.com', 'b@example.com']));
     expect(toggle().getAttribute('aria-expanded')).toBe('false');
     expect(toggle().textContent).toContain('no $ limit · no date');
     expect(screen.getByRole('button', { name: 'No budget set', hidden: true }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('shows the message preview in the email card without opening the details', () => {
+    renderSection(drawWith(['a@example.com', 'b@example.com']));
+    const preview = screen.getByText('Message preview');
+    expect(preview.closest('section')!.textContent).toContain('Email notifications');
   });
 
   it('updates the summary and the message preview as the organizer types', () => {
@@ -109,7 +134,7 @@ describe('exchange details row', () => {
     fireEvent.change(screen.getByLabelText('Budget in dollars'), { target: { value: '30' } });
     fireEvent.change(screen.getByLabelText('Date of the exchange'), { target: { value: '2026-12-19' } });
 
-    expect(toggle().textContent).toContain('note added · $30 · dec 19');
+    expect(toggle().textContent).toContain('note added · $30 · dec 19 · not saved');
     expect(screen.getByText('First, some details:')).toBeTruthy();
     expect(screen.getByText('“Bring it wrapped”')).toBeTruthy();
     expect(screen.getByText('Saturday, December 19')).toBeTruthy();
@@ -146,6 +171,32 @@ describe('exchange details row', () => {
     fireEvent.click(toggle());
     expect(screen.getByLabelText('Organizer Note')).toBeTruthy();
     expect(screen.queryByText('Message preview')).toBeNull();
+  });
+
+  it('saves only when something changed, and says whether it is saved', () => {
+    const onSave = vi.fn();
+    renderSection(drawWith(['a@example.com', 'b@example.com']), '', onSave);
+    fireEvent.click(toggle());
+    const save = screen.getByRole('button', { name: 'Save details' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(screen.queryByText('✓ Saved')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Budget in dollars'), { target: { value: '30' } });
+    expect(screen.getByText('Not saved yet')).toBeTruthy();
+    fireEvent.click(save);
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows saved details as saved, and as not saved once changed', () => {
+    const draw = drawWith(['a@example.com', 'b@example.com']);
+    draw.budget_cents = 3000;
+    // The test harness starts with empty fields, so they differ from the saved budget
+    renderSection(draw);
+    expect(toggle().textContent).toContain('no $ limit · no date · not saved');
+    fireEvent.click(toggle());
+    fireEvent.change(screen.getByLabelText('Budget in dollars'), { target: { value: '30.00' } });
+    expect(screen.getByText('✓ Saved')).toBeTruthy();
+    expect(toggle().textContent).toContain('$30 · no date');
+    expect(toggle().textContent).not.toContain('not saved');
   });
 
   it('shows the details read-only once the emails are sent', () => {

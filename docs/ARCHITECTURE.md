@@ -8,10 +8,10 @@ There are no accounts. Access comes from two random secrets of letters and digit
 
 | Secret | Link | Unlocks |
 |---|---|---|
-| **Admin key** (14 characters) | `/draw#<adminKey>` (the organizer's link) | Everything about the draw: matches, email addresses, groups, every personal reveal link, per-person email status; sending and resending emails, Edit & Redraw, deleting |
+| **Admin key** (14 characters) | `/draw#<adminKey>` (the organizer's link) | Everything about the draw: matches, email addresses, groups, every personal reveal link, per-person email status; saving the note, budget and date, sending and resending emails, Edit & Redraw, deleting |
 | **Reveal token** (8 characters) | `/reveal/<token>` (one per participant) | That one person's own match, the draw date and, once emails are sent, the organizer's name. Nothing about anyone else |
 
-The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It travels in the URL fragment, which browsers never send to the server; the draw page reads it there and sends it to `get-draw` in an `X-Admin-Key` header (and in the JSON body to `send-emails` and `delete-draw`), so it never appears in a query string or request log. `get-draw` finds the draw by the key alone, so the draw's own uuid never appears in a link. The organizer page shows the link in a box with a Copy button, marked private; it is never shown to anyone else, so losing it means losing admin access. Every draw has one (`admin_key` is `NOT NULL` and `UNIQUE`).
+The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It travels in the URL fragment, which browsers never send to the server; the draw page reads it there and sends it to `get-draw` in an `X-Admin-Key` header (and in the JSON body to `send-emails`, `save-details` and `delete-draw`), so it never appears in a query string or request log. `get-draw` finds the draw by the key alone, so the draw's own uuid never appears in a link. The organizer page shows the link in a box with a Copy button, marked private; it is never shown to anyone else, so losing it means losing admin access. Every draw has one (`admin_key` is `NOT NULL` and `UNIQUE`).
 
 The secrets are short so links fit in a text: the organizer link is about 61 characters and a personal link about 57. 14 characters from 62 are about 83 random bits and 8 about 48; what keeps guessing out of reach is the per-IP limit of 60 lookups an hour on `get-draw` and `reveal` (`src/proxy.ts`). Personal links get the shorter secret because each shows only one match. Links from before migration 008 (UUIDs, `/draw/<id>#key=…`, `?key=`) no longer open anything.
 
@@ -28,7 +28,7 @@ stateDiagram-v2
 ```
 
 - **Created.** Matches are drawn and saved with the draw. The organizer can share personal links, send emails, Edit & Redraw, or delete. When nobody has an email address, sending emails just the organizer their link (one email against the cap) and the draw stays in this state.
-- **Edit & Redraw** (only before emails go out) copies the participants back into the home page form. The old draw stays live until the new one is saved; `create-draw` then soft-deletes the old draw in the **same transaction** that saves the new one, so there is never a moment with neither or both.
+- **Edit & Redraw** (only before emails go out) copies the participants back into the home page form. The old draw stays live until the new one is saved; `create-draw` then soft-deletes the old draw in the **same transaction** that saves the new one, so there is never a moment with neither or both. The new draw keeps the old one's saved note, budget and date.
 - **Emails sent.** Before anything goes out, one transaction checks the email cap in `EmailSendLog` (495 in any 24 hours, across all draws; `503` if it doesn't fit), on the first send records the organizer's name and email and sets `Draws.emails_sent_at`, claims each participant (`Participants.email_claimed_at`), and reserves the cap for everyone claimed plus one for the organizer, who is emailed their organizer link alongside the match emails. Failed emails give their reservation back. When that one email settles, `email_sent_at` is set if it went out, or the claim is released if it failed, so the organizer can resend to just those people. A claim older than 5 minutes is from a request that died mid-send and can be taken again. A second full send is refused (`409`). Redraw is blocked from here on, in the UI and in `create-draw`, because emails can't be taken back.
 - **Deleted.** `deleted_at` is set; the rows stay. Every link to the draw, including personal links, then gets `410` / "no longer available".
 
@@ -41,7 +41,7 @@ Browser
 Vercel (region cle1)
   │
   ├─ src/proxy.ts ── runs on /api/* only
-  │     create-draw, send-emails, delete-draw, get-draw, reveal: per-IP hourly limit,
+  │     create-draw, send-emails, save-details, delete-draw, get-draw, reveal: per-IP hourly limit,
   │     counted in the RateLimits table → 429 when over; fails open on DB error
   │
   ├─ src/pages/api/<route>.ts ── validate input → query → JSON response
@@ -80,7 +80,7 @@ The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 | Participant names, optional emails, group names | Participants | Kept, including after the draw is soft-deleted |
 | Who drew whom | Matches | Kept with the draw |
 | Organizer name and email | Draws, set on first send | Kept with the draw |
-| Organizer note, budget, exchange date | Draws, set on first send | Kept with the draw |
+| Organizer note, budget, exchange date | Draws, set by save-details or the first send | Kept with the draw |
 | Admin key, reveal tokens | Draws, Participants | Kept with the draw |
 | Hashed IP + route hit counts | RateLimits (HMAC-SHA-256 with a secret key; raw IPs never stored) | About 2 days, then hard-deleted by `src/proxy.ts` |
 | Emails sent per hour | EmailSendLog (a count only) | Kept |

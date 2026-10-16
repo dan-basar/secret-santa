@@ -17,7 +17,7 @@ import { sendMatchEmail, sendOrganizerLinkEmail } from '@/lib/email';
 import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
-import { isExchangeDate, noteError, parseBudget } from '@/lib/details';
+import { readDetails } from '@/lib/details';
 import type { ExchangeDetails, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
 // Gmail's free SMTP plan allows ~500 emails in a rolling 24 hours; 495 gives a
@@ -102,19 +102,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     if (!isValidEmail(safeOrganizerEmail)) return res.status(400).json({ error: 'Invalid organizer email format.' });
 
     // All three are optional; an empty value means not set
-    if (organizerNote !== undefined && organizerNote !== null && typeof organizerNote !== 'string') return res.status(400).json({ error: 'The note must be text.' });
-    if (budget !== undefined && budget !== null && typeof budget !== 'string') return res.status(400).json({ error: 'The budget must be text.' });
-    if (exchangeDate !== undefined && exchangeDate !== null && typeof exchangeDate !== 'string') return res.status(400).json({ error: 'The exchange date must be text.' });
-
-    const note = (organizerNote ?? '').trim();
-    const badNote = noteError(note);
-    if (badNote) return res.status(400).json({ error: badNote });
-    const budgetCents = parseBudget(budget ?? '');
-    if (budgetCents === 'invalid') return res.status(400).json({ error: 'The budget must be a dollar amount of $10,000 or less.' });
-    const date = (exchangeDate ?? '').trim();
-    if (date && !isExchangeDate(date)) return res.status(400).json({ error: 'The exchange date is not a valid date.' });
-
-    details = { organizer_note: note || null, budget_cents: budgetCents, exchange_date: date || null };
+    const read = readDetails({ organizerNote, budget, exchangeDate });
+    if (typeof read === 'string') return res.status(400).json({ error: read });
+    details = read;
   }
 
   // Every email carries a reveal link built from this; an email can't be taken

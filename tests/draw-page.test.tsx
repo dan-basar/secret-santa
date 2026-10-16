@@ -127,6 +127,63 @@ describe('draw page', () => {
     expect((await screen.findByLabelText<HTMLInputElement>('Organizer Name')).value).toBe('');
   });
 
+  it('fills the details from the saved copy once any are saved, over this tab\'s draft', async () => {
+    answer(200, { ...adminView, budget_cents: 2500 });
+    sessionStorage.setItem('drawEmailDraft', JSON.stringify({
+      drawKey: ADMIN_KEY, organizerName: 'Pat', organizerEmail: 'pat@example.com', organizerNote: 'Old note', budget: '99', exchangeDate: '',
+    }));
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    // The name and email are only ever in the draft
+    expect((await screen.findByLabelText<HTMLInputElement>('Organizer Name')).value).toBe('Pat');
+    expect(screen.getByLabelText<HTMLInputElement>('Budget in dollars').value).toBe('25');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Organizer Note').value).toBe('');
+    expect(screen.getByText('✓ Saved')).toBeTruthy();
+  });
+
+  it('fills the details from the draft while nothing is saved', async () => {
+    sessionStorage.setItem('drawEmailDraft', JSON.stringify({
+      drawKey: ADMIN_KEY, organizerName: '', organizerEmail: '', organizerNote: 'Wrap it', budget: '30', exchangeDate: '',
+    }));
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    expect((await screen.findByLabelText<HTMLTextAreaElement>('Organizer Note')).value).toBe('Wrap it');
+    expect(screen.getByText('Not saved yet')).toBeTruthy();
+  });
+
+  it('saves the details to the server and then shows them as saved', async () => {
+    const fetchMock = vi.fn(async (url: string) => ({
+      ok: true, status: 200,
+      json: async () => (url.endsWith('/api/save-details')
+        ? { organizer_note: 'Wrap it', budget_cents: null, exchange_date: null }
+        : adminView),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /Add a note, budget, or date/ }));
+    fireEvent.change(screen.getByLabelText('Organizer Note'), { target: { value: 'Wrap it ' } });
+    expect(screen.getByText('Not saved yet')).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save details' })); });
+    const [url, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(url).toBe('/secret-santa/api/save-details');
+    expect(JSON.parse(init.body as string)).toEqual({ id: adminView.id, key: ADMIN_KEY, organizerNote: 'Wrap it', budget: '', exchangeDate: '' });
+    expect(screen.getByText('✓ Saved')).toBeTruthy();
+  });
+
+  it('prints the saved details, not unsaved edits, once any are saved', async () => {
+    answer(200, { ...adminView, organizer_note: 'Saved note' });
+    vi.stubGlobal('print', vi.fn());
+    window.location.hash = `#${ADMIN_KEY}`;
+    const { container } = render(<DrawPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /Add a note, budget, or date/ }));
+    fireEvent.change(screen.getByLabelText('Organizer Note'), { target: { value: 'Typed note' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show all matches' }));
+    const sheet = container.firstElementChild as HTMLElement;
+    expect(within(sheet).getByText('Saved note')).toBeTruthy();
+    expect(within(sheet).queryByText('Typed note')).toBeNull();
+  });
+
   it('keeps the save and print card faded and disabled until the matches are shown', async () => {
     window.location.hash = `#${ADMIN_KEY}`;
     render(<DrawPage />);
