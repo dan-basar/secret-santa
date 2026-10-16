@@ -90,9 +90,10 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 | `004_email_status.sql` | `Participants.email_sent_at`, for per-person email tracking and resend |
 | `005_email_claims.sql` | `Participants.email_claimed_at`, so a send that dies midway leaves nobody wrongly marked as emailed |
 | `006_match_constraints.sql` | `Draws.admin_key` becomes `NOT NULL`; `UNIQUE` on each of `Matches.giver_participant_id` and `receiver_participant_id` |
-| `007_email_send_log.sql` | The `EmailSendLog` table, for the rolling 24-hour email cap (replaces `DailyEmailLog`, which is no longer read) |
+| `007_email_send_log.sql` | The `EmailSendLog` table, for the rolling 24-hour email cap (replaces `DailyEmailLog`, dropped by 010) |
 | `008_short_links.sql` | `Participants.reveal_code`, the 8-character personal link token (the uuid `reveal_token` is retired), and `UNIQUE` on `Draws.admin_key`, which get-draw now looks draws up by |
 | `009_exchange_details.sql` | `Draws.organizer_note`, `budget_cents` and `exchange_date`, the optional details shown in match emails and on personal link pages |
+| `010_drop_daily_email_log.sql` | Removes the unused `DailyEmailLog` table that 007 left behind, so older databases match `setup.sql` |
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 
