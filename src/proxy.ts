@@ -16,6 +16,7 @@ const RATE_LIMITS: Record<string, number> = {
   '/api/delete-draw': 10,
   '/api/get-draw': 60,
   '/api/reveal': 60,
+  '/api/save-details': 30,
 };
 
 // Roughly 1 in this many limited requests also deletes counter rows older than

@@ -6,19 +6,20 @@ import Image from 'next/image';
 import { formFromParticipants } from '@/lib/groups';
 import { siteUrl } from '@/lib/site';
 import { isAdminKey, isCutShort, ADMIN_KEY_LENGTH } from '@/lib/tokens';
-import { formatBudget, isExchangeDate, noteError, parseBudget } from '@/lib/details';
+import { formatBudget, hasDetails, noteError, parseBudget, sameDetails, typedDetails } from '@/lib/details';
 import { hasLink } from '@/lib/sanitize';
 import { EMAIL_DRAFT_KEY, readEmailDraft, type EmailDraft } from '@/lib/email-draft';
 import OrganizerLink from '@/components/draw/OrganizerLink';
 import MatchesTable from '@/components/draw/MatchesTable';
 import PersonalLinks from '@/components/draw/PersonalLinks';
+import DetailsCard from '@/components/draw/DetailsCard';
 import EmailSection from '@/components/draw/EmailSection';
 import MatchListExport from '@/components/draw/MatchListExport';
 import PrintSheet from '@/components/draw/PrintSheet';
 import DeleteSection from '@/components/draw/DeleteSection';
 import styles from '@/styles/Draw.module.css';
 import logo from '../../public/logo.svg';
-import type { ApiError, ExchangeDetails, GetDrawResponse, SendEmailsError, SendEmailsResponse } from '@/types/api';
+import type { ApiError, ExchangeDetails, GetDrawResponse, SaveDetailsResponse, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'busy' | 'error';
 
@@ -46,6 +47,8 @@ export default function DrawPage() {
   const [organizerNote, setOrganizerNote] = useState('');
   const [budget, setBudget] = useState('');
   const [exchangeDate, setExchangeDate] = useState('');
+  const [detailsSaving, setDetailsSaving] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
   // Filled from the saved details once per draw, so a reload after a send never wipes what's typed
   const detailsLoadedFor = useRef<string | null>(null);
   // The admin key the loaded draw was fetched with: adminKey changes before its draw arrives
@@ -97,14 +100,17 @@ export default function DrawPage() {
         setOrganizerNote(data.organizer_note ?? '');
         setBudget(data.budget_cents !== null ? formatBudget(data.budget_cents).slice(1) : '');
         setExchangeDate(data.exchange_date ?? '');
-        // Before the first send nothing is saved on the server, so take what was typed in this tab
+        // Before the first send the organizer's name and email are only in this tab's
+        // draft. The details come from it too, unless some are saved: the saved copy wins
         const typed = data.emails_sent_at ? null : readEmailDraft(adminKey);
         if (typed) {
           setOrganizerName(typed.organizerName);
           setOrganizerEmail(typed.organizerEmail);
-          setOrganizerNote(typed.organizerNote);
-          setBudget(typed.budget);
-          setExchangeDate(typed.exchangeDate);
+          if (!hasDetails(data)) {
+            setOrganizerNote(typed.organizerNote);
+            setBudget(typed.budget);
+            setExchangeDate(typed.exchangeDate);
+          }
         }
       }
       drawKey.current = adminKey;
@@ -137,6 +143,33 @@ export default function DrawPage() {
       // Storage can be blocked or full; typing still works, it just isn't kept
     }
   }, [draw, organizerName, organizerEmail, organizerNote, budget, exchangeDate]);
+
+  // Saves the details as typed, so they show on each personal link without any email
+  const handleSaveDetails = async () => {
+    if (!draw) return;
+    setDetailsSaving(true);
+    setDetailsError('');
+    try {
+      const res = await fetch(`${router.basePath}/api/save-details`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: draw.id, key: adminKey, organizerNote: organizerNote.trim(), budget: budget.trim(), exchangeDate }),
+      });
+      if (res.ok) {
+        const saved: SaveDetailsResponse = await res.json();
+        setDraw((d) => (d && d.id === draw.id ? { ...d, ...saved } : d));
+      } else {
+        const data: Partial<ApiError> = await res.json().catch(() => ({}));
+        setDetailsError(data.error || 'Failed to save the details. Please try again.');
+        // Sent or deleted meanwhile: show the draw as it now is
+        if (res.status === 409 || res.status === 410) await loadDraw();
+      }
+    } catch {
+      setDetailsError('Network error. Please try again.');
+    } finally {
+      setDetailsSaving(false);
+    }
+  };
 
   // retryFailed resends only to people whose email didn't go out; the server
   // reuses the organizer name and email saved by the first send
@@ -323,14 +356,16 @@ export default function DrawPage() {
     month: 'long', day: 'numeric', year: 'numeric',
   });
 
-  // The saved and printed list carries the details as the email card shows them, leaving
-  // out any the server would refuse
-  const parsedBudget = parseBudget(budget);
-  const listDetails: ExchangeDetails = {
-    organizer_note: organizerNote.trim() && !noteError(organizerNote.trim()) ? organizerNote.trim() : null,
-    budget_cents: typeof parsedBudget === 'number' ? parsedBudget : null,
-    exchange_date: isExchangeDate(exchangeDate) ? exchangeDate : null,
+  const savedDetails: ExchangeDetails = {
+    organizer_note: draw.organizer_note,
+    budget_cents: draw.budget_cents,
+    exchange_date: draw.exchange_date,
   };
+  // What's typed, leaving out any value the server would refuse
+  const typed = typedDetails(organizerNote, budget, exchangeDate);
+  const detailsValid = !noteError(organizerNote.trim()) && parseBudget(budget) !== 'invalid';
+  // The saved and printed list carries the saved details, or what's typed while none are saved
+  const listDetails: ExchangeDetails = hasDetails(savedDetails) ? savedDetails : typed;
   // The name saved by the first send, or the one typed in the email card before it
   const typedName = organizerName.trim();
   const listOrganizer = draw.organizer_name || (hasLink(typedName) ? '' : typedName);
@@ -367,6 +402,22 @@ export default function DrawPage() {
             shown={matchesShown}
             onShow={handleShowMatches}
           />
+          <DetailsCard
+            saved={savedDetails}
+            emailsSent={!!draw.emails_sent_at}
+            note={organizerNote}
+            budget={budget}
+            exchangeDate={exchangeDate}
+            onNoteChange={setOrganizerNote}
+            onBudgetChange={setBudget}
+            onExchangeDateChange={setExchangeDate}
+            unsaved={!detailsValid || !sameDetails(typed, savedDetails)}
+            valid={detailsValid}
+            saving={detailsSaving}
+            disabled={emailLoading}
+            error={detailsError}
+            onSave={handleSaveDetails}
+          />
           <EmailSection
             draw={draw}
             unsentCount={unsentCount}
@@ -377,10 +428,7 @@ export default function DrawPage() {
             organizerNote={organizerNote}
             budget={budget}
             exchangeDate={exchangeDate}
-            onOrganizerNoteChange={setOrganizerNote}
-            onBudgetChange={setBudget}
-            onExchangeDateChange={setExchangeDate}
-            loading={emailLoading}
+            loading={emailLoading || detailsSaving}
             error={emailError}
             organizerLinkNotice={organizerLinkNotice}
             turnstileKey={turnstileKey}

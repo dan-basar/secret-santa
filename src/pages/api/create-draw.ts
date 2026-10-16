@@ -4,7 +4,8 @@
 // 200 { adminKey }, the secret in the organizer's /draw#<adminKey> link; 400 bad
 // input; 422 no valid matching. Edit & Redraw
 // also sends replacesDrawId + replacesKey (that draw's admin key): 403 wrong key,
-// 409 emails already sent, 410 already deleted.
+// 409 emails already sent, 410 already deleted. The new draw keeps the old
+// one's saved note, budget and date.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'crypto';
@@ -188,7 +189,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         )
         SELECT 1 / count(*) FROM replaced
       `] : []),
-      sql`
+      // A redraw keeps the old draw's saved note, budget and date
+      replacesDrawId ? sql`
+        INSERT INTO Draws (id, admin_key, organizer_note, budget_cents, exchange_date)
+        SELECT
+             ${drawId}::uuid
+            ,${adminKey}
+            ,organizer_note
+            ,budget_cents
+            ,exchange_date
+        FROM Draws
+        WHERE id = ${replacesDrawId}::uuid
+      ` : sql`
         INSERT INTO Draws (id, admin_key)
         VALUES (${drawId}::uuid, ${adminKey})
       `,

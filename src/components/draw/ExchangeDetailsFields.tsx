@@ -1,7 +1,5 @@
-import { useRef, useState } from 'react';
-import {
-  NOTE_MAX_LENGTH, budgetLine, formatBudget, formatExchangeDate, noteError, parseBudget, shortExchangeDate,
-} from '@/lib/details';
+import { useRef, useState, type ReactNode } from 'react';
+import { NOTE_MAX_LENGTH, formatBudget, noteError, parseBudget, shortExchangeDate } from '@/lib/details';
 import styles from '@/styles/Draw.module.css';
 
 interface Props {
@@ -12,15 +10,17 @@ interface Props {
   onBudgetChange: (value: string) => void;
   onExchangeDateChange: (value: string) => void;
   disabled: boolean;
-  // What the first match email will look like; left out when nobody has an email
-  preview: { toName: string; matchName: string; organizerName: string } | null;
+  // Typed values that differ from the saved ones: the folded summary says so
+  unsaved: boolean;
+  // The Save button and its status, under the fields
+  children: ReactNode;
 }
 
-// The folded "Add a note, budget, or date" row of the email card, with a live
-// preview of the match email beside the fields. The values live in the page,
-// which sends them with the first send; this keeps only whether it's open
+// The folded "Add a note, budget, or date" row of the details card and its fields.
+// The values live in the page, which saves them and sends them with the first
+// send; this keeps only whether it's open
 export default function ExchangeDetailsFields({
-  note, budget, exchangeDate, onNoteChange, onBudgetChange, onExchangeDateChange, disabled, preview,
+  note, budget, exchangeDate, onNoteChange, onBudgetChange, onExchangeDateChange, disabled, unsaved, children,
 }: Props) {
   const [open, setOpen] = useState(false);
   const dateInput = useRef<HTMLInputElement>(null);
@@ -36,13 +36,8 @@ export default function ExchangeDetailsFields({
     ...(trimmedNote ? ['note added'] : []),
     cents !== null ? formatBudget(cents) : badBudget ? `$${budget.trim()}` : 'no $ limit',
     exchangeDate ? shortExchangeDate(exchangeDate) : 'no date',
+    ...(unsaved ? ['not saved'] : []),
   ].join(' · ');
-
-  const previewLines = [
-    ...(cents !== null ? [{ label: 'Budget', value: budgetLine(cents) }] : []),
-    ...(exchangeDate ? [{ label: 'Exchange', value: formatExchangeDate(exchangeDate) }] : []),
-  ];
-  const previewHasDetails = !!trimmedNote || previewLines.length > 0;
 
   const openPicker = () => {
     const input = dateInput.current;
@@ -65,11 +60,11 @@ export default function ExchangeDetailsFields({
         onClick={() => setOpen((o) => !o)}
       >
         <span className={styles.detailsChevron} aria-hidden="true">▸</span>
-        <span>Add a note, budget, or date</span>
+        <span className={styles.detailsTitle}>Add a note, budget, or date</span>
         <span className={styles.detailsSummary}><span className={styles.detailsDot}>· </span>{summary}</span>
       </button>
 
-      <div id="exchangeDetails" className={preview ? styles.detailsBody : styles.detailsBodySingle} hidden={!open}>
+      <div id="exchangeDetails" className={styles.detailsBodySingle} hidden={!open}>
         <div className={styles.detailsFields}>
           <div className={styles.organizerField}>
             <label className={styles.organizerLabel} htmlFor="organizerNote">Organizer Note</label>
@@ -156,32 +151,7 @@ export default function ExchangeDetailsFields({
           </div>
         </div>
 
-        {preview && (
-          <div className={styles.preview} aria-live="polite">
-            <p className={styles.previewHead}>Message preview</p>
-            <p>Hi {preview.toName},</p>
-            <p>The Secret Santa draw is done, and your match is below.</p>
-            {previewHasDetails && (
-              <>
-                <p>First, some details:</p>
-                <div className={styles.previewBox}>
-                  {trimmedNote && !badNote && (
-                    <p className="break-anywhere"><strong>A note from your organizer:</strong><br />&ldquo;{trimmedNote}&rdquo;</p>
-                  )}
-                  {previewLines.map((line) => (
-                    <p key={line.label}><strong>{line.label}:</strong> {line.value}</p>
-                  ))}
-                </div>
-                <p className={styles.previewSpaced}>And now the big reveal:</p>
-              </>
-            )}
-            <p className={previewHasDetails ? styles.previewReveal : `${styles.previewReveal} ${styles.previewSpaced}`}>
-              You have drawn <strong>{preview.matchName}</strong>&rsquo;s name for the gift exchange!
-            </p>
-            <span className={styles.previewButton}>View your match</span>
-            <p className={styles.previewFoot}>This secret message was sent by {preview.organizerName || 'your organizer'}.</p>
-          </div>
-        )}
+        {children}
       </div>
     </div>
   );

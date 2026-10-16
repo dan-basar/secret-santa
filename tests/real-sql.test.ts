@@ -26,6 +26,7 @@ import getDraw from '@/pages/api/get-draw';
 import sendEmails from '@/pages/api/send-emails';
 import reveal from '@/pages/api/reveal';
 import deleteDraw from '@/pages/api/delete-draw';
+import saveDetails from '@/pages/api/save-details';
 import health from '@/pages/api/health';
 import type { GetDrawResponse, CreateDrawResponse, RevealResponse, SendEmailsResponse } from '@/types/api';
 
@@ -154,6 +155,41 @@ describe('routes against a real Postgres', () => {
     } });
     const view = await adminView(adminKey);
     expect(view).toMatchObject({ organizer_note: null, budget_cents: 3000, exchange_date: '2027-01-02', emails_sent_at: null });
+  });
+
+  it('saves the details without any email, shows them on personal links, clears them, and locks them once sent', async () => {
+    const { adminKey } = await create();
+    const view = await adminView(adminKey);
+    const save = (body: Record<string, unknown>) => call(saveDetails, { method: 'POST', body: { id: view.id, key: adminKey, ...body } });
+
+    const saved = await save({ organizerNote: ' Bring it wrapped ', budget: '$25.50', exchangeDate: '2026-12-19' });
+    expect(saved.statusCode).toBe(200);
+    const details = { organizer_note: 'Bring it wrapped', budget_cents: 2550, exchange_date: '2026-12-19' };
+    expect(saved.body).toEqual(details);
+    expect(sendMatchEmail).not.toHaveBeenCalled();
+    expect(await adminView(adminKey)).toMatchObject({ ...details, emails_sent_at: null });
+    const r = await call(reveal, { method: 'GET', query: { token: view.participants[0].reveal_token } });
+    expect(r.body).toMatchObject({ ...details, organizer_name: null });
+
+    expect((await save({ organizerNote: '', budget: '', exchangeDate: '' })).body).toEqual({ organizer_note: null, budget_cents: null, exchange_date: null });
+    expect(await adminView(adminKey)).toMatchObject({ organizer_note: null, budget_cents: null, exchange_date: null });
+
+    expect((await save({ budget: '30', key: 'Zz9yXx8wVv7uTt' })).statusCode).toBe(403);
+    await call(sendEmails, { method: 'POST', body: { id: view.id, key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't', budget: '40' } });
+    expect((await save({ budget: '30' })).statusCode).toBe(409);
+    expect((await adminView(adminKey)).budget_cents).toBe(4000);
+  });
+
+  it('carries saved details over on Edit & Redraw, but never into a brand new draw', async () => {
+    const old = await create();
+    const oldId = (await adminView(old.adminKey)).id;
+    await call(saveDetails, { method: 'POST', body: { id: oldId, key: old.adminKey, organizerNote: 'Wrap it', budget: '20', exchangeDate: '2026-12-24' } });
+
+    const redrawn = await create({ replacesDrawId: oldId, replacesKey: old.adminKey });
+    expect(await adminView(redrawn.adminKey)).toMatchObject({ organizer_note: 'Wrap it', budget_cents: 2000, exchange_date: '2026-12-24' });
+
+    const brandNew = await create();
+    expect(await adminView(brandNew.adminKey)).toMatchObject({ organizer_note: null, budget_cents: null, exchange_date: null });
   });
 
   it('resends only to someone whose email failed', async () => {
