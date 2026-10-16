@@ -11,6 +11,7 @@ const ADMIN_KEY = 'Ab3dEf6hIj9kLm';
 
 const adminView = {
   id: 'f59fac1f-4e1f-45c8-96f6-9c6c738c3876', created_at: '2026-10-01T00:00:00.000Z', emails_sent_at: null,
+  organizer_name: null, organizer_note: null, budget_cents: null, exchange_date: null,
   participants: [
     { name: 'Alex', email: null, group_name: null, reveal_token: 'Aa111111', email_sent_at: null },
     { name: 'Sam', email: null, group_name: null, reveal_token: 'Bb222222', email_sent_at: null },
@@ -28,6 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
   window.location.hash = '';
 });
@@ -85,6 +87,33 @@ describe('draw page', () => {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     });
     await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.at(-1)![1]).toEqual({ headers: { 'X-Admin-Key': otherKey } }));
+  });
+
+  it('keeps the email card as typed across a refresh until the emails are sent', async () => {
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    fireEvent.change(await screen.findByLabelText('Organizer Name'), { target: { value: 'Pat' } });
+    fireEvent.change(screen.getByLabelText('Organizer Email'), { target: { value: 'pat@example.com' } });
+    const saved = JSON.parse(sessionStorage.getItem('drawEmailDraft')!);
+    expect(saved).toMatchObject({ organizerName: 'Pat', organizerEmail: 'pat@example.com', organizerNote: '' });
+
+    // A refresh: a fresh page reads the draft back
+    cleanup();
+    render(<DrawPage />);
+    expect((await screen.findByLabelText<HTMLInputElement>('Organizer Name')).value).toBe('Pat');
+    expect(screen.getByLabelText<HTMLInputElement>('Organizer Email').value).toBe('pat@example.com');
+
+    // Emptying the card drops the draft
+    fireEvent.change(screen.getByLabelText('Organizer Name'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Organizer Email'), { target: { value: '' } });
+    expect(sessionStorage.getItem('drawEmailDraft')).toBeNull();
+  });
+
+  it('skips a draft that this page did not write', async () => {
+    sessionStorage.setItem('drawEmailDraft', JSON.stringify({ organizerName: 42 }));
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    expect((await screen.findByLabelText<HTMLInputElement>('Organizer Name')).value).toBe('');
   });
 
   it('keeps the save and print card faded and disabled until the matches are shown', async () => {

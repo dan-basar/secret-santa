@@ -25,6 +25,22 @@ type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' |
 // page reloads, and anyone still being emailed shows as sent within minutes
 const MAYBE_SENT = 'We couldn\'t confirm the send. Some emails may still be going out, so check the list below again in a few minutes before resending.';
 
+// The email card as it is typed before the first send, so a refresh keeps it. One per
+// tab rather than per draw, so the same exchange's details carry over an Edit & Redraw
+const EMAIL_DRAFT_KEY = 'drawEmailDraft';
+interface EmailDraft { organizerName: string; organizerEmail: string; organizerNote: string; budget: string; exchangeDate: string }
+
+function readEmailDraft(): EmailDraft | null {
+  try {
+    const d = JSON.parse(sessionStorage.getItem(EMAIL_DRAFT_KEY) ?? '');
+    const fields = [d?.organizerName, d?.organizerEmail, d?.organizerNote, d?.budget, d?.exchangeDate];
+    return fields.every((f) => typeof f === 'string') ? d : null;
+  } catch {
+    // Nothing saved, something this page didn't write, or storage blocked
+    return null;
+  }
+}
+
 export default function DrawPage() {
   const router = useRouter();
   // The organizer's link is /draw#<adminKey>. The key lives in the fragment,
@@ -94,6 +110,15 @@ export default function DrawPage() {
         setOrganizerNote(data.organizer_note ?? '');
         setBudget(data.budget_cents !== null ? formatBudget(data.budget_cents).slice(1) : '');
         setExchangeDate(data.exchange_date ?? '');
+        // Before the first send nothing is saved on the server, so take what was typed in this tab
+        const typed = data.emails_sent_at ? null : readEmailDraft();
+        if (typed) {
+          setOrganizerName(typed.organizerName);
+          setOrganizerEmail(typed.organizerEmail);
+          setOrganizerNote(typed.organizerNote);
+          setBudget(typed.budget);
+          setExchangeDate(typed.exchangeDate);
+        }
       }
       setDraw(data);
       setState('loaded');
@@ -105,6 +130,23 @@ export default function DrawPage() {
   useEffect(() => {
     loadDraw();
   }, [loadDraw]);
+
+  // Save the email card as it is typed. Waits until the draft has been read back for
+  // this draw, or the empty card would overwrite it, and stops once the emails are sent
+  useEffect(() => {
+    if (!draw || draw.emails_sent_at || detailsLoadedFor.current !== draw.id) return;
+    try {
+      const fields = [organizerName, organizerEmail, organizerNote, budget, exchangeDate];
+      if (fields.some((f) => f)) {
+        const draft: EmailDraft = { organizerName, organizerEmail, organizerNote, budget, exchangeDate };
+        sessionStorage.setItem(EMAIL_DRAFT_KEY, JSON.stringify(draft));
+      } else {
+        sessionStorage.removeItem(EMAIL_DRAFT_KEY);
+      }
+    } catch {
+      // Storage can be blocked or full; typing still works, it just isn't kept
+    }
+  }, [draw, organizerName, organizerEmail, organizerNote, budget, exchangeDate]);
 
   // retryFailed resends only to people whose email didn't go out; the server
   // reuses the organizer name and email saved by the first send
@@ -125,6 +167,8 @@ export default function DrawPage() {
           }),
       });
       if (res.ok && !retryFailed) {
+        // Sent and saved on the server, so the next draw in this tab starts with an empty card
+        try { sessionStorage.removeItem(EMAIL_DRAFT_KEY); } catch { /* storage blocked */ }
         const data: SendEmailsResponse = await res.json();
         setOrganizerLinkNotice(data.organizerLinkSent
           ? `✓ Your organizer link was emailed to ${organizerEmail.trim()}.`
