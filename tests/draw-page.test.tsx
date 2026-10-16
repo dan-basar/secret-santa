@@ -95,7 +95,7 @@ describe('draw page', () => {
     fireEvent.change(await screen.findByLabelText('Organizer Name'), { target: { value: 'Pat' } });
     fireEvent.change(screen.getByLabelText('Organizer Email'), { target: { value: 'pat@example.com' } });
     const saved = JSON.parse(sessionStorage.getItem('drawEmailDraft')!);
-    expect(saved).toMatchObject({ organizerName: 'Pat', organizerEmail: 'pat@example.com', organizerNote: '' });
+    expect(saved).toMatchObject({ drawKey: ADMIN_KEY, organizerName: 'Pat', organizerEmail: 'pat@example.com', organizerNote: '' });
 
     // A refresh: a fresh page reads the draft back
     cleanup();
@@ -107,6 +107,17 @@ describe('draw page', () => {
     fireEvent.change(screen.getByLabelText('Organizer Name'), { target: { value: '' } });
     fireEvent.change(screen.getByLabelText('Organizer Email'), { target: { value: '' } });
     expect(sessionStorage.getItem('drawEmailDraft')).toBeNull();
+  });
+
+  it("starts with an empty card on another draw, leaving that draw's draft alone", async () => {
+    const other = JSON.stringify({
+      drawKey: 'Zz9yXx8wVv7uTt', organizerName: 'Pat', organizerEmail: 'pat@example.com', organizerNote: 'Wrap it', budget: '', exchangeDate: '',
+    });
+    sessionStorage.setItem('drawEmailDraft', other);
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    expect((await screen.findByLabelText<HTMLInputElement>('Organizer Name')).value).toBe('');
+    expect(sessionStorage.getItem('drawEmailDraft')).toBe(other);
   });
 
   it('skips a draft that this page did not write', async () => {
