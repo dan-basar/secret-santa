@@ -57,7 +57,7 @@ Symptoms: `send-emails` reports failures (`failedNames`), or `503` "The site's e
   FROM EmailSendLog as emailSendLog
   WHERE emailSendLog.hour_start > now() - interval '25 hours'
   ```
-  There is no midnight reset: room comes back as each hour rolls out of the window. `DailyEmailLog`, the old per-day count, is no longer read or written.
+  There is no midnight reset: room comes back as each hour rolls out of the window.
 - **Gmail itself blocked or throttled the account** (sending limits, suspicious-activity lock, revoked app password). Check the Gmail account's inbox for a notice and the Vercel function logs for the SMTP error. A revoked or changed password needs the rotation steps above.
 
 Meanwhile nobody is stuck: organizers can copy each person's **personal link** from their organizer page and send it by text or chat. Failed emails are released (and anyone left claimed by a send that timed out is released after 5 minutes), so once Gmail works again the organizer can press **Resend** to reach just the people who were missed.
@@ -66,7 +66,7 @@ Meanwhile nobody is stuck: organizers can copy each person's **personal link** f
 
 Vercel keeps every deployment. In the Vercel dashboard → Deployments, pick the last good production deployment and use **Instant Rollback** (or ⋯ → **Promote to Production**). This swaps traffic in seconds without a rebuild. Then fix forward with a new PR; the next merge to `main` deploys normally.
 
-A rollback does not touch the database. If the bad deploy came with a migration, the older code must still work with the newer schema (migrations here only add columns or tables, so it does).
+A rollback does not touch the database. If the bad deploy came with a migration, the older code must still work with the newer schema (migrations here add columns or tables, or drop ones no deployed code has used since an earlier migration, so it does).
 
 ## Health check
 
