@@ -79,9 +79,9 @@ export async function sendMatchEmail(
     : '';
   const htmlDetails = withDetails ? `
         <p style="font-size: 16px; line-height: 1.6;">First, some details:</p>
-        <div style="border-left: 3px solid #c84b2f; background: #faf8f5; padding: 12px 16px; margin: 8px 0 0; font-size: 15px; line-height: 1.5;">${
+        <div style="border-left: 3px solid #c84b2f; background: #faf8f5; padding: 12px 16px; margin: 8px 0 0; font-size: 15px; line-height: 1.5; overflow-wrap: break-word; word-wrap: break-word; word-break: break-word;">${
           details.organizer_note ? `
-          <p style="margin: 0 0 8px;"><strong>A note from your organizer:</strong><br>&ldquo;${escapeHtml(details.organizer_note)}&rdquo;</p>` : ''}${
+          <p style="margin: 0 0 8px; overflow-wrap: anywhere; word-break: break-word;"><strong>A note from your organizer:</strong><br>&ldquo;${escapeHtml(details.organizer_note)}&rdquo;</p>` : ''}${
           detailLines.map(line => `
           <p style="margin: 0 0 4px;"><strong>${line.label}:</strong> ${escapeHtml(line.value)}</p>`).join('')}
         </div>
@@ -98,7 +98,7 @@ export async function sendMatchEmail(
     headers: ungroupedHeaders(),
     text: `Hi ${toName},\n\nThe Secret Santa draw is done, and your match is below.\n\n${textDetails}You have drawn ${matchName}'s name for the gift exchange!\n\nView your match any time: ${link}\n\nThis secret message was sent by ${organizerName}. You can contact the organizer at ${organizerEmail} if you need to. Happy Gifting!!`,
     html: `
-      <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a;">
+      <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a; -webkit-text-size-adjust: 100%;">
         <img src="${logoUrl}" width="96" height="96" alt="Secret Santa Picker" style="display: block; margin: 0 auto 24px; border: 0;">
         <p style="font-size: 18px; margin-bottom: 24px;">Hi ${htmlToName},</p>
         <p style="font-size: 16px; line-height: 1.6;">The Secret Santa draw is done, and your match is below.</p>${htmlDetails}

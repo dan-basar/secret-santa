@@ -622,6 +622,7 @@
 /* A stand-in for the match email, in its own serif type */
 .preview {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   min-width: 0;
   padding: 16px;
@@ -641,6 +642,7 @@
 
 .previewBox {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   padding: 6px 10px;
   border-left: 3px solid var(--accent);
@@ -675,7 +677,7 @@
 /* After sending: the details that went out, read-only */
 .detailsSent {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 6px 16px;
   margin-top: 12px;
   padding: 12px 14px;
@@ -691,6 +693,7 @@
 .detailsSent dd {
   margin: 0;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 @media (max-width: 600px) {
@@ -825,8 +828,10 @@
 }
 
 .printDetails dd {
+  min-width: 0;
   white-space: pre-line;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .printTable {

@@ -122,6 +122,16 @@ describe('sendMatchEmail', () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
+  it('breaks a long note with no spaces inside its box', async () => {
+    const note = 'A' + 'a'.repeat(149);
+    await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, { ...DETAILS, organizer_note: note });
+
+    const { html } = sendMail.mock.calls[0][0];
+    const notePara = html.slice(html.lastIndexOf('<p', html.indexOf(note)), html.indexOf(note));
+    expect(notePara).toContain('overflow-wrap: anywhere');
+    expect(notePara).toContain('word-break: break-word');
+  });
+
   it('leaves out each detail that is not set, and shows a $0 budget as "No limit set"', async () => {
     await sendMatchEmail('Alex', 'alex@example.com', 'Sam', 'Pat', 'pat@example.com', TOKEN, { organizer_note: null, budget_cents: 0, exchange_date: null });
 

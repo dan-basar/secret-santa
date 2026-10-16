@@ -166,7 +166,7 @@ export default function ExchangeDetailsFields({
                 <p>First, some details:</p>
                 <div className={styles.previewBox}>
                   {trimmedNote && !badNote && (
-                    <p><strong>A note from your organizer:</strong><br />&ldquo;{trimmedNote}&rdquo;</p>
+                    <p className="break-anywhere"><strong>A note from your organizer:</strong><br />&ldquo;{trimmedNote}&rdquo;</p>
                   )}
                   {previewLines.map((line) => (
                     <p key={line.label}><strong>{line.label}:</strong> {line.value}</p>
