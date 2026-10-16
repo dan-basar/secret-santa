@@ -685,6 +685,8 @@
 }
 
 .detailsCard .details {
+  border: 0;
+  padding: 0;
   margin-bottom: 0;
 }
 
@@ -752,6 +754,11 @@
 
   .detailsSummary {
     grid-column: 2;
+  }
+
+  /* A touch smaller, so the title fits on one line on a phone */
+  .detailsTitle {
+    font-size: 18px;
   }
 
   .detailsDot {
