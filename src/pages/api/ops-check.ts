@@ -54,6 +54,28 @@ interface WeekRow {
   total_participants: number;
 }
 
+// One check-in when the run ends: "ok", or "error" if it throws. (The SDK's
+// withMonitor also sends a "started" check-in; in production its closing
+// check-in never registered, so every run ended as a timeout.)
+async function withCheckIn<T>(run: () => Promise<T>): Promise<T> {
+  if (!process.env.SENTRY_DSN) return run();
+  const startedAt = Date.now();
+  const checkIn = (status: 'ok' | 'error') => Sentry.captureCheckIn(
+    { monitorSlug: 'ops-check', status, duration: (Date.now() - startedAt) / 1000 },
+    { schedule: { type: 'crontab', value: '0 0 * * *' }, checkinMargin: CHECK_IN_MARGIN_MINUTES, timezone: 'UTC' }
+  );
+  try {
+    const result = await run();
+    checkIn('ok');
+    return result;
+  } catch (err) {
+    checkIn('error');
+    throw err;
+  } finally {
+    await Sentry.flush(2000);
+  }
+}
+
 function isAuthorized(header: string | undefined, secret: string): boolean {
   const expected = Buffer.from(`Bearer ${secret}`);
   const given = Buffer.from(header ?? '');
@@ -214,15 +236,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     // The daily run checks in with Sentry's cron monitor, which alerts when a
     // check-in is late, missing or failed
-    const result = process.env.SENTRY_DSN
-      ? await Sentry.withMonitor('ops-check', dailyCheck, {
-        schedule: { type: 'crontab', value: '0 0 * * *' },
-        checkinMargin: CHECK_IN_MARGIN_MINUTES,
-        maxRuntime: 5,
-        timezone: 'UTC',
-      })
-      : await dailyCheck();
-    if (process.env.SENTRY_DSN) await Sentry.flush(2000);
+    const result = await withCheckIn(dailyCheck);
     return res.status(200).json({ ok: true, ...result });
   } catch (err) {
     await reportError(err);
