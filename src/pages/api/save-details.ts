@@ -7,6 +7,7 @@
 // then match what went out and are locked); 410 deleted.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { reportError } from '@/lib/report';
 import { sql, isUuid } from '@/lib/db';
 import { readDetails } from '@/lib/details';
 import type { ApiError, SaveDetailsResponse } from '@/types/api';
@@ -60,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     return res.status(200).json(details);
   } catch (err) {
-    console.error(err);
+    await reportError(err);
     return res.status(500).json({ error: 'Database error. Please try again.' });
   }
 }

@@ -37,7 +37,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 - `.env.development.local` holds Cloudflare's always-pass Turnstile test keys so emails can be sent from `npm run dev` (the real keys reject `localhost`). Never put real keys there.
 - **Only send email for draws you create, to addresses you were given.**
 - Schema changes go in a new `sql/migrations/NNN_name.sql` with a read-only `NNN_name_check.sql`, and are folded into `sql/setup.sql`. Never apply them to production yourself; the runbook is in docs/OPERATIONS.md.
-- All env vars are required except `RATE_LIMIT_IP_WHITELIST`; there are no defaults. A missing `RATE_LIMIT_HASH_SECRET` makes the proxy skip rate limiting and send-emails skip the per-IP email budget (both fail open and log). The list, with placeholders, is in `.env.example`.
+- All env vars are required except `RATE_LIMIT_IP_WHITELIST` and `SENTRY_DSN` (blank = errors are only logged); there are no defaults. A missing `RATE_LIMIT_HASH_SECRET` makes the proxy skip rate limiting and send-emails skip the per-IP email budget (both fail open and log). The list, with placeholders, is in `.env.example`.
 
 ## Conventions
 

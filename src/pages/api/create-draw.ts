@@ -9,6 +9,7 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'crypto';
+import { reportError } from '@/lib/report';
 import { sql, isUuid } from '@/lib/db';
 import { newToken, ADMIN_KEY_LENGTH, REVEAL_TOKEN_LENGTH } from '@/lib/tokens';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
@@ -138,7 +139,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         return res.status(409).json({ error: 'Emails for your earlier draw have already gone out, so it can no longer be redrawn.' });
       }
     } catch (err) {
-      console.error(err);
+      await reportError(err);
       return res.status(500).json({ error: 'Database error. Please try again.' });
     }
   }
@@ -166,7 +167,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         return res.status(409).json({ error: 'Your earlier draw changed while you were editing. Open it again and try again.' });
       }
       if ((err as { code?: string }).code === '23505' && attempt < 3) continue; // unique_violation
-      console.error(err);
+      await reportError(err);
       return res.status(500).json({ error: 'Database error. Please try again.' });
     }
   }

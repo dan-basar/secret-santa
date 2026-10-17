@@ -4,6 +4,7 @@
 // 403 wrong key; 404 unknown draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { reportError } from '@/lib/report';
 import { sql, isUuid } from '@/lib/db';
 import type { ApiError, DeleteDrawResponse } from '@/types/api';
 
@@ -44,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     return res.status(200).json({ success: true }); // covers newly deleted and already deleted
   } catch (err) {
-    console.error(err);
+    await reportError(err);
     return res.status(500).json({ error: 'Database error. Please try again.' });
   }
 }

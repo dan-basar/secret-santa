@@ -72,7 +72,47 @@ Symptoms: `send-emails` reports failures (`failedNames`), or `503` "The site's e
 - **One connection's budget.** A `429` "You've sent the most emails allowed from your connection for now" means that IP (or IPv6 /64) has had 100 emails in the last 24 hours (`IP_EMAIL_BUDGET`), counted in `RateLimits` like the cap above. It frees up as each hour rolls out; to let one organizer past it, add their IP to `RATE_LIMIT_IP_WHITELIST` and redeploy.
 - **Gmail itself blocked or throttled the account** (sending limits, suspicious-activity lock, revoked app password). Check the Gmail account's inbox for a notice and the Vercel function logs for the SMTP error. A revoked or changed password needs the rotation steps above.
 
+The daily job emails "needs a look" when people on a sent draw were left unemailed for over an hour, or when the 24-hour count is above 80% of the cap.
+
 Meanwhile nobody is stuck: organizers can copy each person's **personal link** from their organizer page and send it by text or chat. Failed emails are released (and anyone left claimed by a send that timed out is released after 5 minutes), so once Gmail works again the organizer can press **Resend** to reach just the people who were missed.
+
+## Alerts
+
+Alerts go to the owner's email; nothing pushes to a phone. What can alert, and what to do:
+
+| Alert | From | Means | Go to |
+|---|---|---|---|
+| Uptime monitor down | Sentry | The site or its functions aren't answering `/api/health?shallow=1` | [Site is down](#site-is-down) |
+| New error issue | Sentry | A route hit an unexpected error (the issue shows the stack trace, never a link or name) | [Errors in Sentry](#errors-in-sentry) |
+| Cron monitor missed or failed | Sentry | The daily job didn't run, or ran and failed | [The daily job went quiet](#the-daily-job-went-quiet) |
+| "Secret Santa: needs a look" | Daily job, by email | People on sent draws were never emailed, or the 24-hour email count is near the cap | [When Gmail stops sending](#when-gmail-stops-sending) |
+| "A send of N emails took Ns" | Sentry warning | A send ran close to the 60-second function limit (alerts above 50 seconds) | [Slow sends](#slow-sends) |
+| Neon or Vercel usage notices | Neon, Vercel | Plan limits or billing | The Neon and Vercel notification settings |
+| "Secret Santa: weekly stats" | Weekly job, by email | Not an alert: draws, participants, emails and first link opens for the last 7 days | |
+
+Alert rules live in Sentry (Alerts → Create Alert → email the owner); the uptime and cron monitors are under Insights → Crons and Uptime. The cron monitor is created by the first daily run.
+
+### Site is down
+
+1. Open the site and `/secret-santa/api/health?shallow=1`. If the second answers `{ "ok": true }` but the pages don't, check the latest deployment in Vercel.
+2. Check [Vercel's status page](https://www.vercel-status.com/) and the project: Hobby projects are **paused** when they pass a usage limit (Vercel emails first). Unpause or wait for the period to reset.
+3. If it started right after a deploy, [roll back](#rolling-back-a-bad-deploy).
+
+Meanwhile, nobody loses a match: organizers keep their organizer link, and anyone with a personal link can use it as soon as the site is back.
+
+### Errors in Sentry
+
+A new issue is a route's `catch`. The title and stack say where. If it's `Database error`/Neon-related, run the [health check](#health-check) and look at Neon's status page and the project in the Neon console (a cold start takes a moment, but anything longer is real). Organizers see "Database error. Please try again." and can simply retry.
+
+### The daily job went quiet
+
+1. Vercel dashboard → the project → **Cron Jobs**: is `/secret-santa/api/ops-check` listed, and what did its last run return? A `403` means `CRON_SECRET` differs from Vercel's value (the cron sends it automatically; redeploy after changing it); `500` shows in the function logs.
+2. Run it by hand (nothing is lost; it overwrites the day's row): `curl -H "Authorization: Bearer $CRON_SECRET" https://<site>/secret-santa/api/ops-check`.
+3. A day with no row in `DailyStats` is only a gap in the stats.
+
+### Slow sends
+
+A 50-person draw takes about 45 seconds through Gmail against a 60-second limit. If a send alerts, check Gmail/SMTP latency in the function logs. A send that's killed mid-way leaves the people not yet emailed marked "not sent" after 5 minutes, and the organizer presses **Resend**.
 
 ## Rolling back a bad deploy
 
@@ -84,9 +124,12 @@ A rollback does not touch the database. If the bad deploy came with a migration,
 
 ```
 GET <site>/secret-santa/api/health
+GET <site>/secret-santa/api/health?shallow=1
 ```
 
-`200 { "ok": true }` means the function runs and Neon answered `SELECT 1`; `503 { "ok": false, "error": "Database unreachable." }` means the database is unreachable. It isn't rate limited and can be pointed at by an uptime monitor. If it fails, check Neon's status page and the project in the Neon console (it's on Neon's Launch plan, billed by use, so it isn't cut off at a monthly allowance), then the Vercel function logs.
+The `?shallow=1` form answers `{ "ok": true }` without touching the database; the uptime monitor uses it so Neon's compute isn't kept awake by monitoring. Use the full form to check the database, by hand, not on a schedule.
+
+The full form: `200 { "ok": true }` means the function runs and Neon answered `SELECT 1`; `503 { "ok": false, "error": "Database unreachable." }` means the database is unreachable. It isn't rate limited. If it fails, check Neon's status page and the project in the Neon console (it's on Neon's Launch plan, billed by use, so it isn't cut off at a monthly allowance), then the Vercel function logs.
 
 ## Holiday change freeze
 

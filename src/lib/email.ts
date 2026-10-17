@@ -153,3 +153,15 @@ export async function sendOrganizerLinkEmail(
     `,
   });
 }
+
+// A plain-text note to the site owner (alerts and the weekly stats), sent through
+// the same provider as everything else. Contains counts only, never names or links
+export async function sendOpsEmail(toEmail: string, subject: string, text: string): Promise<void> {
+  await transporter.sendMail({
+    from: `Secret Santa <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    headers: ungroupedHeaders(),
+    text,
+  });
+}

@@ -8,6 +8,7 @@
 // Returns 200; 404 missing, malformed or unknown key; 410 deleted draw.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { reportError } from '@/lib/report';
 import { sql } from '@/lib/db';
 import { isAdminKey } from '@/lib/tokens';
 import type { ApiError, GetDrawResponse } from '@/types/api';
@@ -120,7 +121,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       })),
     });
   } catch (err) {
-    console.error(err);
+    await reportError(err);
     return res.status(500).json({ error: 'Database error. Please try again.' });
   }
 }
