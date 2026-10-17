@@ -1,5 +1,6 @@
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
+import { Analytics } from '@vercel/analytics/next';
 import { DM_Sans, Libre_Baskerville } from 'next/font/google';
 import '@/styles/globals.css';
 
@@ -26,6 +27,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
         }
       `}</style>
       <Component {...pageProps} />
+      <Analytics />
     </>
   );
 }

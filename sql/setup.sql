@@ -57,6 +57,10 @@ CREATE TABLE Participants (
      -- as that email settles. A claim older than 5 minutes is from a request that died
      -- mid-send and can be taken again (added by migrations/005_email_claims.sql)
     ,email_claimed_at timestamptz NULL
+     -- When this participant first opened their personal link and saw their match;
+     -- NULL = not opened (yet). Set by reveal.ts, for the usage stats (added by
+     -- migrations/011_ops_stats.sql)
+    ,revealed_at timestamptz NULL
     ,UNIQUE (draw_id, position)
     ,CONSTRAINT UQ_Participants_RevealToken UNIQUE (reveal_token)
     ,CONSTRAINT UQ_Participants_RevealCode UNIQUE (reveal_code)
@@ -100,4 +104,19 @@ CREATE TABLE RateLimits (
     ,window_start timestamptz NOT NULL   -- start of the hour the hits fall in
     ,hits integer NOT NULL DEFAULT 1
     ,PRIMARY KEY (bucket, window_start)
+);
+
+-- One row of counts per UTC day, written once the day is over by the daily check job
+-- (src/pages/api/ops-check.ts). Counts only, no names or emails. unsent_emails is
+-- how many people on sent draws still hadn't been emailed when the row was written
+-- (added by migrations/011_ops_stats.sql)
+CREATE TABLE DailyStats (
+     stat_date date PRIMARY KEY
+    ,draws_created integer NOT NULL
+    ,draws_emailed integer NOT NULL
+    ,participants_created integer NOT NULL
+    ,emails_sent integer NOT NULL
+    ,links_opened integer NOT NULL
+    ,unsent_emails integer NOT NULL
+    ,recorded_at timestamptz NOT NULL DEFAULT now()
 );

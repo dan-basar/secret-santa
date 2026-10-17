@@ -56,23 +56,33 @@ Vercel (region cle1)
 
 Pages (`index.tsx`, `draw.tsx`, `reveal/[token].tsx`) are client-rendered React; they call the API routes with `fetch`.
 
+## Monitoring
+
+Each part runs without checking the database more than once a day, to keep Neon's compute asleep between visitors.
+
+- **Server errors** go to Sentry (`src/lib/report.ts`, `src/sentry.server.config.ts`) with no request, URL or user attached. Sentry emails the owner about new issues.
+- **Uptime**: a Sentry uptime monitor calls `/api/health?shallow=1` every few minutes. It skips the database, so it shows the site and its functions are up; a database outage shows up as real users' errors in Sentry.
+- **Daily job**: Vercel Cron calls `/api/ops-check` at 00:00 UTC with `CRON_SECRET`. It writes the previous UTC day's `DailyStats` row, emails the owner when people on sent draws were never emailed or the 24-hour email count nears the cap, and checks in to a Sentry cron monitor, which alerts when a check-in is late or missing. A second cron entry (`?report=weekly`, Sundays 17:00 UTC) emails the week's stats.
+- **Visits**: Vercel Web Analytics, loaded by `_app.tsx`.
+
 ## Tables
 
 ```
 Draws (id uuid)
   │ 1
-  ├──< Participants (draw_id, position 1..n, reveal_code, email_sent_at, email_claimed_at)
+  ├──< Participants (draw_id, position 1..n, reveal_code, email_sent_at, email_claimed_at, revealed_at)
   │         ▲ giver_participant_id     ▲ receiver_participant_id
   └──< Matches (draw_id) ──────────────┘
 
 EmailSendLog (hour_start)             — emails sent per hour, all draws
+DailyStats (stat_date)                — one row of counts per UTC day, written by the daily check job
 RateLimits (bucket, window_start)     — hits per hashed client (IPv4 or IPv6 /64) + route per hour, and emails per hashed client per hour (the 24-hour email budget)
 ```
 
 - **Draws** — one row per draw: admin key, timestamps (`emails_sent_at`, `deleted_at` double as flags), organizer name/email once emails are sent, and the optional organizer note, budget (in cents) and exchange date.
 - **Participants** — one row per person: name, optional email, optional group name, position in the draw, their reveal token, when their email went out, and a short-lived claim while it is being sent.
 - **Matches** — one row per giver → receiver pair, pointing at two Participants rows. Pairs are linked by position, not by name (create-draw separately refuses names that match ignoring case and spaces, so people can tell who they drew). Each participant appears once as a giver and once as a receiver (`UNIQUE` on both columns).
-- **EmailSendLog** and **RateLimits** are counters, not tied to any draw.
+- **EmailSendLog**, **RateLimits** and **DailyStats** are counters, not tied to any draw. `Participants.revealed_at` is set by `reveal` the first time a personal link shows a match, so the stats can say how many links get opened.
 
 The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 
@@ -87,5 +97,7 @@ The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 | Admin key, reveal tokens | Draws, Participants | Kept with the draw |
 | Hashed IP + route hit counts, and emails per hashed IP | RateLimits (HMAC-SHA-256 with a secret key; raw IPs never stored) | About 2 days, then hard-deleted by `src/proxy.ts` |
 | Emails sent per hour | EmailSendLog (a count only) | Kept |
+| Draws, participants, emails and first link opens per day | DailyStats (counts only) | Kept |
+| Server errors | Sentry (stack trace only: the request, URL and user are removed before sending) | Sentry's retention |
 
 Draws are only ever soft-deleted: deleting hides a draw from every link but keeps the rows. Participant and organizer email addresses are kept too, by decision for now; there is no purge job. Emails themselves are sent through the Gmail account in `GMAIL_USER`, so copies also sit in its Sent folder.

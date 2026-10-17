@@ -12,7 +12,7 @@ Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Ver
 
 More detail:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — which link unlocks what, the draw lifecycle, the request path, tables and the data we keep
-- [docs/OPERATIONS.md](docs/OPERATIONS.md) — runbook: migrations, environment variables, key rotation, email trouble, rollback, health check
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) — runbook: migrations, environment variables, key rotation, alerts, email trouble, rollback, health check
 
 ---
 
@@ -73,7 +73,7 @@ TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 
 ### Database Setup
 
-Run the schema script once to create all required tables (`Draws`, `Participants`, `Matches`, `EmailSendLog`, `RateLimits`):
+Run the schema script once to create all required tables (`Draws`, `Participants`, `Matches`, `EmailSendLog`, `RateLimits`, `DailyStats`):
 
 ```bash
 psql "$DATABASE_URL" -f sql/setup.sql
@@ -94,6 +94,7 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 | `008_short_links.sql` | `Participants.reveal_code`, the 8-character personal link token (the uuid `reveal_token` is retired), and `UNIQUE` on `Draws.admin_key`, which get-draw now looks draws up by |
 | `009_exchange_details.sql` | `Draws.organizer_note`, `budget_cents` and `exchange_date`, the optional details shown in match emails and on personal link pages |
 | `010_drop_daily_email_log.sql` | Removes the unused `DailyEmailLog` table that 007 left behind, so older databases match `setup.sql` |
+| `011_ops_stats.sql` | `Participants.revealed_at` (when a personal link was first opened) and the `DailyStats` table the daily check job writes, for the usage stats |
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 
@@ -172,7 +173,8 @@ src/
       send-emails.ts  # POST: CAPTCHA + 24-hour cap + per-IP email budget + per-person claimed send / resend
       save-details.ts # POST: save the note, budget and date before any send
       delete-draw.ts  # POST: soft-delete
-      health.ts       # GET: DB health check
+      health.ts       # GET: DB health check (?shallow=1 skips the database)
+      ops-check.ts    # GET: daily check job + weekly stats email (Vercel Cron, CRON_SECRET)
     _app.tsx          # App wrapper: global styles, icons, and the fonts (next/font, self-hosted)
     _document.tsx     # Sets <html lang="en">
     index.tsx         # Home page — participant form
@@ -211,7 +213,8 @@ All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "
 | `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail, organizerNote?, budget?, exchangeDate? }` (budget is a dollar amount as typed, like `"25.50"`; the date is `YYYY-MM-DD`; the saved details are used on a resend), or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Also emails the organizer their organizer link on the first send, or only that when no participant has an email (the draw then stays unsent). Returns `{ success, totalSent, totalFailed, failedNames, organizerLinkSent }`. `400` bad input (including an organizer name over 200 characters or containing HTML or a web address, or an email over 320; a note over 150 characters or containing HTML or a web address; a budget that isn't a dollar amount of $10,000 or less; a date that isn't a real day), `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `404` unknown or malformed id, `409` already sent (or nothing to resend), `410` deleted, `429` the sender's IP has used its budget of 100 emails in 24 hours, `503` cap of 495 emails in 24 hours reached. |
 | `POST` | `/api/save-details` | *Admin key required. Rate limited (30/h).* Body `{ id, key, organizerNote?, budget?, exchangeDate? }`, checked like the first send; an empty value clears that detail. Saves them on the draw without sending any email, so they show on personal links. Returns `{ organizer_note, budget_cents, exchange_date }` as saved. `400` bad input, `403` wrong key, `404` unknown or malformed id, `409` emails already sent, `410` deleted. |
 | `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ id, key }`. Soft-delete a draw. Idempotent. `403` wrong key, `404` unknown or malformed id. |
-| `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503 { ok: false, error }` otherwise. |
+| `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503 { ok: false, error }` otherwise. With `?shallow=1` it skips the database and always answers `{ ok: true }`, for the uptime monitor. |
+| `GET` | `/api/ops-check` | *`Authorization: Bearer <CRON_SECRET>` required; called by Vercel Cron.* Daily: writes yesterday's `DailyStats` row and emails `OPS_ALERT_EMAIL` if people on sent draws were never emailed or the 24-hour email count nears the cap; with `?report=weekly`, emails the last 7 days of stats. `403` wrong secret, `500` not configured or the job failed. |
 
 ---
 

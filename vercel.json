@@ -2,31 +2,61 @@
   "functions": {
     "src/pages/api/create-draw.ts": {
       "maxDuration": 10,
-      "regions": ["cle1"]
+      "regions": [
+        "cle1"
+      ]
     },
     "src/pages/api/delete-draw.ts": {
       "maxDuration": 10,
-      "regions": ["cle1"]
+      "regions": [
+        "cle1"
+      ]
     },
     "src/pages/api/get-draw.ts": {
       "maxDuration": 10,
-      "regions": ["cle1"]
+      "regions": [
+        "cle1"
+      ]
     },
     "src/pages/api/health.ts": {
       "maxDuration": 10,
-      "regions": ["cle1"]
+      "regions": [
+        "cle1"
+      ]
+    },
+    "src/pages/api/ops-check.ts": {
+      "maxDuration": 10,
+      "regions": [
+        "cle1"
+      ]
     },
     "src/pages/api/reveal.ts": {
       "maxDuration": 10,
-      "regions": ["cle1"]
+      "regions": [
+        "cle1"
+      ]
     },
     "src/pages/api/save-details.ts": {
       "maxDuration": 10,
-      "regions": ["cle1"]
+      "regions": [
+        "cle1"
+      ]
     },
     "src/pages/api/send-emails.ts": {
       "maxDuration": 60,
-      "regions": ["cle1"]
+      "regions": [
+        "cle1"
+      ]
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/secret-santa/api/ops-check",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/secret-santa/api/ops-check?report=weekly",
+      "schedule": "0 17 * * 0"
+    }
+  ]
 }

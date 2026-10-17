@@ -19,16 +19,14 @@ import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { readDetails } from '@/lib/details';
+import { reportError, reportWarning } from '@/lib/report';
+import { DAILY_EMAIL_LIMIT, IP_EMAIL_BUDGET } from '@/lib/limits';
 import { clientIp, isWhitelisted, rateLimitBucket } from '@/lib/rate-limit';
 import type { ExchangeDetails, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
-// Gmail's free SMTP plan allows ~500 emails in a rolling 24 hours; 495 gives a
-// 5-email safety margin
-const DAILY_EMAIL_LIMIT = 495;
-
-// Each IP's share of the cap, so one person can't use up everyone's emails:
-// at most this many in any 24 hours, counted the same way as the cap
-const IP_EMAIL_BUDGET = 100;
+// A send that takes longer than this is close to the 60s function limit; the
+// 50-person test sent in 44s with Gmail
+const SLOW_SEND_SECONDS = 50;
 
 // Any fixed number: the advisory lock that makes cap reservations take turns
 const EMAIL_CAP_LOCK_ID = 495;
@@ -96,7 +94,7 @@ async function releaseReserved(count: number, reservedHour: Date | null, budgetB
       `,
     ]);
   } catch (err) {
-    console.error(err);
+    await reportError(err);
   }
 }
 
@@ -275,7 +273,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       try {
         await sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, draw.admin_key);
       } catch (err) {
-        console.error(err);
+        await reportError(err);
         await releaseReserved(1, reserved.reserved_hour, budgetBucket);
         return res.status(500).json({ error: 'Failed to send your organizer link. Please try again.' });
       }
@@ -381,8 +379,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // send still stands, and the page tells the organizer to copy their link
     const organizerLinkSending = retryFailed
       ? Promise.resolve(false)
-      : sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, draw.admin_key).then(() => true, (err) => {
-        console.error(err);
+      : sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, draw.admin_key).then(() => true, async (err) => {
+        await reportError(err);
         return false;
       });
 
@@ -390,12 +388,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // so a request killed mid-batch loses at most the emails still in flight (their
     // claims expire and they show as not delivered). Every email is attempted even
     // if some fail, so partial delivery is possible.
+    const sendStartedAt = Date.now();
     const delivered = await Promise.all(toSend.map(async match => {
       let ok = true;
       try {
         await sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_token, details);
       } catch (err) {
-        console.error(err);
+        await reportError(err);
         ok = false;
       }
 
@@ -417,13 +416,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         }
       } catch (err) {
         // The email's outcome stands; the claim is left to expire
-        console.error(err);
+        await reportError(err);
       }
 
       return ok;
     }));
 
     const organizerLinkSent = await organizerLinkSending;
+
+    const sendSeconds = (Date.now() - sendStartedAt) / 1000;
+    if (sendSeconds > SLOW_SEND_SECONDS) await reportWarning(`A send of ${toSend.length} emails took ${Math.round(sendSeconds)}s, close to the 60s function limit`);
 
     const failed = toSend.filter((_, i) => !delivered[i]);
     const failedNames: string[] = failed.map(match => match.giver_name);
@@ -452,7 +454,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       organizerLinkSent,
     });
   } catch (err) {
-    console.error(err);
+    await reportError(err);
     return res.status(500).json({ error: 'Failed to send emails. Please try again.' });
   }
 }

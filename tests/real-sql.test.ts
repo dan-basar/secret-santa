@@ -14,7 +14,8 @@ vi.mock('@/lib/db', async (importOriginal) => {
 
 const sendMatchEmail = vi.hoisted(() => vi.fn(async () => {}));
 const sendOrganizerLinkEmail = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock('@/lib/email', () => ({ sendMatchEmail, sendOrganizerLinkEmail }));
+const sendOpsEmail = vi.hoisted(() => vi.fn(async (..._args: string[]) => {}));
+vi.mock('@/lib/email', () => ({ sendMatchEmail, sendOrganizerLinkEmail, sendOpsEmail }));
 vi.mock('@/lib/turnstile', () => ({ verifyTurnstile: async () => true }));
 
 import { NextRequest } from 'next/server';
@@ -29,6 +30,7 @@ import reveal from '@/pages/api/reveal';
 import deleteDraw from '@/pages/api/delete-draw';
 import saveDetails from '@/pages/api/save-details';
 import health from '@/pages/api/health';
+import opsCheck from '@/pages/api/ops-check';
 import type { GetDrawResponse, CreateDrawResponse, RevealResponse, SendEmailsResponse } from '@/types/api';
 
 interface Result { statusCode: number; body: unknown }
@@ -305,5 +307,61 @@ describe('routes against a real Postgres', () => {
     expect(await sql`SELECT 1 FROM RateLimits WHERE bucket = 'old'`).toEqual([]);
     random.mockRestore();
     errors.mockRestore();
+  });
+
+  it('records the first time each personal link is opened', async () => {
+    const { adminKey } = await create();
+    const view = await adminView(adminKey);
+    const token = view.participants[0].reveal_token;
+    const opened = async () => await sql`SELECT revealed_at FROM Participants WHERE reveal_code = ${token}` as { revealed_at: Date | null }[];
+    expect((await opened())[0].revealed_at).toBeNull();
+
+    expect((await call(reveal, { method: 'GET', query: { token } })).statusCode).toBe(200);
+    const first = (await opened())[0].revealed_at;
+    expect(first).toBeInstanceOf(Date);
+
+    await call(reveal, { method: 'GET', query: { token } });
+    expect((await opened())[0].revealed_at).toEqual(first);
+  });
+
+  it('writes the daily stats row for yesterday and warns about people left unemailed', async () => {
+    vi.stubEnv('CRON_SECRET', 'cron-secret');
+    vi.stubEnv('OPS_ALERT_EMAIL', 'owner@example.com');
+    sendOpsEmail.mockClear();
+    const headers = { authorization: 'Bearer cron-secret' };
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await sql`DELETE FROM DailyStats`;
+
+    // A draw sent two hours ago where one person's email failed, made yesterday at noon
+    const { adminKey } = await create();
+    const view = await adminView(adminKey);
+    await sql`
+      UPDATE Draws
+      SET created_at = ${yesterday}::date + interval '12 hours', emails_sent_at = now() - interval '2 hours'
+      WHERE id = ${view.id}::uuid
+    `;
+    await sql`UPDATE Participants SET email_sent_at = now() WHERE draw_id = ${view.id}::uuid AND name <> 'Kim'`;
+    await sql`UPDATE Participants SET revealed_at = ${yesterday}::date + interval '13 hours' WHERE draw_id = ${view.id}::uuid AND name = 'Alex'`;
+
+    expect((await call(opsCheck, { method: 'GET', headers: {} })).statusCode).toBe(403);
+    const run = await call(opsCheck, { method: 'GET', headers });
+    expect(run.statusCode).toBe(200);
+    expect((run.body as { statDate: string }).statDate).toBe(yesterday);
+
+    const rows = await sql`SELECT * FROM DailyStats WHERE stat_date = ${yesterday}::date` as Record<string, number>[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ draws_created: 1, draws_emailed: 0, participants_created: 4, links_opened: 1, unsent_emails: 1 });
+    expect(sendOpsEmail).toHaveBeenCalledOnce();
+    expect(sendOpsEmail.mock.calls[0]).toEqual(['owner@example.com', 'Secret Santa: needs a look', expect.stringContaining('1 people on 1 draws')]);
+
+    // Running it again for the same day replaces the row
+    expect((await call(opsCheck, { method: 'GET', headers })).statusCode).toBe(200);
+    expect(await sql`SELECT 1 FROM DailyStats WHERE stat_date = ${yesterday}::date`).toHaveLength(1);
+
+    sendOpsEmail.mockClear();
+    const weekly = await call(opsCheck, { method: 'GET', headers, query: { report: 'weekly' } });
+    expect(weekly.statusCode).toBe(200);
+    expect(sendOpsEmail.mock.calls[0][1]).toBe('Secret Santa: weekly stats');
+    expect(sendOpsEmail.mock.calls[0][2]).toContain('Draws created: 1');
   });
 });

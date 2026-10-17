@@ -10,7 +10,7 @@ vi.mock('@/lib/db', async (importOriginal) => {
 import handler from '@/pages/api/health';
 import { sql } from '@/lib/db';
 
-async function get(method = 'GET') {
+async function get(method = 'GET', query: Record<string, string> = {}) {
   const res = {
     statusCode: 0,
     body: undefined as unknown,
@@ -23,7 +23,7 @@ async function get(method = 'GET') {
       return this;
     },
   };
-  await handler({ method } as NextApiRequest, res as unknown as NextApiResponse);
+  await handler({ method, query } as unknown as NextApiRequest, res as unknown as NextApiResponse);
   return res;
 }
 
@@ -45,6 +45,14 @@ describe('GET /api/health', () => {
     const res = await get();
     expect(res.statusCode).toBe(503);
     expect(res.body).toEqual({ ok: false, error: 'Database unreachable.' });
+  });
+
+  it('skips the database with ?shallow=1', async () => {
+    vi.mocked(sql).mockRejectedValue(new Error('Neon unreachable'));
+    const res = await get('GET', { shallow: '1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(sql).not.toHaveBeenCalled();
   });
 
   it('answers HEAD too, for uptime monitors', async () => {

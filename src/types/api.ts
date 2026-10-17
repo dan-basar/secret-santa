@@ -78,3 +78,8 @@ export type SaveDetailsResponse = ExchangeDetails;
 
 // GET /api/health
 export type HealthResponse = { ok: true } | { ok: false; error: string };
+
+// GET /api/ops-check: the daily check job's result (the weekly report returns { ok: true, reported: true })
+export type OpsCheckResponse =
+  | { ok: true; statDate: string; warnings: string[] }
+  | { ok: true; reported: true };

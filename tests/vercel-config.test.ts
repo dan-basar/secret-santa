@@ -5,6 +5,7 @@ import { join } from 'node:path';
 const root = join(__dirname, '..');
 const config = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8')) as {
   functions: Record<string, { maxDuration: number; regions: string[] }>;
+  crons: { path: string; schedule: string }[];
 };
 const routes = readdirSync(join(root, 'src/pages/api'))
   .filter((file) => file.endsWith('.ts'))
@@ -37,5 +38,13 @@ describe('vercel.json functions', () => {
       expect(entry.maxDuration, route).toBe(route.endsWith('/send-emails.ts') ? 60 : 10);
       expect(entry.regions, route).toEqual(['cle1']);
     }
+  });
+
+  it('runs the daily check at 00:00 UTC and the weekly report on Sundays at 17:00 UTC', () => {
+    expect(config.crons).toEqual([
+      { path: '/secret-santa/api/ops-check', schedule: '0 0 * * *' },
+      { path: '/secret-santa/api/ops-check?report=weekly', schedule: '0 17 * * 0' },
+    ]);
+    expect(routes).toContain('src/pages/api/ops-check.ts');
   });
 });

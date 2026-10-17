@@ -3,13 +3,17 @@
 // Returns 200 { name, match_name, created_at, organizer_name, organizer_note,
 // budget_cents, exchange_date } (the last three are the organizer's optional
 // exchange details, null when not set); 404 unknown token; 410 deleted draw.
+// The first successful call sets the participant's revealed_at, for the usage stats.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { reportError } from '@/lib/report';
 import { sql } from '@/lib/db';
 import { isRevealToken } from '@/lib/tokens';
 import type { ApiError, RevealResponse } from '@/types/api';
 
 interface RevealRow {
+  giver_id: number;
+  revealed_at: Date | null;
   giver_name: string;
   receiver_name: string;
   created_at: Date;
@@ -39,7 +43,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   try {
     const rows = await sql`
       SELECT
-           givers.name as giver_name
+           givers.id as giver_id
+          ,givers.revealed_at
+          ,givers.name as giver_name
           ,receivers.name as receiver_name
           ,draws.created_at
           ,draws.emails_sent_at
@@ -61,6 +67,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (row.deleted_at) return res.status(410).json({ error: 'This draw has been deleted.' });
 
+    // Only the first open is recorded. Failing to record it never keeps someone
+    // from their match
+    if (!row.revealed_at) {
+      try {
+        await sql`UPDATE Participants SET revealed_at = now() WHERE id = ${row.giver_id} AND revealed_at IS NULL`;
+      } catch (err) {
+        await reportError(err);
+      }
+    }
+
     // Only the giver's own row is selected, so nothing about other participants can leak
     return res.status(200).json({
       name: row.giver_name,
@@ -72,7 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       exchange_date: row.exchange_date,
     });
   } catch (err) {
-    console.error(err);
+    await reportError(err);
     return res.status(500).json({ error: 'Database error. Please try again.' });
   }
 }
