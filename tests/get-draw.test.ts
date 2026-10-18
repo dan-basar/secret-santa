@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { callRoute } from './helpers/fake-res';
 
 // No database in tests: each query becomes its bound values and the
 // transaction resolves to the rows queued below
@@ -15,12 +15,10 @@ vi.mock('@/lib/db', async (importOriginal) => {
 import handler from '@/pages/api/get-draw';
 import { sql } from '@/lib/db';
 
-const DRAW_ID = '0b6f1c2a-8d3e-4f5a-9b7c-1d2e3f4a5b6c';
 const ADMIN_KEY = 'Ab3dEf6hIj9kLm';
 
 // The driver returns timestamptz columns as Date objects
 const drawRow = {
-  id: DRAW_ID,
   created_at: new Date('2026-10-01T12:00:00.000Z'),
   emails_sent_at: null,
   deleted_at: null,
@@ -41,28 +39,8 @@ const matchRows = [
   { giver_position: 30, receiver_position: 10 },
 ];
 
-async function get(query: Record<string, unknown>, headers: Record<string, string> = {}, method = 'GET') {
-  const res = {
-    statusCode: 0,
-    body: undefined as unknown,
-    headers: {} as Record<string, string>,
-    setHeader(name: string, value: string) {
-      this.headers[name] = value;
-    },
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body: unknown) {
-      this.body = body;
-      return this;
-    },
-    end() {
-      return this;
-    },
-  };
-  await handler({ method, query, headers } as unknown as NextApiRequest, res as unknown as NextApiResponse);
-  return res;
+function get(query: Record<string, unknown>, headers: Record<string, string> = {}, method = 'GET') {
+  return callRoute(handler, { method, query, headers });
 }
 
 // Answers only the queries the handler sends, like the database would
@@ -86,7 +64,6 @@ describe('GET /api/get-draw', () => {
     const res = await get({}, { 'x-admin-key': ADMIN_KEY });
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
-      id: DRAW_ID,
       created_at: '2026-10-01T12:00:00.000Z',
       emails_sent_at: null,
       organizer_name: 'Dan',

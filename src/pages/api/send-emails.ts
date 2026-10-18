@@ -1,26 +1,28 @@
 // POST /api/send-emails: emails each participant their match and reveal link,
 // and on the first send emails the organizer their organizer link. With no
 // participant emails, the first send emails just the organizer their link, and
-// can be repeated. Admin key required. Body: { id, key, turnstileToken } plus
+// can be repeated. Admin key required. Body: { key, turnstileToken } plus
 // organizerName and organizerEmail on the first send, or retryFailed: true to
 // resend only the failed. The first send may also carry the optional exchange
 // details organizerNote, budget (dollars as typed) and exchangeDate (YYYY-MM-DD),
 // saved with the draw and put in every match email; with no participant emails
 // they are saved with each organizer link email, for the personal link pages.
 // Returns 200 { success, totalSent, totalFailed, failedNames, organizerLinkSent }; 400 bad input;
-// 403 wrong key or CAPTCHA; 409 already sent / nothing to resend; 410 deleted;
+// 403 missing, malformed or unknown key, or failed CAPTCHA; 409 already sent /
+// nothing to resend; 410 deleted;
 // 429 the sender's IP has used its email budget (100 emails in any 24 hours);
 // 503 daily cap hit (495 emails in any 24 hours, across all draws).
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { sql, isUuid } from '@/lib/db';
+import { sql } from '@/lib/db';
+import { isAdminKey } from '@/lib/tokens';
 import { sendMatchEmail, sendOrganizerLinkEmail } from '@/lib/email';
 import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { readDetails } from '@/lib/details';
 import { reportError, reportWarning } from '@/lib/report';
-import { DAILY_EMAIL_LIMIT, IP_EMAIL_BUDGET } from '@/lib/limits';
+import { CLAIM_EXPIRY_MINUTES, DAILY_EMAIL_LIMIT, IP_EMAIL_BUDGET } from '@/lib/limits';
 import { clientIp, isWhitelisted, rateLimitBucket } from '@/lib/rate-limit';
 import type { ExchangeDetails, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
@@ -31,16 +33,10 @@ const SLOW_SEND_SECONDS = 50;
 // Any fixed number: the advisory lock that makes cap reservations take turns
 const EMAIL_CAP_LOCK_ID = 495;
 
-// A participant's claim normally lasts only as long as their own send. One older
-// than this belongs to a request that was killed mid-send (the function limit is
-// 60s), so that person can be claimed again
-const CLAIM_EXPIRY_MINUTES = 5;
-
 interface DrawRow {
   id: string;
   emails_sent_at: Date | null;
   deleted_at: Date | null;
-  admin_key: string;
   organizer_name: string | null;
   organizer_email: string | null;
   organizer_note: string | null;
@@ -57,21 +53,13 @@ interface MatchRow {
   receiver_name: string;
 }
 
-interface ReserveRow {
-  cap_ok: boolean;
-  ip_ok: boolean;
-  reserved_hour: Date | null;
-}
-
 interface ClaimRow {
   cap_ok: boolean;
   ip_ok: boolean;
-  draw_claimed: boolean;
+  draw_updated: boolean;
   claimed_ids: number[];
   reserved_hour: Date | null;
 }
-
-const IP_BUDGET_ERROR = `You've sent the most emails allowed from your connection for now (${IP_EMAIL_BUDGET} in 24 hours).`;
 
 // Hands back reserved emails that weren't sent, from the cap and from the IP's
 // budget. Both reservations were made in the same hour, so that hour's rows hold
@@ -104,10 +92,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(405).json({ error: 'Method not allowed.' });
   }
 
-  const { id, key, organizerName, organizerEmail, organizerNote, budget, exchangeDate, turnstileToken, retryFailed } = req.body;
-  if (!id || typeof id !== 'string') return res.status(400).json({ error: 'A draw id is required.' });
-  if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
-  if (!key || typeof key !== 'string') return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
+  const { key, organizerName, organizerEmail, organizerNote, budget, exchangeDate, turnstileToken, retryFailed } = req.body;
+  if (typeof key !== 'string' || !isAdminKey(key)) return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
   if (retryFailed !== undefined && typeof retryFailed !== 'boolean') return res.status(400).json({ error: 'retryFailed must be true or false.' });
 
   // A resend reuses the organizer name and email saved by the first send, so
@@ -176,14 +162,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
              id
             ,emails_sent_at
             ,deleted_at
-            ,admin_key
             ,organizer_name
             ,organizer_email
             ,organizer_note
             ,budget_cents
             ,to_char(exchange_date, 'YYYY-MM-DD') as exchange_date
         FROM Draws
-        WHERE id = ${id}::uuid
+        WHERE admin_key = ${key}
       `,
       sql`
         SELECT
@@ -194,17 +179,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             ,givers.reveal_code as giver_reveal_token
             ,receivers.name as receiver_name
         FROM Matches as matches
+             INNER JOIN Draws as draws ON matches.draw_id = draws.id
              INNER JOIN Participants as givers ON matches.giver_participant_id = givers.id
              INNER JOIN Participants as receivers ON matches.receiver_participant_id = receivers.id
-        WHERE matches.draw_id = ${id}::uuid
+        WHERE draws.admin_key = ${key}
       `,
     ], { readOnly: true })) as [DrawRow[], MatchRow[]];
 
-    if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
+    if (!drawRows.length) return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
 
     const draw = drawRows[0];
-
-    if (key !== draw.admin_key) return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
 
     if (draw.deleted_at) return res.status(410).json({ error: 'This draw has been deleted.' });
 
@@ -222,70 +206,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (retryFailed && !unsent.length) return res.status(409).json({ error: 'Everyone has already been sent their email.' });
 
-    // Nobody has an email address: email just the organizer their link. The
-    // draw isn't marked as sent, so Edit & Redraw stays open and this can be
-    // repeated (the hourly rate limit and the cap still apply). The exchange
-    // details are saved each time, for the personal link pages
-    if (!retryFailed && !unsent.length) {
-      const [, reserveRows] = await sql.transaction([
-        sql`SELECT pg_advisory_xact_lock(${EMAIL_CAP_LOCK_ID}::bigint)`,
-        sql`
-          WITH organizer_cap AS (
-               SELECT COALESCE(SUM(emailSendLog.emails_sent), 0) + 1 <= ${DAILY_EMAIL_LIMIT}::int as ok
-               FROM EmailSendLog as emailSendLog
-               WHERE emailSendLog.hour_start > now() - interval '25 hours'
-          ), ip_budget AS (
-               SELECT ${budgetBucket}::text IS NULL OR COALESCE(SUM(rateLimits.hits), 0) + 1 <= ${IP_EMAIL_BUDGET}::int as ok
-               FROM RateLimits as rateLimits
-               WHERE rateLimits.bucket = ${budgetBucket}
-                    AND rateLimits.window_start > now() - interval '25 hours'
-          ), allowed AS (
-               SELECT (SELECT ok FROM organizer_cap) AND (SELECT ok FROM ip_budget) as ok
-          ), reserve AS (
-               INSERT INTO EmailSendLog (hour_start, emails_sent)
-               SELECT date_trunc('hour', now()), 1
-               WHERE (SELECT ok FROM allowed)
-               ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
-               RETURNING hour_start
-          ), ip_reserve AS (
-               INSERT INTO RateLimits (bucket, window_start, hits)
-               SELECT ${budgetBucket}, date_trunc('hour', now()), 1
-               WHERE (SELECT ok FROM allowed) AND ${budgetBucket}::text IS NOT NULL
-               ON CONFLICT (bucket, window_start) DO UPDATE SET hits = RateLimits.hits + EXCLUDED.hits
-          ), details AS (
-               UPDATE Draws
-               SET organizer_note = ${details.organizer_note}, budget_cents = ${details.budget_cents}::int, exchange_date = ${details.exchange_date}::date
-               WHERE id = ${id}::uuid
-                    AND emails_sent_at IS NULL
-                    AND (SELECT ok FROM allowed)
-          )
-          SELECT
-               (SELECT ok FROM organizer_cap) as cap_ok
-              ,(SELECT ok FROM ip_budget) as ip_ok
-              ,(SELECT hour_start FROM reserve) as reserved_hour
-        `,
-      ]) as [unknown, ReserveRow[]];
-      const reserved = reserveRows[0];
-
-      if (!reserved.cap_ok) return res.status(503).json({ error: 'The site\'s email limit is reached for now. Try again in a few hours, or copy your organizer link above.' });
-      if (!reserved.ip_ok) return res.status(429).json({ error: IP_BUDGET_ERROR + ' Try again later, or copy your organizer link above.' });
-
-      try {
-        await sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, draw.admin_key);
-      } catch (err) {
-        await reportError(err);
-        await releaseReserved(1, reserved.reserved_hour, budgetBucket);
-        return res.status(500).json({ error: 'Failed to send your organizer link. Please try again.' });
-      }
-
-      return res.status(200).json({ success: true, totalSent: 0, totalFailed: 0, failedNames: [], organizerLinkSent: true });
-    }
-
     // The first send also emails the organizer their link: one more email
     const organizerCount = retryFailed ? 0 : 1;
 
+    // Nobody has an email address: the first send emails just the organizer their
+    // link. The draw isn't marked as sent, so Edit & Redraw stays open and this
+    // can be repeated (the hourly rate limit and the cap still apply). The
+    // exchange details are saved each time, for the personal link pages
+    const organizerOnly = !retryFailed && !unsent.length;
+    // What the organizer can do instead when the cap or their budget refuses the send
+    const fallback = organizerOnly ? 'copy your organizer link above' : 'send each person their personal link below';
+
     // Step 1: In one transaction, check the email cap and claim the draw and
-    // each participant BEFORE sending, reserving the cap for whoever was claimed.
+    // each participant BEFORE sending, reserving the cap for whoever was claimed
+    // and for the organizer's link when the draw row was updated.
     //
     // The cap covers every hourly EmailSendLog row that can hold a send from the
     // last 24 hours (so up to 25 hours, erring on the safe side), matching Gmail's
@@ -294,7 +228,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     //
     // The claims are atomic UPDATEs: on the first send only one request matches
     // `emails_sent_at IS NULL` and gets the draw back, so two first sends can't
-    // both save organizer details. Each participant comes back only to the
+    // both save organizer details (with nobody to email, the row only takes the
+    // exchange details and stays unsent). Each participant comes back only to the
     // request that set their email_claimed_at, so two clicks of Send or Resend can
     // never email anyone twice. A claim older than CLAIM_EXPIRY_MINUTES was left
     // by a request that died, so it can be taken. Nothing is claimed when the cap
@@ -316,11 +251,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                   AND rateLimits.window_start > now() - interval '25 hours'
         ), allowed AS (
              SELECT (SELECT ok FROM cap) AND (SELECT ok FROM ip_budget) as ok
-        ), draw_claim AS (
+        ), draw_update AS (
              UPDATE Draws
-             SET emails_sent_at = now(), organizer_name = ${safeOrganizerName}, organizer_email = ${safeOrganizerEmail}
-                 ,organizer_note = ${details.organizer_note}, budget_cents = ${details.budget_cents}::int, exchange_date = ${details.exchange_date}::date
-             WHERE id = ${id}::uuid
+             SET organizer_note = ${details.organizer_note}, budget_cents = ${details.budget_cents}::int, exchange_date = ${details.exchange_date}::date
+                 ,emails_sent_at = CASE WHEN ${organizerOnly}::boolean THEN emails_sent_at ELSE now() END
+                 ,organizer_name = CASE WHEN ${organizerOnly}::boolean THEN organizer_name ELSE ${safeOrganizerName} END
+                 ,organizer_email = CASE WHEN ${organizerOnly}::boolean THEN organizer_email ELSE ${safeOrganizerEmail} END
+             WHERE id = ${draw.id}::uuid
                   AND emails_sent_at IS NULL
                   AND NOT ${!!retryFailed}::boolean
                   AND (SELECT ok FROM allowed)
@@ -332,54 +269,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                   AND email_sent_at IS NULL
                   AND (email_claimed_at IS NULL OR email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}))
                   AND (SELECT ok FROM allowed)
-                  AND (${!!retryFailed}::boolean OR EXISTS (SELECT 1 FROM draw_claim))
+                  AND (${!!retryFailed}::boolean OR EXISTS (SELECT 1 FROM draw_update))
              RETURNING id
+        ), reserved AS (
+             SELECT (SELECT COUNT(*) FROM participant_claim)::int + (SELECT COUNT(*) FROM draw_update)::int as emails
         ), reserve AS (
              INSERT INTO EmailSendLog (hour_start, emails_sent)
-             SELECT date_trunc('hour', now()), COUNT(*)::int + ${organizerCount}::int
-             FROM participant_claim
-             HAVING COUNT(*) > 0
+             SELECT date_trunc('hour', now()), reserved.emails
+             FROM reserved
+             WHERE reserved.emails > 0
              ON CONFLICT (hour_start) DO UPDATE SET emails_sent = EmailSendLog.emails_sent + EXCLUDED.emails_sent
              RETURNING hour_start
         ), ip_reserve AS (
              INSERT INTO RateLimits (bucket, window_start, hits)
-             SELECT ${budgetBucket}, date_trunc('hour', now()), COUNT(*)::int + ${organizerCount}::int
-             FROM participant_claim
-             HAVING COUNT(*) > 0 AND ${budgetBucket}::text IS NOT NULL
+             SELECT ${budgetBucket}, date_trunc('hour', now()), reserved.emails
+             FROM reserved
+             WHERE reserved.emails > 0 AND ${budgetBucket}::text IS NOT NULL
              ON CONFLICT (bucket, window_start) DO UPDATE SET hits = RateLimits.hits + EXCLUDED.hits
         )
         SELECT
              (SELECT ok FROM cap) as cap_ok
             ,(SELECT ok FROM ip_budget) as ip_ok
-            ,EXISTS (SELECT 1 FROM draw_claim) as draw_claimed
+            ,EXISTS (SELECT 1 FROM draw_update) as draw_updated
             ,ARRAY(SELECT id FROM participant_claim) as claimed_ids
             ,(SELECT hour_start FROM reserve) as reserved_hour
       `,
     ]) as [unknown, ClaimRow[]];
     const claim = claimRows[0];
 
-    if (!claim.cap_ok) {
-      return res.status(503).json({
-        error: 'The site\'s email limit is reached for now. Try again in a few hours, or send each person their personal link below.',
-      });
-    }
+    if (!claim.cap_ok) return res.status(503).json({ error: `The site's email limit is reached for now. Try again in a few hours, or ${fallback}.` });
 
     if (!claim.ip_ok) {
-      return res.status(429).json({ error: IP_BUDGET_ERROR + ' Try again later, or send each person their personal link below.' });
+      return res.status(429).json({ error: `You've sent the most emails allowed from your connection for now (${IP_EMAIL_BUDGET} in 24 hours). Try again later, or ${fallback}.` });
     }
 
-    if (!retryFailed && !claim.draw_claimed) return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
+    if (!retryFailed && !claim.draw_updated) return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
 
     const claimedIds = new Set(claim.claimed_ids);
     const toSend = unsent.filter(match => claimedIds.has(match.giver_id));
 
     if (retryFailed && !toSend.length) return res.status(409).json({ error: 'These emails are already being sent.' });
 
-    // On the first send the organizer's link goes out alongside; if it fails the
-    // send still stands, and the page tells the organizer to copy their link
+    // On the first send the organizer's link goes out alongside the match emails;
+    // if it fails the send still stands, and the page tells the organizer to copy
+    // their link
     const organizerLinkSending = retryFailed
       ? Promise.resolve(false)
-      : sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, draw.admin_key).then(() => true, async (err) => {
+      : sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, key).then(() => true, async (err) => {
         await reportError(err);
         return false;
       });
@@ -432,12 +368,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const actualSent = toSend.length - failed.length;
     await releaseReserved(failed.length + (organizerCount && !organizerLinkSent ? 1 : 0), claim.reserved_hour, budgetBucket);
 
+    // With nobody else to email, the organizer's link was the whole send
+    if (organizerOnly && !organizerLinkSent) return res.status(500).json({ error: 'Failed to send your organizer link. Please try again.' });
+
     const allFailed = failed.length > 0 && failed.length === toSend.length;
 
     if (allFailed && !retryFailed) {
       // Nobody got an email on the first send: reopen the draw so the organizer
       // can start over, including changing their name or email
-      await sql`UPDATE Draws SET emails_sent_at = NULL WHERE id = ${id}::uuid`;
+      await sql`UPDATE Draws SET emails_sent_at = NULL WHERE id = ${draw.id}::uuid`;
 
       return res.status(500).json({ error: 'Failed to send emails. Please try again.' });
     }

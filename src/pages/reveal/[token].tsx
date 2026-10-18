@@ -6,7 +6,7 @@ import Image from 'next/image';
 import styles from '@/styles/Reveal.module.css';
 import logo from '../../../public/logo.svg';
 import { isRevealToken, isCutShort, REVEAL_TOKEN_LENGTH } from '@/lib/tokens';
-import { budgetLine, formatExchangeDate, hasDetails } from '@/lib/details';
+import { budgetAndDateLines, hasDetails } from '@/lib/details';
 import type { RevealResponse } from '@/types/api';
 
 type PageState = 'loading' | 'loaded' | 'deleted' | 'not-found' | 'incomplete' | 'busy' | 'error';
@@ -112,8 +112,9 @@ export default function RevealPage() {
               {data.organizer_note && (
                 <p className="break-anywhere"><strong>A note from your organizer:</strong><br />&ldquo;{data.organizer_note}&rdquo;</p>
               )}
-              {data.budget_cents !== null && <p><strong>Budget:</strong> {budgetLine(data.budget_cents)}</p>}
-              {data.exchange_date && <p><strong>Exchange:</strong> {formatExchangeDate(data.exchange_date)}</p>}
+              {budgetAndDateLines(data.budget_cents, data.exchange_date).map((line) => (
+                <p key={line.label}><strong>{line.label}:</strong> {line.value}</p>
+              ))}
             </div>
           )}
 

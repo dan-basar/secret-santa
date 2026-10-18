@@ -42,7 +42,6 @@ export interface ExchangeDetails {
 
 // GET /api/get-draw: the organizer's view of a draw
 export interface GetDrawResponse extends ExchangeDetails {
-  id: string;
   created_at: string;
   emails_sent_at: string | null;
   organizer_name: string | null; // set by the first send
@@ -77,7 +76,7 @@ export interface SendEmailsError extends ApiError {
 export type SaveDetailsResponse = ExchangeDetails;
 
 // GET /api/health
-export type HealthResponse = { ok: true } | { ok: false; error: string };
+export type HealthResponse = { ok: true };
 
 // GET /api/ops-check: the daily check job's result (the weekly report returns { ok: true, reported: true })
 export type OpsCheckResponse =

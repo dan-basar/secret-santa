@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { callRoute } from './helpers/fake-res';
 
 // A tiny in-memory stand-in for the tables send-emails touches. Each sql`...`
 // call is answered by matching its text, and runs synchronously, so a single
@@ -53,55 +53,44 @@ vi.mock('@/lib/db', async (importOriginal) => {
   }
 
   function run(text: string, values: unknown[]): unknown[] {
-    // The one statement that checks the cap, claims the draw and participants,
-    // and reserves the cap for whoever was claimed
+    // The one statement that checks the cap, updates the draw, claims the
+    // participants, and reserves the cap for whoever will be emailed
     if (text.includes('WITH cap AS')) {
-      const [count, limit, bucket, , ipLimit, , organizerName, organizerEmail, note, budgetCents, exchangeDate, , retryFailed, ids, expiryMinutes] =
-        values as [number, number, string | null, number, number, string | null, string, string, string | null, number | null, string | null, string, boolean, number[], number];
-      // The organizer's own link email, reserved with the claims on a first send
-      const organizerCount = values[values.length - 2] as number;
+      const [count, limit, bucket, , ipLimit, , note, budgetCents, exchangeDate, organizerOnly, , organizerName, , organizerEmail, , retryFailed, ids, expiryMinutes] =
+        values as [number, number, string | null, number, number, string | null, string | null, number | null, string | null, boolean, boolean, string, boolean, string, string, boolean, number[], number];
       const capOk = emailsCounted() + count <= limit;
       const ipOk = bucket === null || ipEmailsCounted(bucket) + count <= ipLimit;
       const allowed = capOk && ipOk;
-      const drawClaimed = allowed && !retryFailed && !db.draw.emails_sent_at;
-      if (drawClaimed) {
-        db.draw.emails_sent_at = 'now';
-        db.draw.organizer_name = organizerName;
-        db.draw.organizer_email = organizerEmail;
+      const drawUpdated = allowed && !retryFailed && !db.draw.emails_sent_at;
+      if (drawUpdated) {
         db.draw.organizer_note = note;
         db.draw.budget_cents = budgetCents;
         db.draw.exchange_date = exchangeDate;
+        // With nobody to email, only the organizer's link goes out and the draw stays unsent
+        if (!organizerOnly) {
+          db.draw.emails_sent_at = 'now';
+          db.draw.organizer_name = organizerName;
+          db.draw.organizer_email = organizerEmail;
+        }
       }
-      const claimed = allowed && (retryFailed || drawClaimed)
+      const claimed = allowed && (retryFailed || drawUpdated)
         ? db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at
           && (p.email_claimed_at === null || p.email_claimed_at < db.now - expiryMinutes * 60_000))
         : [];
       for (const p of claimed) p.email_claimed_at = db.now;
+      // Each claimed participant, plus the organizer's link when the draw was updated
+      const reserved = claimed.length + (drawUpdated ? 1 : 0);
       let reservedHour: Date | null = null;
-      if (claimed.length) {
-        reservedHour = reserve(claimed.length + organizerCount);
-        reserveIp(bucket, claimed.length + organizerCount);
+      if (reserved) {
+        reservedHour = reserve(reserved);
+        reserveIp(bucket, reserved);
       }
-      return [{ cap_ok: capOk, ip_ok: ipOk, draw_claimed: drawClaimed, claimed_ids: claimed.map(p => p.id), reserved_hour: reservedHour }];
+      return [{ cap_ok: capOk, ip_ok: ipOk, draw_updated: drawUpdated, claimed_ids: claimed.map(p => p.id), reserved_hour: reservedHour }];
     }
-    // A first send with nobody to email: reserve one email for the organizer's
-    // link, and save the exchange details
-    if (text.includes('WITH organizer_cap AS')) {
-      const [limit, bucket, ipLimit, , , , note, budgetCents, exchangeDate] =
-        values as [number, string | null, number, string | null, string | null, string | null, string | null, number | null, string | null];
-      const capOk = emailsCounted() + 1 <= limit;
-      const ipOk = bucket === null || ipEmailsCounted(bucket) + 1 <= ipLimit;
-      const allowed = capOk && ipOk;
-      if (allowed) reserveIp(bucket, 1);
-      if (allowed && !db.draw.emails_sent_at) {
-        db.draw.organizer_note = note;
-        db.draw.budget_cents = budgetCents;
-        db.draw.exchange_date = exchangeDate;
-      }
-      return [{ cap_ok: capOk, ip_ok: ipOk, reserved_hour: allowed ? reserve(1) : null }];
-    }
-    if (text.includes('FROM Draws')) return [{ ...db.draw }];
+    // Both reads find the draw by its admin key alone
+    if (text.includes('FROM Draws')) return values[0] === db.draw.admin_key ? [{ ...db.draw }] : [];
     if (text.includes('FROM Matches')) {
+      if (values[0] !== db.draw.admin_key) return [];
       return db.participants.map(giver => ({
         giver_id: giver.id,
         giver_name: giver.name,
@@ -164,30 +153,14 @@ import handler from '@/pages/api/send-emails';
 import { rateLimitBucket } from '@/lib/rate-limit';
 
 const DRAW_ID = '0b6f1c2a-8d3e-4f5a-9b7c-1d2e3f4a5b6c';
-const ADMIN_KEY = 'admin-key-123';
+const ADMIN_KEY = 'Ab3dEf6hIj9kLm';
 
-async function post(body: Record<string, unknown>, ip = '203.0.113.5') {
-  const res = {
-    statusCode: 0,
-    body: undefined as unknown as Record<string, unknown>,
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body: Record<string, unknown>) {
-      this.body = body;
-      return this;
-    },
-    end() {
-      return this;
-    },
-  };
-  await handler({ method: 'POST', body, headers: { 'x-forwarded-for': ip } } as unknown as NextApiRequest, res as unknown as NextApiResponse);
-  return res;
+function post(body: Record<string, unknown>, ip = '203.0.113.5') {
+  return callRoute<Record<string, unknown>>(handler, { method: 'POST', body, headers: { 'x-forwarded-for': ip } });
 }
 
-const firstSend = { id: DRAW_ID, key: ADMIN_KEY, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 'token' };
-const resend = { id: DRAW_ID, key: ADMIN_KEY, turnstileToken: 'token', retryFailed: true };
+const firstSend = { key: ADMIN_KEY, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 'token' };
+const resend = { key: ADMIN_KEY, turnstileToken: 'token', retryFailed: true };
 
 // Every address the handler emailed, in order
 function emailed() {
@@ -383,14 +356,16 @@ describe('POST /api/send-emails', () => {
     expect([first.statusCode, second.statusCode].sort()).toEqual([200, 409]);
   });
 
-  it('rejects a resend without the admin key with 403', async () => {
+  it('rejects a send or resend without the right admin key with 403', async () => {
     failFor('sam@example.com');
     await post(firstSend);
     sendMatchEmail.mockClear();
 
-    for (const key of [undefined, 'wrong-key']) {
+    // Missing, malformed, and well formed but belonging to no draw
+    for (const key of [undefined, 'wrong-key', 'Zz9yXx8wVv7uTt']) {
       const res = await post({ ...resend, key });
       expect(res.statusCode).toBe(403);
+      expect(res.body).toEqual({ error: 'Only the organizer can send emails for this draw.' });
     }
     expect(sendMatchEmail).not.toHaveBeenCalled();
     expect(sentNames()).toEqual(['Alex', 'Jo']);

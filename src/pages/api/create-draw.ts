@@ -2,25 +2,25 @@
 // whose names must differ ignoring case and spaces, draws matches and saves the
 // draw, participants and matches in one transaction. Anyone may call it. Returns
 // 200 { adminKey }, the secret in the organizer's /draw#<adminKey> link; 400 bad
-// input; 422 no valid matching. Edit & Redraw
-// also sends replacesDrawId + replacesKey (that draw's admin key): 403 wrong key,
-// 409 emails already sent, 410 already deleted. The new draw keeps the old
-// one's saved note, budget and date.
+// input; 422 no valid matching. Edit & Redraw also sends replacesKey, the admin
+// key of the draw it replaces: 403 missing, malformed or unknown key, 409 emails
+// already sent, 410 already deleted. The new draw keeps the old one's saved note,
+// budget and date.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { randomUUID } from 'crypto';
 import { reportError } from '@/lib/report';
-import { sql, isUuid } from '@/lib/db';
-import { newToken, ADMIN_KEY_LENGTH, REVEAL_TOKEN_LENGTH } from '@/lib/tokens';
+import { sql } from '@/lib/db';
+import { newToken, isAdminKey, ADMIN_KEY_LENGTH, REVEAL_TOKEN_LENGTH } from '@/lib/tokens';
 import { isMatchingPossible, createMatches, normalizeGroup, Participant } from '@/lib/matching';
+import { MAX_GROUPS, MAX_PARTICIPANTS } from '@/lib/groups';
 import { hasHtmlTag, hasLink } from '@/lib/sanitize';
 import { isValidEmail } from '@/lib/email-address';
 import { duplicateNames, duplicateNamesMessage } from '@/lib/names';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
 
-// The draw being replaced by Edit & Redraw
+// The draw Edit & Redraw tried to replace, looked up only when the replace is refused
 interface OldDrawRow {
-  admin_key: string;
   deleted_at: Date | null;
   emails_sent_at: Date | null;
 }
@@ -41,17 +41,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(400).json({ error: 'Each participant needs a text name; email and group must be text if given.' });
   }
 
-  // Edit & Redraw: the old draw is only soft-deleted once its replacement is saved
-  const { replacesDrawId, replacesKey } = req.body as { replacesDrawId?: unknown; replacesKey?: unknown };
-  if (replacesDrawId != null && (typeof replacesDrawId !== 'string' || !isUuid(replacesDrawId))) {
-    return res.status(400).json({ error: 'The draw to replace is not valid.' });
+  // Edit & Redraw: the admin key of the old draw, which is only soft-deleted once
+  // its replacement is saved
+  const { replacesKey } = req.body as { replacesKey?: unknown };
+  if (replacesKey != null && (typeof replacesKey !== 'string' || !isAdminKey(replacesKey))) {
+    return res.status(403).json({ error: 'Only the organizer can replace this draw.' });
   }
 
   if (input.length < 2) {
     return res.status(400).json({ error: 'At least 2 participants required.' });
   }
-  if (input.length > 50) {
-    return res.status(400).json({ error: 'Maximum 50 participants allowed.' });
+  if (input.length > MAX_PARTICIPANTS) {
+    return res.status(400).json({ error: `Maximum ${MAX_PARTICIPANTS} participants allowed.` });
   }
 
   // Names and groups are stored as plain text exactly as typed (e.g. "Tom & Jerry");
@@ -64,8 +65,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   // Group names that differ only in case are one group, as in matching
   const groupNames = new Set(participants.map(p => normalizeGroup(p.group)).filter(Boolean));
-  if (groupNames.size > 20) {
-    return res.status(400).json({ error: 'Maximum 20 groups allowed.' });
+  if (groupNames.size > MAX_GROUPS) {
+    return res.status(400).json({ error: `Maximum ${MAX_GROUPS} groups allowed.` });
   }
   if (participants.some(p => p.group.length > 200)) {
     return res.status(400).json({ error: 'Group names must be 200 characters or fewer.' });
@@ -119,31 +120,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(422).json({ error: 'Could not find a valid matching. Please adjust your groups.' });
   }
 
-  if (replacesDrawId) {
-    try {
-      const oldRows = await sql`
-        SELECT
-             admin_key
-            ,deleted_at
-            ,emails_sent_at
-        FROM Draws
-        WHERE id = ${replacesDrawId}::uuid
-      ` as OldDrawRow[];
-      if (!oldRows.length || typeof replacesKey !== 'string' || replacesKey !== oldRows[0].admin_key) {
-        return res.status(403).json({ error: 'Only the organizer can replace this draw.' });
-      }
-      if (oldRows[0].deleted_at) {
-        return res.status(410).json({ error: 'Your earlier draw has already been deleted.' });
-      }
-      if (oldRows[0].emails_sent_at) {
-        return res.status(409).json({ error: 'Emails for your earlier draw have already gone out, so it can no longer be redrawn.' });
-      }
-    } catch (err) {
-      await reportError(err);
-      return res.status(500).json({ error: 'Database error. Please try again.' });
-    }
-  }
-
   const drawId = randomUUID();
 
   // Positions are 1-based to match WITH ORDINALITY below. Matches reference
@@ -153,37 +129,52 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   const giverPositions = receivers.map((_, i) => i + 1);
   const receiverPositions = receivers.map(ri => ri + 1);
 
-  // Short tokens can, very rarely, repeat one already in the database. The
-  // unique constraints then refuse the insert and roll everything back, so
-  // draw fresh tokens and try again
-  for (let attempt = 1; ; attempt++) {
-    const adminKey = newToken(ADMIN_KEY_LENGTH);
-    const revealCodes = participants.map(() => newToken(REVEAL_TOKEN_LENGTH));
-    try {
-      await saveDraw(adminKey, revealCodes);
-      return res.status(200).json({ adminKey });
-    } catch (err) {
-      if ((err as { code?: string }).code === '22012') { // division_by_zero from the replace guard
-        return res.status(409).json({ error: 'Your earlier draw changed while you were editing. Open it again and try again.' });
+  try {
+    // Short tokens can, very rarely, repeat one already in the database. The
+    // unique constraints then refuse the insert and roll everything back, so
+    // draw fresh tokens and try again
+    for (let attempt = 1; ; attempt++) {
+      const adminKey = newToken(ADMIN_KEY_LENGTH);
+      const revealCodes = participants.map(() => newToken(REVEAL_TOKEN_LENGTH));
+      try {
+        await saveDraw(adminKey, revealCodes);
+        return res.status(200).json({ adminKey });
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code === '23505' && attempt < 3) continue; // unique_violation
+        if (code !== '22012') throw err; // division_by_zero from the replace guard
       }
-      if ((err as { code?: string }).code === '23505' && attempt < 3) continue; // unique_violation
-      await reportError(err);
-      return res.status(500).json({ error: 'Database error. Please try again.' });
+
+      // The replace guard refused, so nothing was saved: look up why
+      const oldRows = await sql`
+        SELECT
+             deleted_at
+            ,emails_sent_at
+        FROM Draws
+        WHERE admin_key = ${replacesKey}
+      ` as OldDrawRow[];
+      if (!oldRows.length) return res.status(403).json({ error: 'Only the organizer can replace this draw.' });
+      if (oldRows[0].deleted_at) return res.status(410).json({ error: 'Your earlier draw has already been deleted.' });
+      if (oldRows[0].emails_sent_at) return res.status(409).json({ error: 'Emails for your earlier draw have already gone out, so it can no longer be redrawn.' });
+      // A first send that failed for everyone reopened it in between
+      return res.status(409).json({ error: 'Your earlier draw changed while you were editing. Open it again and try again.' });
     }
+  } catch (err) {
+    await reportError(err);
+    return res.status(500).json({ error: 'Database error. Please try again.' });
   }
 
   // One HTTPS round trip; Neon runs the statements in a single transaction
   // and rolls back all of them if any fails
   async function saveDraw(adminKey: string, revealCodes: string[]) {
     await sql.transaction([
-      // If the old draw was deleted or emailed since the check above, no row is
+      // Unless the key matches a draw that is neither deleted nor emailed, no row is
       // updated and 1 / count(*) divides by zero, which rolls everything back
-      ...(replacesDrawId ? [sql`
+      ...(replacesKey ? [sql`
         WITH replaced as (
              UPDATE Draws
              SET deleted_at = now()
-             WHERE id = ${replacesDrawId}::uuid
-                  AND admin_key = ${replacesKey}
+             WHERE admin_key = ${replacesKey}
                   AND deleted_at IS NULL
                   AND emails_sent_at IS NULL
              RETURNING id
@@ -191,7 +182,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         SELECT 1 / count(*) FROM replaced
       `] : []),
       // A redraw keeps the old draw's saved note, budget and date
-      replacesDrawId ? sql`
+      replacesKey ? sql`
         INSERT INTO Draws (id, admin_key, organizer_note, budget_cents, exchange_date)
         SELECT
              ${drawId}::uuid
@@ -200,7 +191,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             ,budget_cents
             ,exchange_date
         FROM Draws
-        WHERE id = ${replacesDrawId}::uuid
+        WHERE admin_key = ${replacesKey}
       ` : sql`
         INSERT INTO Draws (id, admin_key)
         VALUES (${drawId}::uuid, ${adminKey})

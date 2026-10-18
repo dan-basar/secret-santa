@@ -18,3 +18,13 @@ export function siteUrl(path = ''): string {
   if (origin.endsWith(BASE_PATH)) origin = origin.slice(0, -BASE_PATH.length);
   return `${origin}${BASE_PATH}${path}`;
 }
+
+/** Public URL of a participant's private reveal page */
+export function revealUrl(revealToken: string): string {
+  return siteUrl(`/reveal/${encodeURIComponent(revealToken)}`);
+}
+
+/** Public URL of the organizer's page; the admin key rides in the fragment */
+export function organizerUrl(adminKey: string): string {
+  return siteUrl(`/draw#${encodeURIComponent(adminKey)}`);
+}

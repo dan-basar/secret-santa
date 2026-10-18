@@ -4,7 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
 import { formFromParticipants } from '@/lib/groups';
-import { siteUrl } from '@/lib/site';
+import { organizerUrl, revealUrl } from '@/lib/site';
 import { isAdminKey, isCutShort, ADMIN_KEY_LENGTH } from '@/lib/tokens';
 import { formatBudget, hasDetails, noteError, parseBudget, sameDetails, typedDetails } from '@/lib/details';
 import { hasLink } from '@/lib/sanitize';
@@ -49,9 +49,10 @@ export default function DrawPage() {
   const [exchangeDate, setExchangeDate] = useState('');
   const [detailsSaving, setDetailsSaving] = useState(false);
   const [detailsError, setDetailsError] = useState('');
-  // Filled from the saved details once per draw, so a reload after a send never wipes what's typed
+  // The admin key whose draw filled the details, once per draw, so a reload after a send never wipes what's typed
   const detailsLoadedFor = useRef<string | null>(null);
-  // The admin key the loaded draw was fetched with: adminKey changes before its draw arrives
+  // The admin key the loaded draw was fetched with: adminKey changes before its draw
+  // arrives, so requests use this one to act on the draw on screen
   const drawKey = useRef<string | null>(null);
 
   // Whether the organizer has opened the matches table; it also unlocks saving and printing them
@@ -95,8 +96,8 @@ export default function DrawPage() {
       if (res.status === 429) { setState('busy'); return; }
       if (!res.ok) { setState('error'); return; }
       const data: GetDrawResponse = await res.json();
-      if (detailsLoadedFor.current !== data.id) {
-        detailsLoadedFor.current = data.id;
+      if (detailsLoadedFor.current !== adminKey) {
+        detailsLoadedFor.current = adminKey;
         setOrganizerNote(data.organizer_note ?? '');
         setBudget(data.budget_cents !== null ? formatBudget(data.budget_cents).slice(1) : '');
         setExchangeDate(data.exchange_date ?? '');
@@ -129,7 +130,7 @@ export default function DrawPage() {
   // this draw, or the empty card would overwrite it, and stops once the emails are sent
   useEffect(() => {
     const key = drawKey.current;
-    if (!draw || !key || draw.emails_sent_at || detailsLoadedFor.current !== draw.id) return;
+    if (!draw || !key || draw.emails_sent_at || detailsLoadedFor.current !== key) return;
     try {
       const fields = [organizerName, organizerEmail, organizerNote, budget, exchangeDate];
       if (fields.some((f) => f)) {
@@ -147,17 +148,19 @@ export default function DrawPage() {
   // Saves the details as typed, so they show on each personal link without any email
   const handleSaveDetails = async () => {
     if (!draw) return;
+    const key = drawKey.current;
     setDetailsSaving(true);
     setDetailsError('');
     try {
       const res = await fetch(`${router.basePath}/api/save-details`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draw.id, key: adminKey, organizerNote: organizerNote.trim(), budget: budget.trim(), exchangeDate }),
+        body: JSON.stringify({ key, organizerNote: organizerNote.trim(), budget: budget.trim(), exchangeDate }),
       });
       if (res.ok) {
         const saved: SaveDetailsResponse = await res.json();
-        setDraw((d) => (d && d.id === draw.id ? { ...d, ...saved } : d));
+        // Unless another organizer link was opened in this tab meanwhile
+        if (drawKey.current === key) setDraw((d) => d && { ...d, ...saved });
       } else {
         const data: Partial<ApiError> = await res.json().catch(() => ({}));
         setDetailsError(data.error || 'Failed to save the details. Please try again.');
@@ -183,9 +186,9 @@ export default function DrawPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(retryFailed
-          ? { id: draw.id, key: adminKey, turnstileToken, retryFailed: true }
+          ? { key: drawKey.current, turnstileToken, retryFailed: true }
           : {
-            id: draw.id, key: adminKey, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(),
+            key: drawKey.current, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(),
             organizerNote: organizerNote.trim(), budget: budget.trim(), exchangeDate, turnstileToken,
           }),
       });
@@ -224,7 +227,7 @@ export default function DrawPage() {
       const res = await fetch(`${router.basePath}/api/delete-draw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draw.id, key: adminKey }),
+        body: JSON.stringify({ key: drawKey.current }),
       });
       if (res.ok) {
         setDeleted(true);
@@ -238,11 +241,6 @@ export default function DrawPage() {
       setDeleteLoading(false);
     }
   };
-
-  // Built from NEXT_PUBLIC_BASE_URL like the links in the emails, so an organizer
-  // who opened the page on another address (vercel.app) still copies the public one
-  const organizerUrl = siteUrl(`/draw#${adminKey ?? ''}`);
-  const personalUrl = (token: string) => siteUrl(`/reveal/${encodeURIComponent(token)}`);
 
   const handleShowMatches = () => {
     setMatchesShown(true);
@@ -268,8 +266,7 @@ export default function DrawPage() {
     sessionStorage.setItem('editDraftData', JSON.stringify({
       groups,
       participants,
-      replacesDrawId: draw.id,
-      replacesKey: adminKey,
+      replacesKey: drawKey.current,
     }));
     router.push('/');
   };
@@ -393,7 +390,9 @@ export default function DrawPage() {
         <main className={styles.main}>
           {/* The header already names the app; this gives the page its one top-level heading */}
           <h1 className="visually-hidden">Secret Santa draw results</h1>
-          <OrganizerLink url={organizerUrl} />
+          {/* Built from NEXT_PUBLIC_BASE_URL like the links in the emails, so an organizer
+              who opened the page on another address (vercel.app) still copies the public one */}
+          <OrganizerLink url={organizerUrl(adminKey ?? '')} />
           <MatchesTable
             participants={draw.participants}
             matches={draw.matches}
@@ -439,7 +438,7 @@ export default function DrawPage() {
           <PersonalLinks
             participants={draw.participants}
             emailsSent={!!draw.emails_sent_at}
-            linkFor={personalUrl}
+            linkFor={revealUrl}
           />
           <MatchListExport draw={draw} details={listDetails} organizerName={listOrganizer} shown={matchesShown} />
           <DeleteSection onDelete={handleDelete} loading={deleteLoading} error={deleteError} />

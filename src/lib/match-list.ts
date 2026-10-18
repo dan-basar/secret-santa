@@ -1,5 +1,4 @@
-import { budgetLine, formatExchangeDate } from '@/lib/details';
-import type { AdminMatch, AdminParticipant, ExchangeDetails } from '@/types/api';
+import type { AdminMatch, AdminParticipant } from '@/types/api';
 
 // The organizer's list of matches (F6), shared by the matches table, the print
 // sheet, the CSV download and the PDF
@@ -30,15 +29,6 @@ export function listColumns(participants: AdminParticipant[]): { groups: boolean
     groups: participants.some((p) => p.group_name),
     emails: participants.some((p) => p.email),
   };
-}
-
-/** The note, budget and exchange date as label and value lines, in the order the emails use */
-export function detailLines(details: ExchangeDetails): { label: string; value: string }[] {
-  return [
-    ...(details.organizer_note ? [{ label: 'Note', value: details.organizer_note }] : []),
-    ...(details.budget_cents !== null ? [{ label: 'Budget', value: budgetLine(details.budget_cents) }] : []),
-    ...(details.exchange_date ? [{ label: 'Exchange', value: formatExchangeDate(details.exchange_date) }] : []),
-  ];
 }
 
 // Quotes a value that holds a comma, quote or line break. A value starting with

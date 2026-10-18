@@ -29,8 +29,8 @@ jobs:
         run: npx tsx scripts/check-freeze.ts
         env:
           FREEZE_EXCEPTION: ${{ contains(github.event.pull_request.labels.*.name, 'freeze-exception') }}
-      - run: npm run typecheck
       - run: npm test
+      # The build also type-checks every file tsconfig.json includes, tests and scripts too
       - run: npm run build
         env:
           # Placeholder so modules that create the Neon client load; the build makes no queries

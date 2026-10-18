@@ -1,18 +1,13 @@
 // POST /api/delete-draw: soft-deletes a draw (sets deleted_at). Idempotent.
-// Admin key required. Body: { id, key }.
-// Returns 200 { success: true }, also when already deleted; 400 missing id;
-// 403 wrong key; 404 unknown draw.
+// Admin key required. Body: { key }.
+// Returns 200 { success: true }, also when already deleted; 403 missing,
+// malformed or unknown key.
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { reportError } from '@/lib/report';
-import { sql, isUuid } from '@/lib/db';
+import { sql } from '@/lib/db';
+import { isAdminKey } from '@/lib/tokens';
 import type { ApiError, DeleteDrawResponse } from '@/types/api';
-
-interface DrawRow {
-  id: string;
-  deleted_at: Date | null;
-  admin_key: string;
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<DeleteDrawResponse | ApiError>) {
   if (req.method !== 'POST') {
@@ -20,28 +15,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(405).json({ error: 'Method not allowed.' });
   }
 
-  const { id, key } = req.body;
-  if (!id || typeof id !== 'string') return res.status(400).json({ error: 'A draw id is required.' });
-  if (!isUuid(id)) return res.status(404).json({ error: 'Draw not found.' });
-  if (!key || typeof key !== 'string') return res.status(403).json({ error: 'Only the organizer can delete this draw.' });
+  const { key } = req.body;
+  if (typeof key !== 'string' || !isAdminKey(key)) return res.status(403).json({ error: 'Only the organizer can delete this draw.' });
 
   try {
-    const drawRows = await sql`
-      SELECT
-           id
-          ,deleted_at
-          ,admin_key
-      FROM Draws
-      WHERE id = ${id}::uuid
-    ` as DrawRow[];
-
-    if (!drawRows.length) return res.status(404).json({ error: 'Draw not found.' });
-
-    if (key !== drawRows[0].admin_key) return res.status(403).json({ error: 'Only the organizer can delete this draw.' });
-
-    if (!drawRows[0].deleted_at) {
-      await sql`UPDATE Draws SET deleted_at = now() WHERE id = ${id}::uuid`;
-    }
+    // One round trip; a draw that was already deleted keeps its first deletion time
+    const deleted = await sql`
+      UPDATE Draws
+      SET deleted_at = COALESCE(deleted_at, now())
+      WHERE admin_key = ${key}
+      RETURNING id
+    `;
+    if (!deleted.length) return res.status(403).json({ error: 'Only the organizer can delete this draw.' });
 
     return res.status(200).json({ success: true }); // covers newly deleted and already deleted
   } catch (err) {

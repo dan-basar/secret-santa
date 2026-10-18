@@ -32,7 +32,7 @@ const participants: AdminParticipant[] = NAMES.map((name, i) => ({
 const matches = participants.map((_, i) => ({ giver: i, receiver: (i + 1) % participants.length }));
 
 const draw: GetDrawResponse = {
-  id: 'f59fac1f-4e1f-45c8-96f6-9c6c738c3876', created_at: '2026-10-15T12:00:00.000Z', emails_sent_at: null,
+  created_at: '2026-10-15T12:00:00.000Z', emails_sent_at: null,
   organizer_name: '🎅 Dan, "the" organizer', participants, matches,
   organizer_note: null, budget_cents: null, exchange_date: null,
 };

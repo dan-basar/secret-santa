@@ -14,7 +14,6 @@ import { isAdminKey } from '@/lib/tokens';
 import type { ApiError, GetDrawResponse } from '@/types/api';
 
 interface DrawRow {
-  id: string;
   created_at: Date;
   emails_sent_at: Date | null;
   deleted_at: Date | null;
@@ -55,8 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const [drawRows, participantRows, matchRows] = (await sql.transaction([
       sql`
         SELECT
-             id
-            ,created_at
+             created_at
             ,emails_sent_at
             ,deleted_at
             ,organizer_name
@@ -101,7 +99,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const indexByPosition = new Map(participantRows.map((p, i) => [p.position, i]));
 
     return res.status(200).json({
-      id: draw.id,
       created_at: draw.created_at.toISOString(),
       emails_sent_at: draw.emails_sent_at?.toISOString() ?? null,
       organizer_name: draw.organizer_name,

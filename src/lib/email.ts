@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { escapeHtml } from '@/lib/sanitize';
-import { siteUrl } from '@/lib/site';
-import { budgetLine, formatExchangeDate, hasDetails } from '@/lib/details';
+import { organizerUrl, revealUrl, siteUrl } from '@/lib/site';
+import { budgetAndDateLines, hasDetails } from '@/lib/details';
 import type { ExchangeDetails } from '@/types/api';
 
 // Nodemailer waits up to 2 minutes to connect and 10 minutes on an idle socket by
@@ -35,9 +35,25 @@ function ungroupedHeaders(): Record<string, string> {
   return { 'X-Entity-Ref-ID': crypto.randomUUID() };
 }
 
-/** Public URL of a participant's private reveal page */
-export function revealUrl(revealToken: string): string {
-  return siteUrl(`/reveal/${encodeURIComponent(revealToken)}`);
+// The layout both emails share, so they can't drift apart: the logo, the greeting
+// and then the body, in one centered column
+function emailLayout(toName: string, body: string): string {
+  // Hosted rather than attached; the 192px icon keeps it sharp at 96px on high-DPI screens
+  const logoUrl = escapeHtml(siteUrl('/icon-192.png'));
+  return `
+      <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a; -webkit-text-size-adjust: 100%;">
+        <img src="${logoUrl}" width="96" height="96" alt="Secret Santa Picker" style="display: block; margin: 0 auto 24px; border: 0;">
+        <p style="font-size: 18px; margin-bottom: 24px;">Hi ${escapeHtml(toName)},</p>${body}
+      </div>
+    `;
+}
+
+// The button each email leads to; href must already be escaped
+function emailButton(href: string, label: string): string {
+  return `
+        <p style="margin: 32px 0;">
+          <a href="${href}" style="display: inline-block; padding: 12px 24px; background: #c84b2f; color: #ffffff; text-decoration: none; border-radius: 6px; font-family: Arial, sans-serif; font-size: 16px;">${label}</a>
+        </p>`;
 }
 
 export async function sendMatchEmail(
@@ -52,25 +68,20 @@ export async function sendMatchEmail(
   const link = revealUrl(revealToken);
 
   // Values are stored as plain text, so escape each one before it goes into HTML
-  const htmlToName = escapeHtml(toName);
   const htmlMatchName = escapeHtml(matchName);
   const htmlOrganizerName = escapeHtml(organizerName);
   const htmlOrganizerEmail = escapeHtml(organizerEmail);
   const htmlLink = escapeHtml(link);
-  // Hosted rather than attached; the 192px icon keeps it sharp at 96px on high-DPI screens
-  const logoUrl = escapeHtml(siteUrl('/icon-192.png'));
 
   // The organizer's note, budget and date, each only when set, come before the match
   const withDetails = hasDetails(details);
-  const detailLines: { label: string; value: string }[] = [];
-  if (details.budget_cents !== null) detailLines.push({ label: 'Budget', value: budgetLine(details.budget_cents) });
-  if (details.exchange_date) detailLines.push({ label: 'Exchange', value: formatExchangeDate(details.exchange_date) });
+  const lines = budgetAndDateLines(details.budget_cents, details.exchange_date);
 
   const textDetails = withDetails
     ? [
       'First, some details:',
       ...(details.organizer_note ? ['A note from your organizer:', `"${details.organizer_note}"`] : []),
-      ...detailLines.map(line => `${line.label}: ${line.value}`),
+      ...lines.map(line => `${line.label}: ${line.value}`),
       '',
       'And now the big reveal:',
       '',
@@ -82,7 +93,7 @@ export async function sendMatchEmail(
         <div style="border-left: 3px solid #c84b2f; background: #faf8f5; padding: 12px 16px; margin: 8px 0 0; font-size: 15px; line-height: 1.5; overflow-wrap: break-word; word-wrap: break-word; word-break: break-word;">${
           details.organizer_note ? `
           <p style="margin: 0 0 8px; overflow-wrap: anywhere; word-break: break-word;"><strong>A note from your organizer:</strong><br>&ldquo;${escapeHtml(details.organizer_note)}&rdquo;</p>` : ''}${
-          detailLines.map(line => `
+          lines.map(line => `
           <p style="margin: 0 0 4px;"><strong>${line.label}:</strong> ${escapeHtml(line.value)}</p>`).join('')}
         </div>
         <p style="font-size: 16px; line-height: 1.6; margin-top: 32px;">And now the big reveal:</p>` : '';
@@ -97,27 +108,14 @@ export async function sendMatchEmail(
     subject: "🎁 Your Secret Santa Match",
     headers: ungroupedHeaders(),
     text: `Hi ${toName},\n\nThe Secret Santa draw is done, and your match is below.\n\n${textDetails}You have drawn ${matchName}'s name for the gift exchange!\n\nView your match any time: ${link}\n\nThis secret message was sent by ${organizerName}. You can contact the organizer at ${organizerEmail} if you need to. Happy Gifting!!`,
-    html: `
-      <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a; -webkit-text-size-adjust: 100%;">
-        <img src="${logoUrl}" width="96" height="96" alt="Secret Santa Picker" style="display: block; margin: 0 auto 24px; border: 0;">
-        <p style="font-size: 18px; margin-bottom: 24px;">Hi ${htmlToName},</p>
+    html: emailLayout(toName, `
         <p style="font-size: 16px; line-height: 1.6;">The Secret Santa draw is done, and your match is below.</p>${htmlDetails}
         <p style="font-size: 20px; line-height: 1.5; margin-top: ${withDetails ? 16 : 32}px;">
           You have drawn <strong>${htmlMatchName}</strong>'s name for the gift exchange!
-        </p>
-        <p style="margin: 32px 0;">
-          <a href="${htmlLink}" style="display: inline-block; padding: 12px 24px; background: #c84b2f; color: #ffffff; text-decoration: none; border-radius: 6px; font-family: Arial, sans-serif; font-size: 16px;">View your match</a>
-        </p>
+        </p>${emailButton(htmlLink, 'View your match')}
         <p style="font-size: 14px; color: #888; margin-top: 32px;">This secret message was sent by ${htmlOrganizerName}. You can contact the organizer at ${htmlOrganizerEmail} if you need to. Happy Gifting!!</p>
-        <p style="font-size: 13px; color: #888; margin-top: 16px; word-break: break-all;">Your personal link: ${htmlLink}</p>
-      </div>
-    `,
+        <p style="font-size: 13px; color: #888; margin-top: 16px; word-break: break-all;">Your personal link: ${htmlLink}</p>`),
   });
-}
-
-/** Public URL of the organizer's page; the admin key rides in the fragment */
-export function organizerUrl(adminKey: string): string {
-  return siteUrl(`/draw#${encodeURIComponent(adminKey)}`);
 }
 
 // The organizer's own copy of their link, so losing the tab doesn't lose the
@@ -128,10 +126,7 @@ export async function sendOrganizerLinkEmail(
   adminKey: string
 ): Promise<void> {
   const link = organizerUrl(adminKey);
-
-  const htmlToName = escapeHtml(toName);
   const htmlLink = escapeHtml(link);
-  const logoUrl = escapeHtml(siteUrl('/icon-192.png'));
 
   await transporter.sendMail({
     from: `Secret Santa <${process.env.GMAIL_USER}>`,
@@ -139,18 +134,10 @@ export async function sendOrganizerLinkEmail(
     subject: "🎁 Your Secret Santa organizer link",
     headers: ungroupedHeaders(),
     text: `Hi ${toName},\n\nHere is your organizer link for your Secret Santa draw. Keep it private: it shows everyone's matches! It's the only way back to your draw's page.\n\nYour organizer link: ${link}\n\nHappy Gifting!!`,
-    html: `
-      <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #1a1a1a;">
-        <img src="${logoUrl}" width="96" height="96" alt="Secret Santa Picker" style="display: block; margin: 0 auto 24px; border: 0;">
-        <p style="font-size: 18px; margin-bottom: 24px;">Hi ${htmlToName},</p>
+    html: emailLayout(toName, `
         <p style="font-size: 16px; line-height: 1.6;">Here is your organizer link for your Secret Santa draw.</p>
-        <p style="font-size: 16px; line-height: 1.6;">Keep it private: it shows everyone&rsquo;s matches! It&rsquo;s the only way back to your draw&rsquo;s page.</p>
-        <p style="margin: 32px 0;">
-          <a href="${htmlLink}" style="display: inline-block; padding: 12px 24px; background: #c84b2f; color: #ffffff; text-decoration: none; border-radius: 6px; font-family: Arial, sans-serif; font-size: 16px;">Open your draw</a>
-        </p>
-        <p style="font-size: 14px; color: #888; margin-top: 32px; word-break: break-all;">${htmlLink}</p>
-      </div>
-    `,
+        <p style="font-size: 16px; line-height: 1.6;">Keep it private: it shows everyone&rsquo;s matches! It&rsquo;s the only way back to your draw&rsquo;s page.</p>${emailButton(htmlLink, 'Open your draw')}
+        <p style="font-size: 14px; color: #888; margin-top: 32px; word-break: break-all;">${htmlLink}</p>`),
   });
 }
 

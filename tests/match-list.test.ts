@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detailLines, exportFileName, listSubtitle, matchesCsv, sortedPairs } from '@/lib/match-list';
+import { exportFileName, listSubtitle, matchesCsv, sortedPairs } from '@/lib/match-list';
 import type { AdminParticipant } from '@/types/api';
 
 function person(name: string, group: string | null = null, email: string | null = null): AdminParticipant {
@@ -63,17 +63,6 @@ describe('sortedPairs', () => {
   it('lists grouped people first, by group, then by name, like the matches table', () => {
     const people = [person('Zed'), person('Bo', 'B'), person('Al'), person('Cy', 'A')];
     expect(sortedPairs(people, ring(people)).map((m) => m.giver.name)).toEqual(['Cy', 'Bo', 'Al', 'Zed']);
-  });
-});
-
-describe('detailLines', () => {
-  it('lists only the details that were filled in', () => {
-    expect(detailLines({ organizer_note: null, budget_cents: null, exchange_date: null })).toEqual([]);
-    expect(detailLines({ organizer_note: 'Wrap it', budget_cents: 2550, exchange_date: '2026-12-19' })).toEqual([
-      { label: 'Note', value: 'Wrap it' },
-      { label: 'Budget', value: '$25.50' },
-      { label: 'Exchange', value: 'Saturday, December 19' },
-    ]);
   });
 });
 

@@ -3,7 +3,8 @@ import type { ExchangeDetails } from '@/types/api';
 
 // The organizer's optional note, budget and exchange date (F1). They are typed on
 // the organizer page, go into each match email and show on each personal link page.
-// Shared by the organizer page, send-emails, the email and the reveal page.
+// Shared by the organizer page, send-emails, save-details, the emails, the printed
+// and PDF match lists and the reveal page.
 
 // Column sizes in sql/setup.sql
 export const NOTE_MAX_LENGTH = 150;
@@ -33,6 +34,25 @@ export function formatBudget(cents: number): string {
 /** The budget as the emails and personal link pages show it. $0 is a small Easter egg */
 export function budgetLine(cents: number): string {
   return cents === 0 ? 'No limit set' : formatBudget(cents);
+}
+
+/**
+ * The budget and exchange date as label and value lines, each only when set. The
+ * emails, their preview and the personal link page show the note on its own above them
+ */
+export function budgetAndDateLines(budgetCents: number | null, exchangeDate: string | null): { label: string; value: string }[] {
+  return [
+    ...(budgetCents !== null ? [{ label: 'Budget', value: budgetLine(budgetCents) }] : []),
+    ...(exchangeDate ? [{ label: 'Exchange', value: formatExchangeDate(exchangeDate) }] : []),
+  ];
+}
+
+/** All three details as label and value lines, in the order the emails use: for the printed and PDF lists and the sent details card */
+export function detailLines(details: ExchangeDetails): { label: string; value: string }[] {
+  return [
+    ...(details.organizer_note ? [{ label: 'Note', value: details.organizer_note }] : []),
+    ...budgetAndDateLines(details.budget_cents, details.exchange_date),
+  ];
 }
 
 /** True for a real calendar day written YYYY-MM-DD, as a date input gives it */

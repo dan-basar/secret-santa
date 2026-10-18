@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  budgetLine, formatBudget, formatExchangeDate, hasDetails, isExchangeDate, noteError, parseBudget, shortExchangeDate,
+  budgetAndDateLines, budgetLine, detailLines, formatBudget, formatExchangeDate, hasDetails, isExchangeDate, noteError, parseBudget, shortExchangeDate,
 } from '@/lib/details';
 
 describe('parseBudget', () => {
@@ -69,5 +69,18 @@ describe('hasDetails', () => {
     expect(hasDetails({ organizer_note: null, budget_cents: null, exchange_date: null })).toBe(false);
     expect(hasDetails({ organizer_note: null, budget_cents: 0, exchange_date: null })).toBe(true);
     expect(hasDetails({ organizer_note: 'Hi', budget_cents: null, exchange_date: null })).toBe(true);
+  });
+});
+
+describe('detail lines', () => {
+  it('lists only the details that were filled in, a $0 budget included', () => {
+    expect(budgetAndDateLines(null, null)).toEqual([]);
+    expect(budgetAndDateLines(0, null)).toEqual([{ label: 'Budget', value: 'No limit set' }]);
+    expect(detailLines({ organizer_note: null, budget_cents: null, exchange_date: null })).toEqual([]);
+    expect(detailLines({ organizer_note: 'Wrap it', budget_cents: 2550, exchange_date: '2026-12-19' })).toEqual([
+      { label: 'Note', value: 'Wrap it' },
+      { label: 'Budget', value: '$25.50' },
+      { label: 'Exchange', value: 'Saturday, December 19' },
+    ]);
   });
 });
