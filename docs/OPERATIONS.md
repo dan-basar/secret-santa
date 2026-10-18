@@ -82,7 +82,7 @@ Alerts go to the owner's email; nothing pushes to a phone. What can alert, and w
 
 | Alert | From | Means | Go to |
 |---|---|---|---|
-| Uptime monitor down | Sentry | The site or its functions aren't answering `/api/health?shallow=1` | [Site is down](#site-is-down) |
+| Uptime monitor down | Sentry | The site or its functions aren't answering `/api/health` | [Site is down](#site-is-down) |
 | New error issue | Sentry | A route hit an unexpected error (the issue shows the stack trace, never a link or name) | [Errors in Sentry](#errors-in-sentry) |
 | Cron monitor missed or failed | Sentry | The daily job didn't run, or ran and failed | [The daily job went quiet](#the-daily-job-went-quiet) |
 | "Secret Santa: needs a look" | Daily job, by email | People on sent draws were never emailed, or the 24-hour email count is near the cap | [When Gmail stops sending](#when-gmail-stops-sending) |
@@ -94,7 +94,7 @@ Alert rules live in Sentry (Alerts → Create Alert → email the owner); the up
 
 ### Site is down
 
-1. Open the site and `/secret-santa/api/health?shallow=1`. If the second answers `{ "ok": true }` but the pages don't, check the latest deployment in Vercel.
+1. Open the site and `/secret-santa/api/health`. If the second answers `{ "ok": true }` but the pages don't, check the latest deployment in Vercel.
 2. Check [Vercel's status page](https://www.vercel-status.com/) and the project: Hobby projects are **paused** when they pass a usage limit (Vercel emails first). Unpause or wait for the period to reset.
 3. If it started right after a deploy, [roll back](#rolling-back-a-bad-deploy).
 
@@ -102,7 +102,7 @@ Meanwhile, nobody loses a match: organizers keep their organizer link, and anyon
 
 ### Errors in Sentry
 
-A new issue is a route's `catch`. The title and stack say where. If it's `Database error`/Neon-related, run the [health check](#health-check) and look at Neon's status page and the project in the Neon console (a cold start takes a moment, but anything longer is real). Organizers see "Database error. Please try again." and can simply retry.
+A new issue is a route's `catch`. The title and stack say where. If it's `Database error`/Neon-related, look at Neon's status page and the project in the Neon console (a cold start takes a moment, but anything longer is real; the project is on Neon's Launch plan, billed by use, so it isn't cut off at a monthly allowance), then the Vercel function logs. Organizers see "Database error. Please try again." and can simply retry.
 
 ### The daily job went quiet
 
@@ -124,12 +124,9 @@ A rollback does not touch the database. If the bad deploy came with a migration,
 
 ```
 GET <site>/secret-santa/api/health
-GET <site>/secret-santa/api/health?shallow=1
 ```
 
-The `?shallow=1` form answers `{ "ok": true }` without touching the database; the uptime monitor uses it so Neon's compute isn't kept awake by monitoring. Use the full form to check the database, by hand, not on a schedule.
-
-The full form: `200 { "ok": true }` means the function runs and Neon answered `SELECT 1`; `503 { "ok": false, "error": "Database unreachable." }` means the database is unreachable. It isn't rate limited. If it fails, check Neon's status page and the project in the Neon console (it's on Neon's Launch plan, billed by use, so it isn't cut off at a monthly allowance), then the Vercel function logs.
+It answers `200 { "ok": true }` to any method whenever the site's functions run, and isn't rate limited. It never touches the database, so the uptime monitor can poll it without keeping Neon's compute awake (a `?shallow=1` left on the monitor's address from before is ignored). To check the database itself, run a query in the Neon console's SQL Editor, or [run the daily job by hand](#the-daily-job-went-quiet).
 
 ## Holiday change freeze
 

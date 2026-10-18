@@ -16,7 +16,8 @@ export interface FormParticipant {
   groupId: string; // '' for no group
 }
 
-// Limits the home form enforces; a saved draft outside them is not restored
+// A draw's limits, enforced by the home form and create-draw; a saved draft
+// outside them is not restored
 export const MAX_PARTICIPANTS = 50;
 export const MAX_GROUPS = 20;
 
@@ -59,8 +60,7 @@ export function formFromParticipants(
 export interface FormDraft {
   groups: FormGroup[];
   participants: FormParticipant[];
-  replacesDrawId?: string;
-  replacesKey?: string;
+  replacesKey?: string; // Edit & Redraw: the admin key of the draw being replaced
 }
 
 const isString = (v: unknown): v is string => typeof v === 'string';
@@ -81,10 +81,7 @@ export function parseFormDraft(raw: string): FormDraft | null {
       groups: d.groups.map((g: FormGroup) => ({ id: g.id, name: g.name })),
       participants: d.participants.map((p: FormParticipant) => ({ id: p.id, name: p.name, email: p.email, groupId: p.groupId })),
     };
-    if (isString(d.replacesDrawId) && isString(d.replacesKey)) {
-      draft.replacesDrawId = d.replacesDrawId;
-      draft.replacesKey = d.replacesKey;
-    }
+    if (isString(d.replacesKey)) draft.replacesKey = d.replacesKey;
     return draft;
   } catch {
     return null;

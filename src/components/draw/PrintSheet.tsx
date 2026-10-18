@@ -1,4 +1,5 @@
-import { detailLines, listColumns, listSubtitle, sortedPairs } from '@/lib/match-list';
+import { listColumns, listSubtitle, sortedPairs } from '@/lib/match-list';
+import { detailLines } from '@/lib/details';
 import type { ExchangeDetails, GetDrawResponse } from '@/types/api';
 import styles from '@/styles/Draw.module.css';
 

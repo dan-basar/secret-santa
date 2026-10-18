@@ -229,7 +229,6 @@ describe('home form', () => {
       sessionStorage.setItem('editDraftData', JSON.stringify({
         groups: [{ id: 'g1', name: '' }],
         participants: [{ id: 'c', name: 'Cy', email: '', groupId: '' }, { id: 'd', name: 'Di', email: '', groupId: '' }],
-        replacesDrawId: 'draw-1',
         replacesKey: 'key-1',
       }));
       const first = render(<Home />);
@@ -252,7 +251,7 @@ describe('home form', () => {
       it('comes along to the replacement draw after Edit & Redraw', async () => {
         sessionStorage.setItem('drawEmailDraft', card('old-key'));
         sessionStorage.setItem('editDraftData', JSON.stringify({
-          groups: [{ id: 'g1', name: '' }], participants, replacesDrawId: 'draw-1', replacesKey: 'old-key',
+          groups: [{ id: 'g1', name: '' }], participants, replacesKey: 'old-key',
         }));
         render(<Home />);
         fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));

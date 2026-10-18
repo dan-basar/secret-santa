@@ -4,7 +4,7 @@ import { buildMatchesPdf, pdfText } from '@/lib/match-pdf';
 import type { GetDrawResponse } from '@/types/api';
 
 const draw: GetDrawResponse = {
-  id: 'f59fac1f-4e1f-45c8-96f6-9c6c738c3876', created_at: '2026-10-15T12:00:00.000Z', emails_sent_at: null,
+  created_at: '2026-10-15T12:00:00.000Z', emails_sent_at: null,
   participants: [
     { name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_token: 'Aa111111', email_sent_at: null },
     { name: 'Smith, José', email: 'jose@example.com', group_name: null, reveal_token: 'Bb222222', email_sent_at: null },

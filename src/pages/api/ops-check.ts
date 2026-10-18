@@ -13,8 +13,10 @@ import * as Sentry from '@sentry/nextjs';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql } from '@/lib/db';
 import { sendOpsEmail } from '@/lib/email';
-import { DAILY_EMAIL_LIMIT } from '@/lib/limits';
+import { CLAIM_EXPIRY_MINUTES, DAILY_EMAIL_LIMIT } from '@/lib/limits';
 import { reportError } from '@/lib/report';
+import { BASE_PATH } from '@/lib/site';
+import vercelConfig from '../../../vercel.json';
 import type { ApiError, OpsCheckResponse } from '@/types/api';
 
 // Warn when the last 24 hours of emails reach this share of the cap
@@ -27,6 +29,9 @@ const UNSENT_GRACE_HOURS = 1;
 // Hobby crons run at some point in the scheduled hour, so a check-in is on time
 // for up to 65 minutes after the scheduled minute
 const CHECK_IN_MARGIN_MINUTES = 65;
+
+// The daily run's schedule, read from its cron entry so the Sentry monitor can't drift from it
+const DAILY_SCHEDULE = vercelConfig.crons.find(cron => cron.path === `${BASE_PATH}/api/ops-check`)!.schedule;
 
 interface DayRow {
   draws_created: number;
@@ -62,7 +67,7 @@ async function withCheckIn<T>(run: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
   const checkIn = (status: 'ok' | 'error') => Sentry.captureCheckIn(
     { monitorSlug: 'ops-check', status, duration: (Date.now() - startedAt) / 1000 },
-    { schedule: { type: 'crontab', value: '0 0 * * *' }, checkinMargin: CHECK_IN_MARGIN_MINUTES, timezone: 'UTC' }
+    { schedule: { type: 'crontab', value: DAILY_SCHEDULE }, checkinMargin: CHECK_IN_MARGIN_MINUTES, timezone: 'UTC' }
   );
   try {
     const result = await run();
@@ -94,26 +99,8 @@ async function dailyCheck(): Promise<{ statDate: string; warnings: string[] }> {
   const [[now], [day]] = (await sql.transaction([
     sql`
       SELECT
-           (
-                SELECT COUNT(*)::int
-                FROM Participants as participants
-                     INNER JOIN Draws as draws ON participants.draw_id = draws.id
-                WHERE draws.emails_sent_at < now() - make_interval(hours => ${UNSENT_GRACE_HOURS}::int)
-                     AND draws.deleted_at IS NULL
-                     AND participants.email IS NOT NULL
-                     AND participants.email_sent_at IS NULL
-                     AND (participants.email_claimed_at IS NULL OR participants.email_claimed_at < now() - interval '5 minutes')
-           ) as unsent_emails
-          ,(
-                SELECT COUNT(DISTINCT draws.id)::int
-                FROM Participants as participants
-                     INNER JOIN Draws as draws ON participants.draw_id = draws.id
-                WHERE draws.emails_sent_at < now() - make_interval(hours => ${UNSENT_GRACE_HOURS}::int)
-                     AND draws.deleted_at IS NULL
-                     AND participants.email IS NOT NULL
-                     AND participants.email_sent_at IS NULL
-                     AND (participants.email_claimed_at IS NULL OR participants.email_claimed_at < now() - interval '5 minutes')
-           ) as unsent_draws
+           unsent.emails as unsent_emails
+          ,unsent.draws as unsent_draws
           ,(
                 SELECT COALESCE(SUM(emailSendLog.emails_sent), 0)::int
                 FROM EmailSendLog as emailSendLog
@@ -128,6 +115,18 @@ async function dailyCheck(): Promise<{ statDate: string; warnings: string[] }> {
                      GROUP BY rateLimits.bucket
                 ) as busiest
            ) as busiest_connection_requests
+      FROM (
+           SELECT
+                COUNT(*)::int as emails
+               ,COUNT(DISTINCT draws.id)::int as draws
+           FROM Participants as participants
+                INNER JOIN Draws as draws ON participants.draw_id = draws.id
+           WHERE draws.emails_sent_at < now() - make_interval(hours => ${UNSENT_GRACE_HOURS}::int)
+                AND draws.deleted_at IS NULL
+                AND participants.email IS NOT NULL
+                AND participants.email_sent_at IS NULL
+                AND (participants.email_claimed_at IS NULL OR participants.email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}::int))
+      ) as unsent
     `,
     sql`
       SELECT

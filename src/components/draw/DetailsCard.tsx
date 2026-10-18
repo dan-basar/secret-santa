@@ -1,5 +1,6 @@
+import { Fragment } from 'react';
 import type { ExchangeDetails } from '@/types/api';
-import { budgetLine, formatExchangeDate, hasDetails } from '@/lib/details';
+import { detailLines, hasDetails } from '@/lib/details';
 import ExchangeDetailsFields from '@/components/draw/ExchangeDetailsFields';
 import styles from '@/styles/Draw.module.css';
 
@@ -36,9 +37,9 @@ export default function DetailsCard(props: Props) {
       <section className={`card ${styles.section}`}>
         <h2 className={styles.sectionTitle}>Note, budget and date</h2>
         <dl className={styles.detailsSent} aria-label="Details sent">
-          {saved.organizer_note && <><dt>Note</dt><dd>{saved.organizer_note}</dd></>}
-          {saved.budget_cents !== null && <><dt>Budget</dt><dd>{budgetLine(saved.budget_cents)}</dd></>}
-          {saved.exchange_date && <><dt>Exchange</dt><dd>{formatExchangeDate(saved.exchange_date)}</dd></>}
+          {detailLines(saved).map((line) => (
+            <Fragment key={line.label}><dt>{line.label}</dt><dd>{line.value}</dd></Fragment>
+          ))}
         </dl>
       </section>
     );

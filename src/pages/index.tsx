@@ -40,8 +40,8 @@ export default function Home() {
   const [statusMsg, setStatusMsg] = useState('');
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Set by Edit & Redraw: the earlier draw stays live until this form submits
-  const [replaces, setReplaces] = useState<{ drawId: string; key: string } | null>(null);
+  // Set by Edit & Redraw: the admin key of the earlier draw, which stays live until this form submits
+  const [replacesKey, setReplacesKey] = useState<string | null>(null);
 
   // Saving waits until the saved form has been read back, or the empty form would overwrite it
   const [restored, setRestored] = useState(false);
@@ -57,9 +57,7 @@ export default function Home() {
       if (draft) {
         setGroups(draft.groups);
         setParticipants(draft.participants);
-        if (draft.replacesDrawId && draft.replacesKey) {
-          setReplaces({ drawId: draft.replacesDrawId, key: draft.replacesKey });
-        }
+        if (draft.replacesKey) setReplacesKey(draft.replacesKey);
       }
     } catch {
       // Storage can be blocked (private windows); the form just starts empty
@@ -72,20 +70,15 @@ export default function Home() {
     if (!restored) return;
     try {
       const touched = groups.some((g) => g.name) || participants.some((p) => p.name || p.email || p.groupId);
-      if (touched || replaces) {
-        sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
-          groups,
-          participants,
-          replacesDrawId: replaces?.drawId,
-          replacesKey: replaces?.key,
-        }));
+      if (touched || replacesKey) {
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ groups, participants, replacesKey }));
       } else {
         sessionStorage.removeItem(DRAFT_KEY);
       }
     } catch {
       // Storage can be blocked or full; typing still works, it just isn't kept
     }
-  }, [restored, groups, participants, replaces]);
+  }, [restored, groups, participants, replacesKey]);
 
   // Back to the blank form. An Edit & Redraw banner stays: it has its own Cancel
   const clearForm = () => {
@@ -186,11 +179,7 @@ export default function Home() {
       const res = await fetch(`${router.basePath}/api/create-draw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          participants: payload,
-          replacesDrawId: replaces?.drawId,
-          replacesKey: replaces?.key,
-        }),
+        body: JSON.stringify({ participants: payload, replacesKey }),
       });
 
       if (!res.ok) {
@@ -198,7 +187,7 @@ export default function Home() {
         const data: Partial<ApiError> = await res.json().catch(() => ({}));
         // The earlier draw is gone, so there is nothing left to replace;
         // submitting again creates a plain new draw
-        if (res.status === 410) setReplaces(null);
+        if (res.status === 410) setReplacesKey(null);
         setError(data.error || 'Something went wrong. Please try again.');
         return;
       }
@@ -207,7 +196,7 @@ export default function Home() {
       // The draw exists now; coming back to this page starts a fresh form
       try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* storage blocked */ }
       // A redraw is the same exchange, so the email card typed for the old draw comes along
-      if (replaces) moveEmailDraft(replaces.key, data.adminKey);
+      if (replacesKey) moveEmailDraft(replacesKey, data.adminKey);
       // In the fragment, never the query string, so the key stays out of server logs
       router.push(`/draw#${data.adminKey}`);
     } catch {
@@ -217,7 +206,7 @@ export default function Home() {
       setStatusMsg('');
       setLoading(false);
     }
-  }, [participants, groups, replaces, router]);
+  }, [participants, groups, replacesKey, router]);
 
   const filledCount = participants.filter((p) => p.name.trim()).length;
   // A short form is quick to retype, so the link waits until the list has grown past the two starting rows
@@ -261,10 +250,10 @@ export default function Home() {
         </header>
 
         <main className={styles.main}>
-          {replaces && (
+          {replacesKey && (
             <p className={`status-msg ${styles.replaceBanner}`}>
               <span>This will replace your earlier draw. Its links keep working until you draw new matches.</span>
-              <Link href={`/draw#${replaces.key}`}>
+              <Link href={`/draw#${replacesKey}`}>
                 Cancel
               </Link>
             </p>

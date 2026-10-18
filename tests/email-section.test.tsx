@@ -13,7 +13,6 @@ import { sameDetails, typedDetails } from '@/lib/details';
 
 function drawWith(emails: Array<string | null>): GetDrawResponse {
   return {
-    id: 'draw-1',
     created_at: '2026-12-01T00:00:00.000Z',
     emails_sent_at: null,
     participants: emails.map((email, i) => ({ name: `P${i}`, email, group_name: null, reveal_token: `token-${i}`, email_sent_at: null })),

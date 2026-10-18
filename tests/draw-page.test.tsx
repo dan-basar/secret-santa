@@ -10,7 +10,7 @@ import DrawPage from '@/pages/draw';
 const ADMIN_KEY = 'Ab3dEf6hIj9kLm';
 
 const adminView = {
-  id: 'f59fac1f-4e1f-45c8-96f6-9c6c738c3876', created_at: '2026-10-01T00:00:00.000Z', emails_sent_at: null,
+  created_at: '2026-10-01T00:00:00.000Z', emails_sent_at: null,
   organizer_name: null, organizer_note: null, budget_cents: null, exchange_date: null,
   participants: [
     { name: 'Alex', email: null, group_name: null, reveal_token: 'Aa111111', email_sent_at: null },
@@ -167,7 +167,7 @@ describe('draw page', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save details' })); });
     const [url, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
     expect(url).toBe('/secret-santa/api/save-details');
-    expect(JSON.parse(init.body as string)).toEqual({ id: adminView.id, key: ADMIN_KEY, organizerNote: 'Wrap it', budget: '', exchangeDate: '' });
+    expect(JSON.parse(init.body as string)).toEqual({ key: ADMIN_KEY, organizerNote: 'Wrap it', budget: '', exchangeDate: '' });
     expect(screen.getByText('✓ Saved')).toBeTruthy();
   });
 

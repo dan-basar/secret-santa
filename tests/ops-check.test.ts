@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { callRoute } from './helpers/fake-res';
 
 vi.mock('@/lib/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/db')>();
@@ -10,16 +10,8 @@ vi.mock('@/lib/email', () => ({ sendOpsEmail: vi.fn(async () => {}) }));
 import handler from '@/pages/api/ops-check';
 import { sql } from '@/lib/db';
 
-async function call(method: string, authorization?: string) {
-  const res = {
-    statusCode: 0,
-    body: undefined as unknown,
-    setHeader() { return this; },
-    status(code: number) { this.statusCode = code; return this; },
-    json(body: unknown) { this.body = body; return this; },
-  };
-  await handler({ method, headers: { authorization }, query: {} } as unknown as NextApiRequest, res as unknown as NextApiResponse);
-  return res;
+function call(method: string, authorization?: string) {
+  return callRoute(handler, { method, headers: { authorization } });
 }
 
 beforeEach(() => {

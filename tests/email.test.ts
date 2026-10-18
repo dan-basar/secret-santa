@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { organizerUrl, revealUrl } from '@/lib/site';
 
 const sendMail = vi.fn();
 const createTransport = vi.fn((_options: Record<string, unknown>) => ({ sendMail }));
@@ -6,7 +7,7 @@ vi.mock('nodemailer', () => ({
   default: { createTransport },
 }));
 
-const { sendMatchEmail, sendOrganizerLinkEmail, revealUrl, organizerUrl } = await import('@/lib/email');
+const { sendMatchEmail, sendOrganizerLinkEmail } = await import('@/lib/email');
 // The transporter is created once at import; copy the calls now, because Vitest clears mocks before each test
 const transportCalls = createTransport.mock.calls.slice();
 

@@ -1,5 +1,6 @@
 import type { jsPDF as JsPdf } from 'jspdf';
-import { detailLines, listColumns, listSubtitle, sortedPairs } from '@/lib/match-list';
+import { listColumns, listSubtitle, sortedPairs } from '@/lib/match-list';
+import { detailLines } from '@/lib/details';
 import type { GetDrawResponse, ExchangeDetails } from '@/types/api';
 
 // The organizer's list of matches as a PDF (F6), made in the browser so nobody's

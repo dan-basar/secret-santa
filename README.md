@@ -11,7 +11,7 @@ A full-stack web application for running Secret Santa gift exchanges. Create a d
 Built with **Next.js**, **TypeScript**, and **Neon Postgres**, deployed on **Vercel**.
 
 More detail:
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — which link unlocks what, the draw lifecycle, the request path, tables and the data we keep
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how it works: which link unlocks what, the draw lifecycle, sending emails, the note, budget and date, matching, the request path, rate limits, tables and the data we keep
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — runbook: migrations, environment variables, key rotation, alerts, email trouble, rollback, health check
 
 ---
@@ -56,7 +56,7 @@ More detail:
 
 ### Environment Variables
 
-Copy [`.env.example`](.env.example) to `.env.local` and fill in the values (or run `vercel env pull .env.local` to fetch them from the linked Vercel project). Every variable is required except `RATE_LIMIT_IP_WHITELIST`; `NEXT_PUBLIC_BASE_URL` is the site origin without the `/secret-santa` basePath.
+Copy [`.env.example`](.env.example) to `.env.local` and fill in the values (or run `vercel env pull .env.local` to fetch them from the linked Vercel project). The file says what each variable is for and which ones are optional.
 
 ```bash
 cp .env.example .env.local
@@ -108,39 +108,7 @@ npm test           # Vitest tests in tests/
 npm run build && npm start  # production
 ```
 
-CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every pull request, and blocks pull requests during the yearly holiday change freeze (see [docs/OPERATIONS.md](docs/OPERATIONS.md#holiday-change-freeze)).
-
----
-
-## How It Works
-
-### Matching Algorithm
-
-No participant can draw themselves or anyone in their group. Group names are compared trimmed and case-insensitively, so "Family" and "family " are one group. Before writing to the DB, the algorithm checks feasibility: if any single group holds more than 50% of participants, a valid assignment is impossible and the draw is rejected.
-
-Matching runs in two phases:
-1. **Random shuffle** — up to 1,000 attempts pairing givers with a uniformly shuffled receiver list
-2. **Feasibility-checked fallback** — assigns receivers one giver at a time, only taking a receiver that leaves the rest still matchable, so it never dead-ends
-
-### Email Flow
-
-The organizer provides their name and email, completes a Turnstile CAPTCHA, and sends. Each participant with an email address gets their match and their personal reveal link, and the organizer gets an email with their organizer link (if that one email fails, the send still stands and the page tells them to copy the link instead; a resend doesn't email it again). When no participant has an email address, the same form emails just the organizer their link: the draw isn't marked as sent, so Edit & Redraw stays open and it can be sent again.
-
-A card above the email card holds a folded "Add a note, budget, or date" row for an optional note, budget and exchange date. Its **Save details** button saves them to the draw without sending anything, so they show on each personal link page (below the reveal) straight away; the card says "✓ Saved" or "Not saved yet", and the folded summary ends with "not saved" while what's typed differs from what's saved. The first send also saves whatever is typed, and puts them in a box in each email (above the match); after it they can't be changed (the card then shows them read-only, and `save-details` answers `409`). The email card shows a live preview of a match email, with sample names (so it gives no real match away) and the details as typed, between the organizer fields and the CAPTCHA. A budget of $0 shows as "No limit set". With no participant emails the draw stays unsent, so they stay editable and are also saved each time the organizer link is emailed. Edit & Redraw carries the saved details over to the new draw. Once any detail is saved, the saved copy fills the card on load (over the tab's typed draft) and goes into the CSV, PDF and print view; while none is saved, those use what's typed.
-
-Sending is tracked per person. Each person is claimed in the database (`Participants.email_claimed_at`) before their email goes out, so two clicks can never email anyone twice. The daily count is reserved for everyone before the first email goes out (see below). As soon as each person's email settles, `email_sent_at` is set if it went out; if it failed, the claim is released and their share of the reservation is given back. A request that dies midway (the function's time limit, or a stalled SMTP connection) leaves only the emails still in flight claimed; a claim older than 5 minutes can be taken again, so those people show as not delivered and can be resent to. SMTP connect, greeting and socket timeouts are 15 seconds, so a stalled send fails well within the 60-second function limit. The organizer then sees who wasn't reached and can **resend to just those people** (`retryFailed: true`), or share their personal links another way. A second full send is rejected with `409 Conflict`. If every email in a first send fails, the draw is reopened so the organizer can start over. If the request times out (Vercel answers with a 504 and no JSON body), the page says it couldn't confirm the send and reloads the list, so the organizer sees who was reached before resending.
-
-A cap of 495 emails in any 24 hours, across all draws, is enforced via `EmailSendLog` to stay within Gmail's rolling SMTP limit. Each send checks the cap, claims the draw and its people, and reserves its count in one database transaction before any email goes out.
-
-The same transaction also checks the sender's IP budget: 100 emails in any 24 hours per client (IPv4 address or IPv6 /64), counted in `RateLimits` under its own hashed bucket, one row per hour. A send that would go over it is refused with `429` before anything is claimed. Failed emails give back their share of both counts. The budget is skipped for IPs in `RATE_LIMIT_IP_WHITELIST`, and when `RATE_LIMIT_HASH_SECRET` is missing (logged).
-
-### Admin Access
-
-Draw creation returns a random 14-character `adminKey` (letters and digits, [`src/lib/tokens.ts`](src/lib/tokens.ts)), and the creator is redirected to their organizer link, `/draw#<adminKey>`. The key sits in the URL fragment, which browsers never send to the server, and the page passes it to `get-draw` in an `X-Admin-Key` header, so it stays out of request logs. The draw is found by the key alone; there is no other link to a draw. The organizer page shows this link in a box with a Copy button, warning that it shows everyone's matches and is the only way back. A key cut short when pasted gets "This link looks incomplete". The admin key unlocks the matches, email addresses, groups and personal reveal links, plus sending emails, deletion and the edit-and-redraw flow. Pairings are visible only to the organizer and, one at a time, to each person through their own 8-character personal link, `/reveal/<token>`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
-
-### Rate Limiting
-
-[`src/proxy.ts`](src/proxy.ts) limits each IP per hour: 10 for `create-draw`, 5 for `send-emails`, 10 for `delete-draw`, 30 for `save-details`, and 60 each for `get-draw` and `reveal`, the lookups behind organizer and personal links; over the limit it returns `429`. Counts live in the Neon `RateLimits` table, so every Vercel instance shares them: one row per HMAC-SHA-256 hash of client + route per hour, keyed with `RATE_LIMIT_HASH_SECRET`, so raw IPs are never stored and the hashes can't be reversed without the secret. A client is an IPv4 address, or an IPv6 /64 block (one household or phone can hold millions of IPv6 addresses). Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails or the secret is missing, the request is allowed through (fails open) and the error is logged. IPs in `RATE_LIMIT_IP_WHITELIST` are never limited. The proxy's `matcher` lists only these six routes, so `health` doesn't go through it at all. In front of all this, a Vercel Firewall rule refuses more than 60 API requests a minute from one IP at the edge, before any function or database runs (set in the Vercel dashboard; see [docs/OPERATIONS.md](docs/OPERATIONS.md#edge-rate-limit-vercel-firewall)).
+CI (`.github/workflows/ci.yml`) runs the tests and the build, which type-checks every file including the tests, on every pull request, and blocks pull requests during the yearly holiday change freeze (see [docs/OPERATIONS.md](docs/OPERATIONS.md#holiday-change-freeze)).
 
 ---
 
@@ -149,11 +117,12 @@ Draw creation returns a random 14-character `adminKey` (letters and digits, [`sr
 ```
 src/
   lib/
-    db.ts             # Neon serverless SQL client (re-exports isUuid())
-    uuid.ts           # isUuid(): draw id shape check for the routes
+    db.ts             # Neon serverless SQL client
     tokens.ts         # Organizer keys (14 characters) and personal link tokens (8): generation and shape checks
     matching.ts       # Matching algorithm (shuffle + feasibility-checked fallback)
-    email.ts          # Nodemailer email service
+    email.ts          # Nodemailer email service: the match, organizer link and ops emails
+    limits.ts         # The email cap, the per-IP email budget and the send claim expiry
+    report.ts         # reportError(), reportWarning(): log and send to Sentry
     email-address.ts  # isValidEmail(): the one address check, used by the forms and the API
     sanitize.ts       # HTML tag and web-address checks, escaping for emails
     base-path.json    # The /secret-santa basePath, read by next.config.js and site.ts
@@ -161,7 +130,9 @@ src/
     turnstile.ts      # verifyTurnstile(): server-side CAPTCHA check, 5s timeout, never throws
     groups.ts         # Home page form state: groups by id, Edit & Redraw hand-off, the as-you-type draft (parseFormDraft)
     names.ts          # duplicateNames(): names must differ ignoring case and spaces (form and API)
-    match-list.ts     # The organizer's list of matches: table order, CSV columns, details lines
+    details.ts        # The note, budget and date: checks, formatting and the lines the emails and lists show
+    email-draft.ts    # The draw page's email card draft in session storage, kept per draw
+    match-list.ts     # The organizer's list of matches: table order and CSV columns
     match-pdf.ts      # The matches as a PDF (jsPDF), made in the browser
     ip-prefix.ts      # rateLimitClient(): IPv4 address, or IPv6 /64, as one rate-limit client
     rate-limit.ts     # clientIp(), isWhitelisted(), rateLimitBucket(): shared by the proxy and the email budget
@@ -173,7 +144,7 @@ src/
       send-emails.ts  # POST: CAPTCHA + 24-hour cap + per-IP email budget + per-person claimed send / resend
       save-details.ts # POST: save the note, budget and date before any send
       delete-draw.ts  # POST: soft-delete
-      health.ts       # GET: DB health check (?shallow=1 skips the database)
+      health.ts       # GET: liveness check for the uptime monitor; never touches the database
       ops-check.ts    # GET: daily check job + weekly stats email (Vercel Cron, CRON_SECRET)
     _app.tsx          # App wrapper: global styles, icons, and the fonts (next/font, self-hosted)
     _document.tsx     # Sets <html lang="en">
@@ -185,12 +156,14 @@ src/
                       # PrintSheet.tsx is what the page prints once the matches are shown
                       # TurnstileWidget.tsx loads the CAPTCHA script, only where the send/resend form renders
   proxy.ts            # Per-IP hourly rate limits (RateLimits table)
+  instrumentation.ts  # Loads sentry.server.config.ts: server errors to Sentry when SENTRY_DSN is set
   styles/             # globals.css design tokens + CSS Modules per page
   types/
     api.ts            # JSON response types, shared by the API routes and the pages
     turnstile.d.ts    # Types for Cloudflare Turnstile's window.turnstile
 tests/                # Vitest tests: lib, every API route, and the home form (React Testing Library, jsdom)
   real-sql.test.ts    # The routes' real SQL against sql/setup.sql in PGlite
+  helpers/            # callRoute() for route tests, and the PGlite stand-in for the database
 public/               # Logo, favicons, app icons, link-preview image, and fonts/ (Noto Sans for the PDF; docs/OPERATIONS.md)
 sql/
   setup.sql           # Database schema (Postgres)
@@ -203,17 +176,17 @@ scripts/              # freeze.ts: the yearly holiday change freeze dates, check
 
 ## API Reference
 
-All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "<message>" }`: `400` for a missing draw id, `405` (with an `Allow` header) for a wrong HTTP method, and the codes listed per route. Routes marked *rate limited* return `429` when an IP goes over its hourly limit.
+All endpoints are under `/secret-santa/api/`. Errors always return `{ "error": "<message>" }`: `405` (with an `Allow` header) for a wrong HTTP method, and the codes listed per route. Routes marked *admin key required* find the draw by that key alone. Routes marked *rate limited* return `429` when an IP goes over its hourly limit.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`; names may not contain HTML or a web address, since they go into the emails, and must differ ignoring case and spaces, so each person can tell who they drew), generate matches, persist in a transaction. Returns `{ adminKey }`, retrying with fresh tokens in the rare case one repeats a saved one. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesDrawId` + `replacesKey` to soft-delete the old draw in the same transaction; the new draw keeps its saved note, budget and date. |
-| `GET` | `/api/get-draw` | *Rate limited (60/h).* The organizer's view of a draw, found by the header `X-Admin-Key: <adminKey>` (never the query string): its id, participants with emails, groups, reveal tokens and per-person email status, matches, each as `{ giver, receiver }` indexes into `participants`, `organizer_name` (set by the first send), and `organizer_note`, `budget_cents` and `exchange_date` (`YYYY-MM-DD`), each `null` when not set. `404` for a missing, malformed or unknown key, `410` for deleted draws. |
+| `POST` | `/api/create-draw` | *Rate limited (10/h).* Validate 2–50 participants (`{ name, email?, group? }`; names may not contain HTML or a web address, since they go into the emails, and must differ ignoring case and spaces, so each person can tell who they drew), generate matches, persist in a transaction. Returns `{ adminKey }`, retrying with fresh tokens in the rare case one repeats a saved one. `400` bad input, `422` no valid matching. Edit & Redraw also sends `replacesKey`, the old draw's admin key, to soft-delete the old draw in the same transaction; the new draw keeps its saved note, budget and date. `403` missing, malformed or unknown `replacesKey`, `409` the old draw's emails were sent, `410` it was already deleted. |
+| `GET` | `/api/get-draw` | *Rate limited (60/h).* The organizer's view of a draw, found by the header `X-Admin-Key: <adminKey>` (never the query string): its participants with emails, groups, reveal tokens and per-person email status, matches, each as `{ giver, receiver }` indexes into `participants`, `organizer_name` (set by the first send), and `organizer_note`, `budget_cents` and `exchange_date` (`YYYY-MM-DD`), each `null` when not set. `404` for a missing, malformed or unknown key, `410` for deleted draws. |
 | `GET` | `/api/reveal?token=<token>` | *Rate limited (60/h).* One participant's name, their match, the draw date, the organizer (once emails are sent), and the note, budget and exchange date (whenever set). `404` for unknown or malformed tokens, `410` for deleted draws. |
-| `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ id, key, turnstileToken, organizerName, organizerEmail, organizerNote?, budget?, exchangeDate? }` (budget is a dollar amount as typed, like `"25.50"`; the date is `YYYY-MM-DD`; the saved details are used on a resend), or `{ id, key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Also emails the organizer their organizer link on the first send, or only that when no participant has an email (the draw then stays unsent). Returns `{ success, totalSent, totalFailed, failedNames, organizerLinkSent }`. `400` bad input (including an organizer name over 200 characters or containing HTML or a web address, or an email over 320; a note over 150 characters or containing HTML or a web address; a budget that isn't a dollar amount of $10,000 or less; a date that isn't a real day), `403` wrong key or failed CAPTCHA (including when Cloudflare can't be reached), `404` unknown or malformed id, `409` already sent (or nothing to resend), `410` deleted, `429` the sender's IP has used its budget of 100 emails in 24 hours, `503` cap of 495 emails in 24 hours reached. |
-| `POST` | `/api/save-details` | *Admin key required. Rate limited (30/h).* Body `{ id, key, organizerNote?, budget?, exchangeDate? }`, checked like the first send; an empty value clears that detail. Saves them on the draw without sending any email, so they show on personal links. Returns `{ organizer_note, budget_cents, exchange_date }` as saved. `400` bad input, `403` wrong key, `404` unknown or malformed id, `409` emails already sent, `410` deleted. |
-| `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ id, key }`. Soft-delete a draw. Idempotent. `403` wrong key, `404` unknown or malformed id. |
-| `GET` | `/api/health` | `{ ok: true }` if DB reachable; `503 { ok: false, error }` otherwise. With `?shallow=1` it skips the database and always answers `{ ok: true }`, for the uptime monitor. |
+| `POST` | `/api/send-emails` | *Admin key required. Rate limited (5/h).* Body `{ key, turnstileToken, organizerName, organizerEmail, organizerNote?, budget?, exchangeDate? }` (budget is a dollar amount as typed, like `"25.50"`; the date is `YYYY-MM-DD`; the saved details are used on a resend), or `{ key, turnstileToken, retryFailed: true }` to resend only to people whose email failed. Also emails the organizer their organizer link on the first send, or only that when no participant has an email (the draw then stays unsent). Returns `{ success, totalSent, totalFailed, failedNames, organizerLinkSent }`. `400` bad input (including an organizer name over 200 characters or containing HTML or a web address, or an email over 320; a note over 150 characters or containing HTML or a web address; a budget that isn't a dollar amount of $10,000 or less; a date that isn't a real day), `403` missing, malformed or unknown key, or failed CAPTCHA (including when Cloudflare can't be reached), `409` already sent (or nothing to resend), `410` deleted, `429` the sender's IP has used its budget of 100 emails in 24 hours, `503` cap of 495 emails in 24 hours reached. |
+| `POST` | `/api/save-details` | *Admin key required. Rate limited (30/h).* Body `{ key, organizerNote?, budget?, exchangeDate? }`, checked like the first send; an empty value clears that detail. Saves them on the draw without sending any email, so they show on personal links. Returns `{ organizer_note, budget_cents, exchange_date }` as saved. `400` bad input, `403` missing, malformed or unknown key, `409` emails already sent, `410` deleted. |
+| `POST` | `/api/delete-draw` | *Admin key required. Rate limited (10/h).* Body `{ key }`. Soft-delete a draw. Idempotent: deleting again keeps the first deletion time. `403` missing, malformed or unknown key. |
+| `GET` | `/api/health` | Always `{ ok: true }`, showing the site's functions run; any method works. It never touches the database, so the uptime monitor can poll it without keeping Neon awake. |
 | `GET` | `/api/ops-check` | *`Authorization: Bearer <CRON_SECRET>` required; called by Vercel Cron.* Daily: writes yesterday's `DailyStats` row and emails `OPS_ALERT_EMAIL` if people on sent draws were never emailed or the 24-hour email count nears the cap; with `?report=weekly`, emails the last 7 days of stats. `403` wrong secret, `500` not configured or the job failed. |
 
 ---
@@ -236,7 +209,7 @@ Day-to-day operations (migrations, key rotation, rollback) are in [docs/OPERATIO
 Pull requests are welcome. A few conventions to follow:
 
 - TypeScript strict mode — avoid `any`
-- Run `npm run typecheck` and `npm test` before opening a PR; CI runs both plus the build
+- Run `npm run typecheck` and `npm test` before opening a PR; CI runs the tests and the build, which type-checks too
 - Always use parameterized SQL queries; never interpolate user input
 - Multi-step writes must use transactions with rollback on error
 - Open PRs against `main`; use descriptive kebab-case branch names

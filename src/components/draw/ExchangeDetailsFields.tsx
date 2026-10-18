@@ -64,7 +64,7 @@ export default function ExchangeDetailsFields({
         <span className={styles.detailsSummary}><span className={styles.detailsDot}>· </span>{summary}</span>
       </button>
 
-      <div id="exchangeDetails" className={styles.detailsBodySingle} hidden={!open}>
+      <div id="exchangeDetails" className={styles.detailsBody} hidden={!open}>
         <div className={styles.detailsFields}>
           <div className={styles.organizerField}>
             <label className={styles.organizerLabel} htmlFor="organizerNote">Organizer note</label>

@@ -1,4 +1,4 @@
-import { budgetLine, formatExchangeDate, noteError } from '@/lib/details';
+import { budgetAndDateLines, noteError } from '@/lib/details';
 import styles from '@/styles/Draw.module.css';
 
 // Made-up names: showing a real person and their match would give that match away
@@ -17,10 +17,7 @@ interface Props {
 export default function MessagePreview({ organizerName, note, budgetCents, exchangeDate }: Props) {
   const trimmedNote = note.trim();
   const showNote = !!trimmedNote && !noteError(trimmedNote);
-  const lines = [
-    ...(budgetCents !== null ? [{ label: 'Budget', value: budgetLine(budgetCents) }] : []),
-    ...(exchangeDate ? [{ label: 'Exchange', value: formatExchangeDate(exchangeDate) }] : []),
-  ];
+  const lines = budgetAndDateLines(budgetCents, exchangeDate);
   const hasDetails = !!trimmedNote || lines.length > 0;
 
   return (

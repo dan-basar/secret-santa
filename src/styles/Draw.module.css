@@ -471,20 +471,14 @@
   color: var(--ink-light);
 }
 
-.detailsBody,
-.detailsBodySingle {
+.detailsBody {
   display: grid;
   gap: 16px;
   margin-top: 12px;
   align-items: start;
 }
 
-.detailsBody {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-
-.detailsBody[hidden],
-.detailsBodySingle[hidden] {
+.detailsBody[hidden] {
   display: none;
 }
 
@@ -747,10 +741,6 @@
 }
 
 @media (max-width: 600px) {
-  .detailsBody {
-    grid-template-columns: 1fr;
-  }
-
   /* The summary drops under the row's title, lined up with its text */
   .detailsToggle {
     display: grid;

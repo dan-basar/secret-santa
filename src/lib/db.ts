@@ -7,6 +7,3 @@ import { neon } from '@neondatabase/serverless';
  * into the SQL text.
  */
 export const sql = neon(process.env.DATABASE_URL!);
-
-// Re-exported so routes get the client and the id check from one import
-export { isUuid } from '@/lib/uuid';

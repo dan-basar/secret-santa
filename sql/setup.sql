@@ -95,12 +95,15 @@ CREATE TABLE EmailSendLog (
     ,emails_sent integer NOT NULL DEFAULT 0
 );
 
--- One hit counter per hashed IP + route per hour, shared by every Vercel instance
--- (src/proxy.ts). send-emails also counts emails per hashed IP per hour here, under
--- its own 'email-budget' scope, for the 100-in-24-hours budget. Counter rows older than 2 days are hard-deleted by the proxy: they
--- hold no one's data, so they're an exception to the soft-delete rule.
+-- One hit counter per hashed client + route per hour, shared by every Vercel instance
+-- (src/proxy.ts). send-emails also counts emails per hashed client per hour here, under
+-- its own 'email-budget' scope, for the 100-in-24-hours budget. A bucket is the
+-- HMAC-SHA-256 hex, keyed with RATE_LIMIT_HASH_SECRET, of the client (an IPv4 address
+-- or IPv6 /64) and the scope (src/lib/rate-limit.ts). Counter rows older than 2 days
+-- are hard-deleted by the proxy: they hold no one's data, so they're an exception to
+-- the soft-delete rule.
 CREATE TABLE RateLimits (
-     bucket varchar(200) NOT NULL        -- SHA-256 hex of IP + route; raw IPs are never stored
+     bucket varchar(200) NOT NULL        -- the hash above; raw IPs are never stored
     ,window_start timestamptz NOT NULL   -- start of the hour the hits fall in
     ,hits integer NOT NULL DEFAULT 1
     ,PRIMARY KEY (bucket, window_start)

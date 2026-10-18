@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { callRoute } from './helpers/fake-res';
 
 // No database in tests: each sql`...` call resolves to the rows queued below
 vi.mock('@/lib/db', async (importOriginal) => {
@@ -22,29 +22,8 @@ const row = {
   deleted_at: null,
 };
 
-async function get(query: Record<string, unknown>) {
-  const res = {
-    statusCode: 0,
-    body: undefined as unknown,
-    headers: {} as Record<string, string>,
-    setHeader(name: string, value: string) {
-      this.headers[name] = value;
-      return this;
-    },
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body: unknown) {
-      this.body = body;
-      return this;
-    },
-    end() {
-      return this;
-    },
-  };
-  await handler({ method: 'GET', query } as unknown as NextApiRequest, res as unknown as NextApiResponse);
-  return res;
+function get(query: Record<string, unknown>) {
+  return callRoute(handler, { method: 'GET', query });
 }
 
 beforeEach(() => {

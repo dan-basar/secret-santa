@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { callRoute } from './helpers/fake-res';
 
 // No database in tests: queries become inert values and the transaction
 // resolves without running them
@@ -16,41 +16,24 @@ function person(name: string, group = '') {
   return { name, email: '', group };
 }
 
-async function post(participants: unknown, extra: Record<string, unknown> = {}) {
-  const res = {
-    statusCode: 0,
-    body: undefined as unknown,
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body: unknown) {
-      this.body = body;
-      return this;
-    },
-    end() {
-      return this;
-    },
-  };
-  await handler(
-    { method: 'POST', body: { participants, ...extra } } as NextApiRequest,
-    res as unknown as NextApiResponse
-  );
-  return res;
+function post(participants: unknown, extra: Record<string, unknown> = {}) {
+  return callRoute(handler, { method: 'POST', body: { participants, ...extra } });
 }
 
 beforeEach(() => {
-  vi.mocked(sql).mockClear();
-  vi.mocked(sql.transaction).mockClear();
+  vi.mocked(sql).mockReset();
+  vi.mocked(sql.transaction).mockReset();
 });
 
-const OLD_ID = '11111111-2222-4333-8444-555555555555';
-const OLD_KEY = 'old-admin-key';
+const OLD_KEY = 'Ab3dEf6hIj9kLm';
 const threePeople = [person('A'), person('B'), person('C')];
 
-// The next sql`...` call is the old-draw lookup; it resolves to this row
-function oldDraw(row: { admin_key: string; deleted_at: string | null; emails_sent_at: string | null } | null) {
-  vi.mocked(sql).mockImplementationOnce((() => Promise.resolve(row ? [row] : [])) as never);
+// The replace guard refuses (Postgres division_by_zero, which rolls the
+// transaction back), and the lookup that follows finds the old draw as this row
+function refused(row: { deleted_at: string | null; emails_sent_at: string | null } | null) {
+  vi.mocked(sql.transaction).mockRejectedValueOnce(Object.assign(new Error('division by zero'), { code: '22012' }));
+  vi.mocked(sql).mockImplementation(((strings: string[]) =>
+    strings.join('$').trim().startsWith('SELECT') ? Promise.resolve(row ? [row] : []) : {}) as never);
 }
 
 // The SQL text of every sql`...` call so far, with the values bound to it
@@ -62,70 +45,69 @@ function queries() {
 }
 
 describe('POST /api/create-draw replacing an earlier draw', () => {
-  it('soft-deletes the old draw in the same transaction when the key matches', async () => {
-    oldDraw({ admin_key: OLD_KEY, deleted_at: null, emails_sent_at: null });
-    const res = await post(threePeople, { replacesDrawId: OLD_ID, replacesKey: OLD_KEY });
+  it('soft-deletes the old draw in the same transaction, with no lookup first', async () => {
+    const res = await post(threePeople, { replacesKey: OLD_KEY });
     expect(res.statusCode).toBe(200);
     expect(sql.transaction).toHaveBeenCalledOnce();
-    // Old-draw update plus the three inserts
+    // Old-draw update plus the three inserts, and no other query
     expect(vi.mocked(sql.transaction).mock.calls[0][0]).toHaveLength(4);
+    expect(sql).toHaveBeenCalledTimes(4);
     const update = queries().find(q => q.text.includes('SET deleted_at = now()'));
     expect(update?.text).toContain('AND emails_sent_at IS NULL');
-    expect(update?.values).toEqual([OLD_ID, OLD_KEY]);
+    expect(update?.values).toEqual([OLD_KEY]);
+    // The new draw copies the old one's saved details
+    const insert = queries().find(q => q.text.includes('INSERT INTO Draws'));
+    expect(insert?.text).toContain('FROM Draws');
+    expect(insert?.values.at(-1)).toBe(OLD_KEY);
   });
 
-  it('rejects a wrong or missing key with 403 and changes nothing', async () => {
-    for (const replacesKey of ['wrong-key', undefined]) {
-      oldDraw({ admin_key: OLD_KEY, deleted_at: null, emails_sent_at: null });
-      const res = await post(threePeople, { replacesDrawId: OLD_ID, replacesKey });
+  it('rejects a malformed key with 403 before touching the database', async () => {
+    for (const replacesKey of ['wrong-key', '', 42, OLD_KEY.slice(0, 13)]) {
+      const res = await post(threePeople, { replacesKey });
       expect(res.statusCode).toBe(403);
-    }
-    expect(sql.transaction).not.toHaveBeenCalled();
-  });
-
-  it('rejects an unknown draw with 403 and changes nothing', async () => {
-    oldDraw(null);
-    const res = await post(threePeople, { replacesDrawId: OLD_ID, replacesKey: OLD_KEY });
-    expect(res.statusCode).toBe(403);
-    expect(sql.transaction).not.toHaveBeenCalled();
-  });
-
-  it('rejects an already-deleted draw with 410 and changes nothing', async () => {
-    oldDraw({ admin_key: OLD_KEY, deleted_at: '2026-10-01T00:00:00Z', emails_sent_at: null });
-    const res = await post(threePeople, { replacesDrawId: OLD_ID, replacesKey: OLD_KEY });
-    expect(res.statusCode).toBe(410);
-    expect(sql.transaction).not.toHaveBeenCalled();
-  });
-
-  it('rejects a draw whose emails were sent with 409 and changes nothing', async () => {
-    oldDraw({ admin_key: OLD_KEY, deleted_at: null, emails_sent_at: '2026-10-01T00:00:00Z' });
-    const res = await post(threePeople, { replacesDrawId: OLD_ID, replacesKey: OLD_KEY });
-    expect(res.statusCode).toBe(409);
-    expect(sql.transaction).not.toHaveBeenCalled();
-  });
-
-  it('returns 409 when the old draw changes between the check and the transaction', async () => {
-    oldDraw({ admin_key: OLD_KEY, deleted_at: null, emails_sent_at: null });
-    // Postgres division_by_zero from the replace guard; the transaction rolls back
-    vi.mocked(sql.transaction).mockRejectedValueOnce(Object.assign(new Error('division by zero'), { code: '22012' }));
-    const res = await post(threePeople, { replacesDrawId: OLD_ID, replacesKey: OLD_KEY });
-    expect(res.statusCode).toBe(409);
-  });
-
-  it('rejects a replacesDrawId that is not a uuid', async () => {
-    for (const replacesDrawId of ['not-a-uuid', 42]) {
-      const res = await post(threePeople, { replacesDrawId, replacesKey: OLD_KEY });
-      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Only the organizer can replace this draw.' });
     }
     expect(sql).not.toHaveBeenCalled();
     expect(sql.transaction).not.toHaveBeenCalled();
   });
 
-  it('touches no other draw when replacesDrawId is absent', async () => {
-    const res = await post(threePeople);
-    expect(res.statusCode).toBe(200);
-    expect(vi.mocked(sql.transaction).mock.calls[0][0]).toHaveLength(3);
-    expect(queries().some(q => q.text.includes('UPDATE Draws') || q.text.includes('FROM Draws'))).toBe(false);
+  it('rejects a key that matches no draw with 403', async () => {
+    refused(null);
+    const res = await post(threePeople, { replacesKey: OLD_KEY });
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'Only the organizer can replace this draw.' });
+  });
+
+  it('rejects an already-deleted draw with 410', async () => {
+    refused({ deleted_at: '2026-10-01T00:00:00Z', emails_sent_at: null });
+    const res = await post(threePeople, { replacesKey: OLD_KEY });
+    expect(res.statusCode).toBe(410);
+    expect(res.body).toEqual({ error: 'Your earlier draw has already been deleted.' });
+  });
+
+  it('rejects a draw whose emails were sent with 409', async () => {
+    refused({ deleted_at: null, emails_sent_at: '2026-10-01T00:00:00Z' });
+    const res = await post(threePeople, { replacesKey: OLD_KEY });
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Emails for your earlier draw have already gone out, so it can no longer be redrawn.' });
+  });
+
+  it('returns 409 when a failed first send reopened the old draw in between', async () => {
+    refused({ deleted_at: null, emails_sent_at: null });
+    const res = await post(threePeople, { replacesKey: OLD_KEY });
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Your earlier draw changed while you were editing. Open it again and try again.' });
+  });
+
+  it('touches no other draw when replacesKey is absent or null', async () => {
+    for (const extra of [{}, { replacesKey: null }]) {
+      vi.mocked(sql).mockClear();
+      vi.mocked(sql.transaction).mockClear();
+      const res = await post(threePeople, extra);
+      expect(res.statusCode).toBe(200);
+      expect(vi.mocked(sql.transaction).mock.calls[0][0]).toHaveLength(3);
+      expect(queries().some(q => q.text.includes('UPDATE Draws') || q.text.includes('FROM Draws'))).toBe(false);
+    }
   });
 });
 
@@ -134,6 +116,21 @@ describe('POST /api/create-draw', () => {
     const res = await post([person('A', 'Smiths'), person('B', 'Smiths'), person('C'), person('D')]);
     expect(res.statusCode).toBe(200);
     expect(sql.transaction).toHaveBeenCalledOnce();
+  });
+
+  it('draws fresh tokens when one repeats a saved token, and gives up after three tries', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const duplicate = Object.assign(new Error('duplicate key value'), { code: '23505' });
+    vi.mocked(sql.transaction).mockRejectedValueOnce(duplicate);
+    expect((await post(threePeople)).statusCode).toBe(200);
+    expect(sql.transaction).toHaveBeenCalledTimes(2);
+
+    vi.mocked(sql.transaction).mockClear();
+    vi.mocked(sql.transaction).mockRejectedValue(duplicate);
+    const res = await post(threePeople);
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({ error: 'Database error. Please try again.' });
+    expect(sql.transaction).toHaveBeenCalledTimes(3);
   });
 
   it('saves one match per person by position, never within a group', async () => {
