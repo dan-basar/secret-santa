@@ -7,16 +7,14 @@ import { clientIp, isWhitelisted, rateLimitBucket } from '@/lib/rate-limit';
 // against the same numbers. One row per hashed client + route per hour; a single
 // atomic upsert bumps the count and returns it.
 
-// Hourly limits per IP, per route. get-draw and reveal look a draw up by the
-// short secret in a link, so their limits are what keep guessing those slow;
-// 60 an hour is far more than a household opening its links ever needs
+// Hourly limits per IP, on the two routes that cost something: new draws (rows)
+// and sends (emails). The routes that look a draw up by a link's secret aren't
+// limited here: the secret's length already puts guessing out of reach
+// (docs/ARCHITECTURE.md), and the Firewall's 60 a minute stops floods, so a
+// counter write on every page view would buy nothing
 const RATE_LIMITS: Record<string, number> = {
   '/api/create-draw': 10,
   '/api/send-emails': 5,
-  '/api/delete-draw': 10,
-  '/api/get-draw': 60,
-  '/api/reveal': 60,
-  '/api/save-details': 30,
 };
 
 // Roughly 1 in this many limited requests also deletes counter rows older than
@@ -73,16 +71,12 @@ export async function proxy(request: NextRequest) {
 }
 
 // Only run on the routes in RATE_LIMITS: on Vercel the proxy is its own
-// invocation, so an unlimited route (health) skips it entirely. Next reads this
+// invocation, so an unlimited route skips it entirely. Next reads this
 // list at build time, so it has to be written out; tests/proxy.test.ts checks it
 // matches RATE_LIMITS
 export const config = {
   matcher: [
     '/api/create-draw',
     '/api/send-emails',
-    '/api/delete-draw',
-    '/api/get-draw',
-    '/api/reveal',
-    '/api/save-details',
   ],
 };

@@ -32,10 +32,11 @@ describe('vercel.json functions', () => {
     expect(Object.keys(config.functions).sort()).toEqual([...routes].sort());
   });
 
-  it('gives send-emails 60 seconds and every other route 10, all in cle1', () => {
+  it('gives send-emails 120 seconds, ops-check 30 and every other route 10, all in cle1', () => {
+    const longer: Record<string, number> = { 'send-emails.ts': 120, 'ops-check.ts': 30 };
     for (const route of routes) {
       const entry = config.functions[route];
-      expect(entry.maxDuration, route).toBe(route.endsWith('/send-emails.ts') ? 60 : 10);
+      expect(entry.maxDuration, route).toBe(longer[route.split('/').pop()!] ?? 10);
       expect(entry.regions, route).toEqual(['cle1']);
     }
   });

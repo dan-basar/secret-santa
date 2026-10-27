@@ -26,9 +26,9 @@ import { CLAIM_EXPIRY_MINUTES, DAILY_EMAIL_LIMIT, IP_EMAIL_BUDGET } from '@/lib/
 import { clientIp, isWhitelisted, rateLimitBucket } from '@/lib/rate-limit';
 import type { ExchangeDetails, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
-// A send that takes longer than this is close to the 60s function limit; the
+// A send that takes longer than this is close to the 120s function limit; the
 // 50-person test sent in 44s with Gmail
-const SLOW_SEND_SECONDS = 50;
+const SLOW_SEND_SECONDS = 100;
 
 // Any fixed number: the advisory lock that makes cap reservations take turns
 const EMAIL_CAP_LOCK_ID = 495;
@@ -325,12 +325,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // claims expire and they show as not delivered). Every email is attempted even
     // if some fail, so partial delivery is possible.
     const sendStartedAt = Date.now();
+    // Failed emails go to Sentry as one event per send (below), so a Gmail outage
+    // mid-send is one event instead of one per person
+    let firstSendError: unknown;
     const delivered = await Promise.all(toSend.map(async match => {
       let ok = true;
       try {
         await sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_token, details);
       } catch (err) {
-        await reportError(err);
+        console.error(err);
+        firstSendError ??= err;
         ok = false;
       }
 
@@ -361,9 +365,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const organizerLinkSent = await organizerLinkSending;
 
     const sendSeconds = (Date.now() - sendStartedAt) / 1000;
-    if (sendSeconds > SLOW_SEND_SECONDS) await reportWarning(`A send of ${toSend.length} emails took ${Math.round(sendSeconds)}s, close to the 60s function limit`);
+    if (sendSeconds > SLOW_SEND_SECONDS) await reportWarning(`A send of ${toSend.length} emails took ${Math.round(sendSeconds)}s, close to the 120s function limit`);
 
     const failed = toSend.filter((_, i) => !delivered[i]);
+    if (failed.length) await reportError(new Error(`${failed.length} of ${toSend.length} emails failed to send`, { cause: firstSendError }));
     const failedNames: string[] = failed.map(match => match.giver_name);
     const actualSent = toSend.length - failed.length;
     await releaseReserved(failed.length + (organizerCount && !organizerLinkSent ? 1 : 0), claim.reserved_hour, budgetBucket);

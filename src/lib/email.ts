@@ -5,7 +5,7 @@ import { budgetAndDateLines, hasDetails } from '@/lib/details';
 import type { ExchangeDetails } from '@/types/api';
 
 // Nodemailer waits up to 2 minutes to connect and 10 minutes on an idle socket by
-// default, far past send-emails' 60s function limit. 15s makes a stalled send
+// default, far past send-emails' 120s function limit. 15s makes a stalled send
 // fail as a normal error, so its claim is released while the function is alive
 const SMTP_TIMEOUT_MS = 15_000;
 
@@ -113,8 +113,8 @@ export async function sendMatchEmail(
         <p style="font-size: 20px; line-height: 1.5; margin-top: ${withDetails ? 16 : 32}px;">
           You have drawn <strong>${htmlMatchName}</strong>'s name for the gift exchange!
         </p>${emailButton(htmlLink, 'View your match')}
-        <p style="font-size: 14px; color: #888; margin-top: 32px;">This secret message was sent by ${htmlOrganizerName}. You can contact the organizer at ${htmlOrganizerEmail} if you need to. Happy Gifting!!</p>
-        <p style="font-size: 13px; color: #888; margin-top: 16px; word-break: break-all;">Your personal link: ${htmlLink}</p>`),
+        <p style="font-size: 14px; color: #6b6560; margin-top: 32px;">This secret message was sent by ${htmlOrganizerName}. You can contact the organizer at ${htmlOrganizerEmail} if you need to. Happy Gifting!!</p>
+        <p style="font-size: 13px; color: #6b6560; margin-top: 16px; word-break: break-all;">Your personal link: ${htmlLink}</p>`),
   });
 }
 
@@ -137,7 +137,7 @@ export async function sendOrganizerLinkEmail(
     html: emailLayout(toName, `
         <p style="font-size: 16px; line-height: 1.6;">Here is your organizer link for your Secret Santa draw.</p>
         <p style="font-size: 16px; line-height: 1.6;">Keep it private: it shows everyone&rsquo;s matches! It&rsquo;s the only way back to your draw&rsquo;s page.</p>${emailButton(htmlLink, 'Open your draw')}
-        <p style="font-size: 14px; color: #888; margin-top: 32px; word-break: break-all;">${htmlLink}</p>`),
+        <p style="font-size: 14px; color: #6b6560; margin-top: 32px; word-break: break-all;">${htmlLink}</p>`),
   });
 }
 

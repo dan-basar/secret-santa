@@ -74,7 +74,17 @@ describe('draw page', () => {
     answer(429, { error: 'Too many requests' });
     window.location.hash = `#${ADMIN_KEY}`;
     render(<DrawPage />);
-    expect(await screen.findByText(/Too many tries from this network/)).toBeTruthy();
+    expect(await screen.findByText('Too many tries')).toBeTruthy();
+  });
+
+  it('offers to try again after a failed load, and loads the draw when it works', async () => {
+    answer(500, { error: 'Failed to load draw.' });
+    window.location.hash = `#${ADMIN_KEY}`;
+    render(<DrawPage />);
+    expect(await screen.findByText('Something went wrong')).toBeTruthy();
+    answer(200, adminView);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Your organizer link', { exact: true })).toBeTruthy();
   });
 
   it('loads the other draw when another organizer link is pasted into the same tab', async () => {

@@ -48,7 +48,7 @@ Never put real keys in `.env.development.local`; it keeps the test keys.
 
 ## Edge rate limit (Vercel Firewall)
 
-`src/proxy.ts` limits each route per IP per hour, but it runs as a Vercel function and asks Neon on every request, including the ones it refuses. A flood of requests would still keep Neon awake and spend function invocations. A Vercel Firewall rule refuses floods at the edge first, before any function or database runs. It lives in the Vercel dashboard, not in this repo, so a new project or a lost setting needs these steps again.
+`src/proxy.ts` limits creating and sending per IP per hour, but it runs as a Vercel function and asks Neon on every request, including the ones it refuses. A flood of requests would still keep Neon awake and spend function invocations. A Vercel Firewall rule refuses floods at the edge first, before any function or database runs. It lives in the Vercel dashboard, not in this repo, so a new project or a lost setting needs these steps again.
 
 1. Vercel dashboard → **baseworkshop-home** (the project that owns `www.baseworkshop.app` and passes `/secret-santa` on to this app; this app's own project only has its `.vercel.app` address) → **Firewall** → **Configure** → **New Rule**.
 2. Name it `API flood backstop`. **If** *Request Path* *Starts with* `/secret-santa/api/`.
@@ -86,7 +86,8 @@ Alerts go to the owner's email; nothing pushes to a phone. What can alert, and w
 | New error issue | Sentry | A route hit an unexpected error (the issue shows the stack trace, never a link or name) | [Errors in Sentry](#errors-in-sentry) |
 | Cron monitor missed or failed | Sentry | The daily job didn't run, or ran and failed | [The daily job went quiet](#the-daily-job-went-quiet) |
 | "Secret Santa: needs a look" | Daily job, by email | People on sent draws were never emailed, or the 24-hour email count is near the cap | [When Gmail stops sending](#when-gmail-stops-sending) |
-| "A send of N emails took Ns" | Sentry warning | A send ran close to the 60-second function limit (alerts above 50 seconds) | [Slow sends](#slow-sends) |
+| "N of M emails failed to send" | Sentry error | Some emails in one send failed; one event per send, with the first failure's error attached as its cause | [When Gmail stops sending](#when-gmail-stops-sending) |
+| "A send of N emails took Ns" | Sentry warning | A send ran close to the 120-second function limit (alerts above 100 seconds) | [Slow sends](#slow-sends) |
 | Neon or Vercel usage notices | Neon, Vercel | Plan limits or billing | The Neon and Vercel notification settings |
 | "Secret Santa: weekly stats" | Weekly job, by email | Not an alert: draws, participants, emails and first link opens for the last 7 days | |
 
@@ -112,7 +113,7 @@ A new issue is a route's `catch`. The title and stack say where. If it's `Databa
 
 ### Slow sends
 
-A 50-person draw takes about 45 seconds through Gmail against a 60-second limit. If a send alerts, check Gmail/SMTP latency in the function logs. A send that's killed mid-way leaves the people not yet emailed marked "not sent" after 5 minutes, and the organizer presses **Resend**.
+A 50-person draw takes about 45 seconds through Gmail against a 120-second limit. If a send alerts, check Gmail/SMTP latency in the function logs. A send that's killed mid-way leaves the people not yet emailed marked "not sent" after 5 minutes, and the organizer presses **Resend**.
 
 ## Rolling back a bad deploy
 

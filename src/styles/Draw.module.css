@@ -223,7 +223,7 @@
 }
 
 .muted {
-  color: var(--ink-faint);
+  color: var(--ink-light);
   font-size: 14px;
 }
 
