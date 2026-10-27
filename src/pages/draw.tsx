@@ -333,19 +333,26 @@ export default function DrawPage() {
     );
   }
 
-  if (state === 'busy') {
+  if (state === 'busy' || state === 'error' || !draw) {
+    const busy = state === 'busy';
     return (
-      <div className={styles.centered}>
-        <p className={styles.muted}>Too many tries from this network in the last hour. Please try again later.</p>
-      </div>
-    );
-  }
-
-  if (state === 'error' || !draw) {
-    return (
-      <div className={styles.centered}>
-        <p className={styles.muted}>Something went wrong. Please refresh.</p>
-      </div>
+      <>
+        <Head><title>{busy ? 'Too many tries' : 'Something went wrong'} — Secret Santa Picker</title></Head>
+        <div className={styles.centered}>
+          <div className={`card ${styles.messageCard}`}>
+            <span className={styles.bigIcon}>{busy ? '⏳' : '⚠️'}</span>
+            <h1>{busy ? 'Too many tries' : 'Something went wrong'}</h1>
+            <p className={styles.muted}>
+              {busy
+                ? 'This network has made a lot of requests in the last minute. Wait a minute, then try again.'
+                : 'We couldn\u2019t load this draw. Your draw is safe; try again in a moment.'}
+            </p>
+            <button type="button" className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => { setState('loading'); loadDraw(); }}>
+              Try again
+            </button>
+          </div>
+        </div>
+      </>
     );
   }
 

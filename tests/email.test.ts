@@ -180,7 +180,7 @@ describe('transporter', () => {
     expect(transportCalls[0][0]).toMatchObject({ service: 'gmail', pool: true, maxConnections: 3 });
   });
 
-  it('gives up on a stalled connection well within the 60s send-emails limit', () => {
+  it('gives up on a stalled connection well within the 120s send-emails limit', () => {
     const options = transportCalls[0][0];
     for (const timeout of ['connectionTimeout', 'greetingTimeout', 'socketTimeout']) {
       expect(options[timeout]).toBeGreaterThan(0);

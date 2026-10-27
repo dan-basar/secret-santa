@@ -92,7 +92,7 @@
   font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 400;
-  color: var(--ink-faint);
+  color: var(--ink-light);
   margin-left: auto;
 }
 
@@ -124,7 +124,7 @@
   font-size: 18px !important;
   line-height: 1;
   flex-shrink: 0;
-  color: var(--ink-faint) !important;
+  color: var(--ink-light) !important;
 }
 
 .removeBtn:hover:not(:disabled) {

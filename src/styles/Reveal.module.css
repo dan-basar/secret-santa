@@ -46,7 +46,7 @@
 }
 
 .muted {
-  color: var(--ink-faint);
+  color: var(--ink-light);
   font-size: 14px;
 }
 
@@ -86,7 +86,7 @@
 
 .meta {
   margin-top: 16px;
-  color: var(--ink-faint);
+  color: var(--ink-light);
   font-size: 13px;
   line-height: 1.5;
 }

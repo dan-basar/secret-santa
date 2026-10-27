@@ -1,6 +1,6 @@
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
-import { Analytics } from '@vercel/analytics/next';
+import { Analytics, type BeforeSendEvent } from '@vercel/analytics/next';
 import { DM_Sans, Libre_Baskerville } from 'next/font/google';
 import '@/styles/globals.css';
 
@@ -8,6 +8,11 @@ import '@/styles/globals.css';
 // Google's servers and text doesn't jump when the fonts arrive
 const serif = Libre_Baskerville({ weight: ['400', '700'], style: ['normal', 'italic'], subsets: ['latin'], display: 'swap' });
 const sans = DM_Sans({ weight: ['300', '400', '500'], subsets: ['latin'], display: 'swap' });
+
+// A personal link's path is its secret, so page views report the route instead
+function hideRevealCode(event: BeforeSendEvent): BeforeSendEvent {
+  return { ...event, url: event.url.replace(/\/reveal\/[^/?#]+/, '/reveal/[code]') };
+}
 
 export default function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -27,7 +32,15 @@ export default function App({ Component, pageProps, router }: AppProps) {
         }
       `}</style>
       <Component {...pageProps} />
-      <Analytics />
+      {/* Vercel would load its script from the domain root, which belongs to
+          baseworkshop-home; these go through the rewrite in next.config.js */}
+      <Analytics
+        scriptSrc={`${router.basePath}/_vercel/insights/script.js`}
+        viewEndpoint={`${router.basePath}/_vercel/insights/view`}
+        eventEndpoint={`${router.basePath}/_vercel/insights/event`}
+        sessionEndpoint={`${router.basePath}/_vercel/insights/session`}
+        beforeSend={hideRevealCode}
+      />
     </>
   );
 }

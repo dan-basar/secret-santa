@@ -64,7 +64,7 @@ export default function RevealPage() {
       : state === 'incomplete'
         ? { icon: '🔗', title: 'This link looks incomplete', text: 'Links sometimes get cut off when they’re pasted into a text or chat. Copy the whole link from your email again, or ask your organizer to resend it.' }
       : state === 'busy'
-        ? { icon: '⏳', title: 'Too many tries', text: 'This network has opened a lot of links in the last hour. Try again in an hour.' }
+        ? { icon: '⏳', title: 'Too many tries', text: 'This network has made a lot of requests in the last minute. Wait a minute, then try again.' }
       : state === 'not-found'
         ? { icon: '🔍', title: 'Link not found', text: 'This personal link is not valid. Check the link in your email, or ask your organizer for it again.' }
         : { icon: '⚠️', title: 'Something went wrong', text: 'Please refresh the page to try again.' };

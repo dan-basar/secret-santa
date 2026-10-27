@@ -13,7 +13,7 @@ There are no accounts. Access comes from two random secrets of letters and digit
 
 The admin key is returned once, by `create-draw`, and the organizer is redirected to their link. It travels in the URL fragment, which browsers never send to the server; the draw page reads it there and sends it to `get-draw` in an `X-Admin-Key` header, and to `send-emails`, `save-details`, `delete-draw` and (as `replacesKey`, for Edit & Redraw) `create-draw` in the JSON body, so it never appears in a query string or request log. Every route finds the draw by the key alone (`admin_key` is `NOT NULL` and `UNIQUE`), so the draw's own uuid never leaves the server. A key that matches no draw gets `404` from `get-draw` and `403` from the routes that change a draw. The organizer page shows the link in a box with a Copy button, marked private; it is never shown to anyone else, so losing it means losing admin access. A link cut short when pasted gets "This link looks incomplete".
 
-The secrets are short so links fit in a text: the organizer link is about 61 characters and a personal link about 57. 14 characters from 62 are about 83 random bits and 8 about 48, and that length is what keeps guessing out of reach: even with 10,000 personal links live, one guess has about a 1 in 20 billion chance, so a connection at the Firewall's ceiling of 60 requests a minute would expect a hit about once every 700 years, and the prize is one stranger's match. The per-IP limit of 60 lookups an hour on `get-draw` and `reveal` (`src/proxy.ts`) slows guessing further. Personal links get the shorter secret because each shows only one match. Links from before migration 008 (UUIDs, `/draw/<id>#key=…`, `?key=`) no longer open anything.
+The secrets are short so links fit in a text: the organizer link is about 61 characters and a personal link about 57. 14 characters from 62 are about 83 random bits and 8 about 48, and that length is what keeps guessing out of reach: even with 10,000 personal links live, one guess has about a 1 in 20 billion chance, so a connection at the Firewall's ceiling of 60 requests a minute would expect a hit about once every 700 years, and the prize is one stranger's match. That's why the routes that look a draw up by its secret have no hourly limit of their own in `src/proxy.ts`: the Firewall stops floods, and a counter write on every page view would buy nothing. Personal links get the shorter secret because each shows only one match. Links from before migration 008 (UUIDs, `/draw/<id>#key=…`, `?key=`) no longer open anything.
 
 ## Draw lifecycle
 
@@ -38,7 +38,7 @@ The organizer gives their name and email, passes the Turnstile CAPTCHA and sends
 
 Before anything goes out, one transaction checks the site's cap in `EmailSendLog` (495 emails in any 24 hours across all draws, to stay within Gmail's rolling limit; `503` if the send doesn't fit) and the sender's budget in `RateLimits` (100 emails in any 24 hours per client, an IPv4 address or IPv6 /64, under its own hashed bucket; `429` if it doesn't fit). The budget is skipped for IPs in `RATE_LIMIT_IP_WHITELIST`, and when `RATE_LIMIT_HASH_SECRET` is missing (logged). The same transaction updates the draw (on a first send: the organizer's name and email, the note, budget and date, and `emails_sent_at`), claims each participant (`Participants.email_claimed_at`), and reserves both counts for everyone claimed, plus the organizer's link on a first send. Each person is claimed by only one request, so two clicks can never email anyone twice.
 
-As each email settles, `email_sent_at` is set if it went out; if it failed, the claim is released and its reservation given back. A request that dies midway (the 60-second function limit, or a stalled SMTP connection; SMTP connect, greeting and socket timeouts are 15 seconds) keeps its reservation, since some of those emails may have gone out, and leaves only the emails in flight claimed. A claim older than 5 minutes can be taken again, so those people show as not delivered. The organizer then sees who wasn't reached and can resend to just them (`retryFailed: true`), or share their personal links another way. If every email in a first send fails, the draw is reopened so the organizer can start over. If the request times out (Vercel answers `504` with no JSON body), the page says it couldn't confirm the send and reloads the list, so the organizer sees who was reached before resending.
+As each email settles, `email_sent_at` is set if it went out; if it failed, the claim is released and its reservation given back. A request that dies midway (the 120-second function limit, or a stalled SMTP connection; SMTP connect, greeting and socket timeouts are 15 seconds) keeps its reservation, since some of those emails may have gone out, and leaves only the emails in flight claimed. A claim older than 5 minutes can be taken again, so those people show as not delivered. The organizer then sees who wasn't reached and can resend to just them (`retryFailed: true`), or share their personal links another way. If every email in a first send fails, the draw is reopened so the organizer can start over. If the request times out (Vercel answers `504` with no JSON body), the page says it couldn't confirm the send and reloads the list, so the organizer sees who was reached before resending.
 
 ## Note, budget and date
 
@@ -71,9 +71,9 @@ Vercel project baseworkshop-home (owns www.baseworkshop.app)
         ▼
 Vercel project secret-santa-app (region cle1)
   │
-  ├─ src/proxy.ts ── runs only on the six limited routes (health and ops-check skip it)
-  │     create-draw, send-emails, save-details, delete-draw, get-draw, reveal: per-IP hourly limit,
-  │     counted in the RateLimits table → 429 when over; fails open on DB error
+  ├─ src/proxy.ts ── runs only on create-draw and send-emails (every other route skips it):
+  │     per-IP hourly limit, counted in the RateLimits table → 429 when over;
+  │     fails open on DB error
   │
   ├─ src/pages/api/<route>.ts ── validate input → query → JSON response
   │     send-emails also calls Cloudflare Turnstile (CAPTCHA) and Gmail SMTP
@@ -86,7 +86,7 @@ Pages (`index.tsx`, `draw.tsx`, `reveal/[token].tsx`) are client-rendered React;
 
 ## Rate limits
 
-[`src/proxy.ts`](../src/proxy.ts) gives each IP an hourly limit on each of the six routes above (the numbers are in the [API table](../README.md#api-reference)) and answers `429` past it. Counts live in the `RateLimits` table, so every Vercel instance shares them: one row per hashed client and route per hour. A client is an IPv4 address, or an IPv6 /64 block, since one household or phone can hold millions of IPv6 addresses. The hash is HMAC-SHA-256 keyed with `RATE_LIMIT_HASH_SECRET` ([`src/lib/rate-limit.ts`](../src/lib/rate-limit.ts)), so raw IPs are never stored and the hashes can't be reversed without the secret. Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails or the secret is missing, the request is let through (fails open) and the error is logged. IPs in `RATE_LIMIT_IP_WHITELIST` are never limited. The Firewall rule in front of it lives in the Vercel dashboard; [OPERATIONS.md](OPERATIONS.md#edge-rate-limit-vercel-firewall) has its settings.
+[`src/proxy.ts`](../src/proxy.ts) gives each IP an hourly limit on `create-draw` and `send-emails`, the two routes that cost rows or emails (the numbers are in the [API table](../README.md#api-reference)) and answers `429` past it. Counts live in the `RateLimits` table, so every Vercel instance shares them: one row per hashed client and route per hour. A client is an IPv4 address, or an IPv6 /64 block, since one household or phone can hold millions of IPv6 addresses. The hash is HMAC-SHA-256 keyed with `RATE_LIMIT_HASH_SECRET` ([`src/lib/rate-limit.ts`](../src/lib/rate-limit.ts)), so raw IPs are never stored and the hashes can't be reversed without the secret. Rows older than 2 days are deleted on roughly 1 in 100 limited requests. If the database check fails or the secret is missing, the request is let through (fails open) and the error is logged. IPs in `RATE_LIMIT_IP_WHITELIST` are never limited. The Firewall rule in front of it lives in the Vercel dashboard; [OPERATIONS.md](OPERATIONS.md#edge-rate-limit-vercel-firewall) has its settings.
 
 ## Monitoring
 
@@ -95,7 +95,7 @@ Each part runs without checking the database more than once a day, to keep Neon'
 - **Server errors** go to Sentry (`src/lib/report.ts`, `src/sentry.server.config.ts`) with no request, URL or user attached. Sentry emails the owner about new issues.
 - **Uptime**: a Sentry uptime monitor calls `/api/health` every few minutes. The route never touches the database, so it shows the site and its functions are up; a database outage shows up as real users' errors in Sentry, and as a failed daily job.
 - **Daily job**: Vercel Cron calls `/api/ops-check` at 00:00 UTC with `CRON_SECRET`. It writes the previous UTC day's `DailyStats` row, emails the owner when people on sent draws were never emailed or the 24-hour email count nears the cap, and checks in to a Sentry cron monitor, which alerts when a check-in is late or missing. A second cron entry (`?report=weekly`, Sundays 17:00 UTC) emails the week's stats.
-- **Visits**: Vercel Web Analytics, loaded by `_app.tsx`.
+- **Visits**: Vercel Web Analytics, loaded by `_app.tsx` from under the base path and proxied to this project's own address by a rewrite in `next.config.js`, since the domain root belongs to baseworkshop-home. Personal links are reported as `/reveal/[code]`, so their secrets never reach the dashboard.
 
 ## Tables
 
@@ -130,6 +130,7 @@ The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 | Hashed IP + route hit counts, and emails per hashed IP | RateLimits (HMAC-SHA-256 with a secret key; raw IPs never stored) | About 2 days, then hard-deleted by `src/proxy.ts` |
 | Emails sent per hour | EmailSendLog (a count only) | Kept |
 | Draws, participants, emails and first link opens per day | DailyStats (counts only) | Kept |
+| Page views (path with personal codes replaced, referrer, country, device) | Vercel Web Analytics | Vercel's retention |
 | Server errors | Sentry (stack trace only: the request, URL and user are removed before sending) | Sentry's retention |
 
 Draws are only ever soft-deleted: deleting hides a draw from every link but keeps the rows. Participant and organizer email addresses are kept too, by decision for now; there is no purge job. Emails themselves are sent through the Gmail account in `GMAIL_USER`, so copies also sit in its Sent folder.

@@ -7,6 +7,7 @@
 :root {
   --ink: #1a1714;
   --ink-light: #6b6560;
+  /* Borders only: about 2:1 against the page, too faint for text (use --ink-light, about 5.4:1) */
   --ink-faint: #b8b3ae;
   /* Placeholders stand in for labels on phones, so they need readable contrast (about 4.9:1 on white) */
   --ink-placeholder: #777069;

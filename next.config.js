@@ -32,6 +32,15 @@ const nextConfig = {
       { source: '/reveal/:path*', headers: noindex },
     ];
   },
+  // Visitors reach the app through www.baseworkshop.app, whose root belongs to
+  // baseworkshop-home, so Web Analytics' /_vercel/insights there isn't this
+  // project's. _app.tsx asks for it under the base path instead, and this hands
+  // it to the copy Vercel serves at the root of this project's own address.
+  // Vercel sets the variable at build time; locally there is nothing to proxy
+  async rewrites() {
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    return host ? [{ source: '/_vercel/insights/:path*', destination: `https://${host}/_vercel/insights/:path*` }] : [];
+  },
 }
 
 module.exports = nextConfig

@@ -148,6 +148,8 @@ vi.mock('@/lib/db', async (importOriginal) => {
 const sendMatchEmail = vi.hoisted(() => vi.fn());
 const sendOrganizerLinkEmail = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/email', () => ({ sendMatchEmail, sendOrganizerLinkEmail }));
+const reportError = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('@/lib/report', () => ({ reportError, reportWarning: vi.fn(async () => {}) }));
 
 import handler from '@/pages/api/send-emails';
 import { rateLimitBucket } from '@/lib/rate-limit';
@@ -299,6 +301,16 @@ describe('POST /api/send-emails', () => {
     expect(db.draw.emails_sent_at).toBeNull();
     // Only the organizer's link went out
     expect(emailsCounted()).toBe(1);
+  });
+
+  it('reports the failed emails of a send to Sentry once, with the first error', async () => {
+    failFor('alex@example.com', 'sam@example.com');
+    reportError.mockClear();
+    await post(firstSend);
+    expect(reportError).toHaveBeenCalledTimes(1);
+    const [err] = reportError.mock.calls[0] as unknown as [Error];
+    expect(err.message).toBe('2 of 3 emails failed to send');
+    expect((err.cause as Error).message).toMatch(/^SMTP refused /);
   });
 
   it('still refuses a second full send with 409', async () => {

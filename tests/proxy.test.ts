@@ -51,7 +51,7 @@ describe('proxy rate limiting', () => {
 
   it('stores a keyed hash of the IP and route, never the raw IP', async () => {
     vi.mocked(sql).mockResolvedValueOnce([{ hits: 1 }]);
-    await proxy(request('/api/delete-draw'));
+    await proxy(request('/api/send-emails'));
     const params = vi.mocked(sql).mock.calls[0].slice(1);
     expect(params).toHaveLength(1);
     expect(params[0]).toMatch(/^[0-9a-f]{64}$/);
@@ -60,9 +60,9 @@ describe('proxy rate limiting', () => {
 
   it('gives a different bucket under a different secret, so the hash can\'t be rebuilt without it', async () => {
     vi.mocked(sql).mockResolvedValue([{ hits: 1 }]);
-    await proxy(request('/api/delete-draw'));
+    await proxy(request('/api/send-emails'));
     vi.stubEnv('RATE_LIMIT_HASH_SECRET', 'another-secret');
-    await proxy(request('/api/delete-draw'));
+    await proxy(request('/api/send-emails'));
     const [first, second] = vi.mocked(sql).mock.calls.map(call => call[1]);
     expect(first).not.toBe(second);
   });
@@ -89,7 +89,7 @@ describe('proxy rate limiting', () => {
   it('counts each route separately for the same IP', async () => {
     vi.mocked(sql).mockResolvedValue([{ hits: 1 }]);
     await proxy(request('/api/create-draw'));
-    await proxy(request('/api/delete-draw'));
+    await proxy(request('/api/send-emails'));
     const [first, second] = vi.mocked(sql).mock.calls.map(call => call[1]);
     expect(first).not.toBe(second);
   });
@@ -111,17 +111,11 @@ describe('proxy rate limiting', () => {
     expect(vi.mocked(sql).mock.calls[1][0].join('')).toContain('DELETE FROM RateLimits');
   });
 
-  it('limits the lookups behind organizer and personal links, which keeps guessing slow', async () => {
-    for (const path of ['/api/get-draw', '/api/reveal']) {
-      vi.mocked(sql).mockResolvedValueOnce([{ hits: 61 }]);
+  it('does not touch the database for unlimited routes, including the link lookups', async () => {
+    for (const path of ['/api/health', '/api/get-draw', '/api/reveal', '/api/save-details', '/api/delete-draw']) {
       const res = await proxy(request(path));
-      expect(res.status).toBe(429);
+      expect(res.status, path).toBe(200);
     }
-  });
-
-  it('does not touch the database for unlimited routes', async () => {
-    const res = await proxy(request('/api/health'));
-    expect(res.status).toBe(200);
     expect(vi.mocked(sql)).not.toHaveBeenCalled();
   });
 });
