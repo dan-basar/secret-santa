@@ -1,12 +1,12 @@
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { Analytics, type BeforeSendEvent } from '@vercel/analytics/next';
-import { DM_Sans, Libre_Baskerville } from 'next/font/google';
+import { DM_Sans, Young_Serif } from 'next/font/google';
 import '@/styles/globals.css';
 
 // Downloaded at build time and served from this site, so visitors never request
 // Google's servers and text doesn't jump when the fonts arrive
-const serif = Libre_Baskerville({ weight: ['400', '700'], style: ['normal', 'italic'], subsets: ['latin'], display: 'swap' });
+const serif = Young_Serif({ weight: '400', subsets: ['latin'], display: 'swap' });
 const sans = DM_Sans({ weight: ['300', '400', '500'], subsets: ['latin'], display: 'swap' });
 
 // A personal link's path is its secret, so page views report the route instead
@@ -27,7 +27,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
       {/* globals.css builds --font-serif and --font-sans from these */}
       <style jsx global>{`
         :root {
-          --font-libre-baskerville: ${serif.style.fontFamily};
+          --font-young-serif: ${serif.style.fontFamily};
           --font-dm-sans: ${sans.style.fontFamily};
         }
       `}</style>

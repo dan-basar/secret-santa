@@ -68,8 +68,8 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 ### Frontend
 - **State management**: local React hooks only (`useState`, `useEffect`, `useCallback`, `useRef`) — no Redux or Context
 - **Components**: a page's sections live in `src/components/<page>/`, one per file (e.g. `src/components/draw/`). Fetching, effects and shared state stay in the page and go down as props and callbacks; a component keeps only its own UI state (a "Copied" flash, a confirm step) and uses its page's CSS module
-- **Styling**: CSS Modules per page + `globals.css` for design tokens (CSS custom properties on `:root`, e.g. `--ink`, `--accent` (also used for errors), `--success`)
-- **Typography**: Libre Baskerville (headings) + DM Sans (body), loaded with `next/font/google` in `_app.tsx` (downloaded at build time and served from this site), feeding `--font-serif` / `--font-sans`
+- **Styling**: CSS Modules per page + `globals.css` for design tokens (CSS custom properties on `:root`, e.g. `--ink`, `--accent` (the logo's hat red, also used for errors), `--gold` (the logo's tile: fills, stripes and lines only, too light for text), `--success`)
+- **Typography**: Young Serif (headings, one weight: 400) + DM Sans (body), loaded with `next/font/google` in `_app.tsx` (downloaded at build time and served from this site), feeding `--font-serif` / `--font-sans`
 - **Forms**: client-side validation before API calls; errors displayed inline
 - **Groups on the home page** are referenced by a stable id (`src/lib/groups.ts`), never by name, so renaming a group keeps its members
 - **Session storage** is the only browser storage: `editDraftData` carries the form from the draw page to the home page for Edit & Redraw; `homeFormDraft` holds the home form as it is typed, removed once a draw is created or the form is cleared; `drawEmailDraft` (`src/lib/email-draft.ts`) holds the draw page's email card until the first send succeeds, and belongs to one draw by admin key (Edit & Redraw hands it to the replacement draw). Saved details win over a draft's on load

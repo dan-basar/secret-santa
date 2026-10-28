@@ -34,7 +34,7 @@
 }
 
 .header {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 3px solid var(--gold);
   padding: 20px 0;
   background: white;
 }
@@ -54,7 +54,6 @@
   align-items: center;
   gap: 8px;
   font-family: var(--font-serif);
-  font-weight: 700;
   font-size: 18px;
   color: var(--ink);
   text-decoration: none;
@@ -695,7 +694,7 @@
 /* The details card: just the folded row until it is opened. Its title and
    summary match the other cards' headings and descriptions */
 .detailsTitle {
-  font: 700 20px/1.2 var(--font-serif);
+  font: 400 20px/1.2 var(--font-serif);
 }
 
 .detailsCard {
