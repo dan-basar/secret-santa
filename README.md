@@ -35,7 +35,7 @@ More detail:
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js (pages router), React 18, TypeScript 5 |
+| Framework | Next.js (pages router), React 19, TypeScript 5 |
 | Database | Neon Postgres via `@neondatabase/serverless` (HTTP driver) |
 | Email | Nodemailer + Gmail SMTP |
 | CAPTCHA | Cloudflare Turnstile |
