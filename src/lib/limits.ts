@@ -6,6 +6,11 @@ export const DAILY_EMAIL_LIMIT = 495;
 // at most this many in any 24 hours, counted the same way as the cap
 export const IP_EMAIL_BUDGET = 100;
 
+// Emails one address can get from the site in any 24 hours, across all draws, so
+// a draw can't fill one inbox (names must differ, addresses may repeat). 9 still
+// covers a family sharing one address. Addresses in ADDRESS_LIMIT_EXEMPT have none
+export const ADDRESS_EMAIL_LIMIT = 9;
+
 // A participant's send claim normally lasts only as long as their own send. One
 // older than this belongs to a request that was killed mid-send (send-emails has
 // 120s), so that person can be claimed again. Used by send-emails and ops-check

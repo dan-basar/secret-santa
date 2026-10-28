@@ -10,11 +10,14 @@
 // details organizerNote, budget (dollars as typed) and exchangeDate (YYYY-MM-DD),
 // saved with the draw and put in every match email; with no participant emails
 // they are saved with each organizer link email, for the personal link pages.
-// Returns 200 { success, totalSent, totalFailed, failedNames, organizerLinkSent }; 400 bad input;
-// 403 missing, malformed or unknown key, or failed CAPTCHA; 409 already sent /
-// nothing to resend / that person already has their email; 410 deleted;
-// 429 the sender's IP has used its email budget (100 emails in any 24 hours);
-// 503 daily cap hit (495 emails in any 24 hours, across all draws).
+// Each address gets at most 9 emails in any 24 hours across all draws; anyone
+// over it isn't emailed, is named in limitedNames, and can be resent to later.
+// Returns 200 { success, totalSent, totalFailed, failedNames, limitedNames, organizerLinkSent };
+// 400 bad input; 403 missing, malformed or unknown key, or failed CAPTCHA; 409
+// already sent / nothing to resend / that person already has their email; 410
+// deleted; 429 the sender's IP has used its email budget (100 emails in any 24
+// hours), or a resend's (or organizer-only send's) addresses are all over their
+// limit; 503 daily cap hit (495 emails in any 24 hours, across all draws).
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { sql } from '@/lib/db';
@@ -25,8 +28,8 @@ import { isValidEmail } from '@/lib/email-address';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { readDetails } from '@/lib/details';
 import { reportError, reportWarning } from '@/lib/report';
-import { CLAIM_EXPIRY_MINUTES, DAILY_EMAIL_LIMIT, IP_EMAIL_BUDGET } from '@/lib/limits';
-import { clientIp, isWhitelisted, rateLimitBucket } from '@/lib/rate-limit';
+import { ADDRESS_EMAIL_LIMIT, CLAIM_EXPIRY_MINUTES, DAILY_EMAIL_LIMIT, IP_EMAIL_BUDGET } from '@/lib/limits';
+import { addressBucket, clientIp, isWhitelisted, rateLimitBucket } from '@/lib/rate-limit';
 import type { ExchangeDetails, SendEmailsError, SendEmailsResponse } from '@/types/api';
 
 // A send that takes longer than this is close to the 120s function limit; the
@@ -35,6 +38,9 @@ const SLOW_SEND_SECONDS = 100;
 
 // Any fixed number: the advisory lock that makes cap reservations take turns
 const EMAIL_CAP_LOCK_ID = 495;
+
+// Stands for the organizer's link in the list of recipients, beside participant ids
+const ORGANIZER = 0;
 
 interface DrawRow {
   id: string;
@@ -62,14 +68,17 @@ interface ClaimRow {
   ip_ok: boolean;
   draw_updated: boolean;
   claimed_ids: number[];
+  limited_ids: number[];
+  organizer_ok: boolean;
   reserved_hour: Date | null;
 }
 
-// Hands back reserved emails that weren't sent, from the cap and from the IP's
-// budget. Both reservations were made in the same hour, so that hour's rows hold
-// them. A failure here only leaves a count too high for a day, so it never fails
-// the request
-async function releaseReserved(count: number, reservedHour: Date | null, budgetBucket: string | null) {
+// Hands back reserved emails that weren't sent, from the cap, the IP's budget
+// and each address's limit (addressBuckets lists one entry per unsent email, null
+// for an exempt address). The reservations were made in the same hour, so that
+// hour's rows hold them. A failure here only leaves a count too high for a day,
+// so it never fails the request
+async function releaseReserved(count: number, reservedHour: Date | null, budgetBucket: string | null, addressBuckets: (string | null)[]) {
   if (count <= 0 || !reservedHour) return;
   try {
     await sql.transaction([
@@ -83,6 +92,18 @@ async function releaseReserved(count: number, reservedHour: Date | null, budgetB
         SET hits = hits - ${count}::int
         WHERE bucket = ${budgetBucket}
              AND window_start = ${reservedHour}::timestamptz
+      `,
+      sql`
+        UPDATE RateLimits
+        SET hits = RateLimits.hits - released.emails
+        FROM (
+             SELECT bucket, COUNT(*)::int as emails
+             FROM unnest(${addressBuckets}::text[]) as bucket
+             WHERE bucket IS NOT NULL
+             GROUP BY bucket
+        ) as released
+        WHERE RateLimits.bucket = released.bucket
+             AND RateLimits.window_start = ${reservedHour}::timestamptz
       `,
     ]);
   } catch (err) {
@@ -236,6 +257,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // What the organizer can do instead when the cap or their budget refuses the send
     const fallback = organizerOnly ? 'copy your organizer link above' : 'send each person their personal link below';
 
+    // Who this send would email, and the bucket counting each address against
+    // ADDRESS_EMAIL_LIMIT (null skips it: an exempt address, or failing open like
+    // the IP budget when the bucket can't be worked out)
+    const recipients = [
+      ...unsent.map(match => ({ id: match.giver_id, email: match.giver_email })),
+      ...(organizerCount ? [{ id: ORGANIZER, email: safeOrganizerEmail }] : []),
+    ];
+    let buckets: (string | null)[] = recipients.map(() => null);
+    try {
+      buckets = await Promise.all(recipients.map(r => addressBucket(r.email)));
+    } catch (err) {
+      console.error('Address limit check skipped', err);
+    }
+    const bucketOf = new Map(recipients.map((r, i) => [r.id, buckets[i]]));
+
     // Step 1: In one transaction, check the email cap and claim the draw and
     // each participant BEFORE sending, reserving the cap for whoever was claimed
     // and for the organizer's link when the draw row was updated.
@@ -254,6 +290,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // by a request that died, so it can be taken. Nothing is claimed when the cap
     // check fails, and on a first send nobody is claimed unless the draw was.
     //
+    // Each address's limit is checked per recipient rather than for the whole send:
+    // anyone whose address has had ADDRESS_EMAIL_LIMIT emails in the last 24 hours
+    // (counted in hourly RateLimits rows, like the IP budget) isn't claimed, and
+    // the rest still go out. Within one send, people sharing an address are taken
+    // in order, and the organizer's link last.
+    //
     // Failed sends give their reservation back below; a request that dies keeps
     // its reservation, since some of those emails may have gone out.
     const [, claimRows] = await sql.transaction([
@@ -270,6 +312,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                   AND rateLimits.window_start > now() - interval '25 hours'
         ), allowed AS (
              SELECT (SELECT ok FROM cap) AND (SELECT ok FROM ip_budget) as ok
+        ), addresses AS (
+             SELECT
+                  recipient.id
+                 ,recipient.bucket
+                 ,row_number() OVER (PARTITION BY recipient.bucket ORDER BY recipient.id = ${ORGANIZER}::int, recipient.id) as nth
+             FROM unnest(${recipients.map(r => r.id)}::int[], ${buckets}::text[]) as recipient(id, bucket)
+        ), address_ok AS (
+             SELECT addresses.id
+             FROM addresses
+             WHERE addresses.bucket IS NULL
+                  OR addresses.nth + (
+                       SELECT COALESCE(SUM(rateLimits.hits), 0)
+                       FROM RateLimits as rateLimits
+                       WHERE rateLimits.bucket = addresses.bucket
+                            AND rateLimits.window_start > now() - interval '25 hours'
+                  ) <= ${ADDRESS_EMAIL_LIMIT}::int
+        ), organizer_ok AS (
+             SELECT EXISTS (SELECT 1 FROM address_ok WHERE id = ${ORGANIZER}::int) as ok
         ), draw_update AS (
              UPDATE Draws
              SET organizer_note = ${details.organizer_note}, budget_cents = ${details.budget_cents}::int, exchange_date = ${details.exchange_date}::date
@@ -280,6 +340,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                   AND emails_sent_at IS NULL
                   AND NOT ${!!retryFailed}::boolean
                   AND (SELECT ok FROM allowed)
+                  -- With nobody else to email, the organizer's link is the whole send
+                  AND (NOT ${organizerOnly}::boolean OR (SELECT ok FROM organizer_ok))
              RETURNING id
         ), participant_claim AS (
              -- A corrected address is saved with the claim, so it only changes for
@@ -293,9 +355,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                   AND (email_claimed_at IS NULL OR email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}))
                   AND (SELECT ok FROM allowed)
                   AND (${!!retryFailed}::boolean OR EXISTS (SELECT 1 FROM draw_update))
+                  AND id IN (SELECT id FROM address_ok)
              RETURNING id
+        ), emailing AS (
+             -- Everyone claimed, plus the organizer's link when the draw was updated and their address is under its limit
+             SELECT id FROM participant_claim
+             UNION ALL
+             SELECT ${ORGANIZER}::int FROM draw_update WHERE (SELECT ok FROM organizer_ok)
         ), reserved AS (
-             SELECT (SELECT COUNT(*) FROM participant_claim)::int + (SELECT COUNT(*) FROM draw_update)::int as emails
+             SELECT COUNT(*)::int as emails FROM emailing
         ), reserve AS (
              INSERT INTO EmailSendLog (hour_start, emails_sent)
              SELECT date_trunc('hour', now()), reserved.emails
@@ -309,12 +377,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
              FROM reserved
              WHERE reserved.emails > 0 AND ${budgetBucket}::text IS NOT NULL
              ON CONFLICT (bucket, window_start) DO UPDATE SET hits = RateLimits.hits + EXCLUDED.hits
+        ), address_reserve AS (
+             INSERT INTO RateLimits (bucket, window_start, hits)
+             SELECT addresses.bucket, date_trunc('hour', now()), COUNT(*)::int
+             FROM addresses
+                  INNER JOIN emailing ON emailing.id = addresses.id
+             WHERE addresses.bucket IS NOT NULL
+             GROUP BY addresses.bucket
+             ON CONFLICT (bucket, window_start) DO UPDATE SET hits = RateLimits.hits + EXCLUDED.hits
         )
         SELECT
              (SELECT ok FROM cap) as cap_ok
             ,(SELECT ok FROM ip_budget) as ip_ok
             ,EXISTS (SELECT 1 FROM draw_update) as draw_updated
             ,ARRAY(SELECT id FROM participant_claim) as claimed_ids
+            ,ARRAY(SELECT id FROM addresses WHERE id <> ${ORGANIZER}::int AND id NOT IN (SELECT id FROM address_ok)) as limited_ids
+            ,(SELECT ok FROM organizer_ok) as organizer_ok
             ,(SELECT hour_start FROM reserve) as reserved_hour
       `,
     ]) as [unknown, ClaimRow[]];
@@ -326,17 +404,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       return res.status(429).json({ error: `You've sent the most emails allowed from your connection for now (${IP_EMAIL_BUDGET} in 24 hours). Try again later, or ${fallback}.` });
     }
 
+    const limitMessage = (who: string) =>
+      `${who} already had ${ADDRESS_EMAIL_LIMIT} emails from this site in the last 24 hours, the most one address can get. Try again tomorrow, or ${fallback}.`;
+
+    if (organizerOnly && !claim.organizer_ok) return res.status(429).json({ error: limitMessage('Your email address has') });
+
     if (!retryFailed && !claim.draw_updated) return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
 
     const claimedIds = new Set(claim.claimed_ids);
     const toSend = unsent.filter(match => claimedIds.has(match.giver_id));
+    const limitedIds = new Set(claim.limited_ids);
+    const limitedNames = unsent.filter(match => limitedIds.has(match.giver_id)).map(match => match.giver_name);
 
-    if (retryFailed && !toSend.length) return res.status(409).json({ error: 'These emails are already being sent.' });
+    if (retryFailed && !toSend.length) {
+      if (limitedNames.length) {
+        return res.status(429).json({ error: limitMessage(limitedNames.length === 1 ? `${limitedNames[0]}'s email address has` : `The email addresses of ${limitedNames.join(', ')} have`) });
+      }
+      return res.status(409).json({ error: 'These emails are already being sent.' });
+    }
 
     // On the first send the organizer's link goes out alongside the match emails;
     // if it fails the send still stands, and the page tells the organizer to copy
     // their link
-    const organizerLinkSending = retryFailed
+    const organizerLinkSending = retryFailed || !claim.organizer_ok
       ? Promise.resolve(false)
       : sendOrganizerLinkEmail(safeOrganizerName, safeOrganizerEmail, key).then(() => true, async (err) => {
         await reportError(err);
@@ -394,7 +484,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     if (failed.length) await reportError(new Error(`${failed.length} of ${toSend.length} emails failed to send`, { cause: firstSendError }));
     const failedNames: string[] = failed.map(match => match.giver_name);
     const actualSent = toSend.length - failed.length;
-    await releaseReserved(failed.length + (organizerCount && !organizerLinkSent ? 1 : 0), claim.reserved_hour, budgetBucket);
+    // The organizer's link was reserved only when it was sent
+    const organizerFailed = organizerCount > 0 && claim.organizer_ok && !organizerLinkSent;
+    await releaseReserved(
+      failed.length + (organizerFailed ? 1 : 0),
+      claim.reserved_hour,
+      budgetBucket,
+      [...failed.map(match => bucketOf.get(match.giver_id) ?? null), ...(organizerFailed ? [bucketOf.get(ORGANIZER) ?? null] : [])],
+    );
 
     // With nobody else to email, the organizer's link was the whole send
     if (organizerOnly && !organizerLinkSent) return res.status(500).json({ error: 'Failed to send your organizer link. Please try again.' });
@@ -418,6 +515,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       totalSent: actualSent,
       totalFailed: failed.length,
       failedNames,
+      limitedNames,
       organizerLinkSent,
     });
   } catch (err) {

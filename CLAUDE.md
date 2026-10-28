@@ -73,7 +73,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 - **Forms**: client-side validation before API calls; errors displayed inline
 - **Groups on the home page** are referenced by a stable id (`src/lib/groups.ts`), never by name, so renaming a group keeps its members
 - **Session storage** is the only browser storage: `editDraftData` carries the form from the draw page to the home page for Edit & Redraw; `homeFormDraft` holds the home form as it is typed, removed once a draw is created or the form is cleared; `drawEmailDraft` (`src/lib/email-draft.ts`) holds the draw page's email card until the first send succeeds, and belongs to one draw by admin key (Edit & Redraw hands it to the replacement draw). Saved details win over a draft's on load
-- Limits live in one place each: participants (50) and groups (20) in `src/lib/groups.ts`, shared by the home form and create-draw; the email cap, per-IP budget and claim expiry in `src/lib/limits.ts`. Never hard-code them
+- Limits live in one place each: participants (50) and groups (20) in `src/lib/groups.ts`, shared by the home form and create-draw; the email cap, per-IP budget, per-address limit and claim expiry in `src/lib/limits.ts`. Never hard-code them
 
 ## Matching Algorithm (`src/lib/matching.ts`)
 

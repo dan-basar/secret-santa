@@ -64,6 +64,8 @@ export interface SendEmailsResponse {
   totalSent: number;
   totalFailed: number;
   failedNames: string[];
+  // Not emailed because their address already had its limit of emails for 24 hours
+  limitedNames: string[];
   // Whether the organizer was emailed their organizer link (first send only)
   organizerLinkSent: boolean;
 }

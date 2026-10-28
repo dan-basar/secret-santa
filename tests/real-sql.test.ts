@@ -21,7 +21,7 @@ vi.mock('@/lib/turnstile', () => ({ verifyTurnstile: async () => true }));
 import { NextRequest } from 'next/server';
 import { sql } from '@/lib/db';
 import { proxy } from '@/proxy';
-import { rateLimitBucket } from '@/lib/rate-limit';
+import { addressBucket, rateLimitBucket } from '@/lib/rate-limit';
 import { BASE_PATH } from '@/lib/site';
 import createDraw from '@/pages/api/create-draw';
 import getDraw from '@/pages/api/get-draw';
@@ -51,7 +51,10 @@ async function adminView(adminKey: string) {
   return res.body as GetDrawResponse;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  // The database lasts the whole file, and most sends email pat@example.com:
+  // start each test with no counted emails, so the per-address limit never carries over
+  await sql`DELETE FROM RateLimits`;
   sendMatchEmail.mockReset();
   sendMatchEmail.mockImplementation(async () => {});
   vi.stubEnv('NEXT_PUBLIC_BASE_URL', 'https://baseworkshop.app');
@@ -316,6 +319,38 @@ describe('routes against a real Postgres', () => {
     // A key and 4 tokens for the refused attempt, then again for the retry
     expect(newToken).toHaveBeenCalledTimes(10);
     newToken.mockRestore();
+  });
+
+  it('emails one address at most 9 times in 24 hours, holding back the rest, unless it is exempt', async () => {
+    const family = Array.from({ length: 11 }, (_, i) => ({ name: `Person ${i + 1}`, email: 'family@example.com', group: '' }));
+    const { adminKey } = await create({ participants: family });
+    const bucket = (await addressBucket('family@example.com'))!;
+    const counted = async () => (await sql`SELECT COALESCE(SUM(hits), 0)::int as hits FROM RateLimits WHERE bucket = ${bucket}`)[0].hits;
+    sendMatchEmail.mockImplementation(async (...args: unknown[]) => {
+      if (args[0] === 'Person 2') throw new Error('SMTP down');
+    });
+
+    const first = await call(sendEmails, { method: 'POST', body: { key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't' } });
+    expect(first.statusCode).toBe(200);
+    // People 1 to 9 were claimed in order and Person 2's failed email was given back
+    expect(first.body).toMatchObject({ totalSent: 8, failedNames: ['Person 2'], limitedNames: ['Person 10', 'Person 11'], organizerLinkSent: true });
+    expect(await counted()).toBe(8);
+
+    // One more fits, so a resend reaches Person 2 but nobody after
+    sendMatchEmail.mockReset();
+    const retry = await call(sendEmails, { method: 'POST', body: { key: adminKey, retryFailed: true, turnstileToken: 't' } });
+    expect(retry.body).toMatchObject({ totalSent: 1, limitedNames: ['Person 10', 'Person 11'] });
+    expect(await counted()).toBe(9);
+
+    const full = await call(sendEmails, { method: 'POST', body: { key: adminKey, retryFailed: true, person: 9, turnstileToken: 't' } });
+    expect(full.statusCode).toBe(429);
+
+    vi.stubEnv('ADDRESS_LIMIT_EXEMPT', 'family@example.com');
+    const exempt = await call(sendEmails, { method: 'POST', body: { key: adminKey, retryFailed: true, turnstileToken: 't' } });
+    expect(exempt.body).toMatchObject({ totalSent: 2, limitedNames: [] });
+    expect(await counted()).toBe(9);
+    const after = await adminView(adminKey);
+    expect(after.participants.every(p => p.email_sent_at)).toBe(true);
   });
 
   it('rate limits the sixth send from one IP in an hour, and clears out old counters', async () => {
