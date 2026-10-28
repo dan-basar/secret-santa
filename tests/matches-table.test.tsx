@@ -37,6 +37,20 @@ describe('MatchesTable', () => {
     expect(screen.getAllByText('Sam')).toHaveLength(2);
   });
 
+  it('blurs a stand-in table of made-up names, with no real name in the page until shown', () => {
+    const { container } = render(<Table />);
+    const blurred = container.querySelector('[aria-hidden="true"][inert]');
+    expect(blurred?.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(blurred?.textContent).toContain('Name1');
+    expect(blurred?.textContent).toContain('Name2');
+    expect(container.textContent).not.toContain('Alex');
+    expect(container.textContent).not.toContain('Sam');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all matches' }));
+    expect(container.querySelector('[inert]')).toBeNull();
+    expect(container.textContent).not.toContain('Name1');
+  });
+
   it('moves focus to the table it shows, so a screen reader reads it out', () => {
     render(<Table />);
     fireEvent.click(screen.getByRole('button', { name: 'Show all matches' }));
