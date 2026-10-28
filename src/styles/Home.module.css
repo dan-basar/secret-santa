@@ -5,7 +5,7 @@
 }
 
 .header {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 3px solid var(--gold);
   padding: 28px 0;
   background: white;
 }
@@ -79,12 +79,12 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  background: var(--ink);
-  color: white;
+  background: var(--gold);
+  color: var(--ink);
   border-radius: 50%;
   font-family: var(--font-sans);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
   flex-shrink: 0;
 }
 

@@ -11,16 +11,20 @@
   --ink-faint: #b8b3ae;
   /* Placeholders stand in for labels on phones, so they need readable contrast (about 4.9:1 on white) */
   --ink-placeholder: #777069;
-  --paper: #faf8f5;
-  --paper-warm: #f2ede6;
-  --accent: #c84b2f;
-  --accent-light: #f0e8e5;
+  --paper: #faf8f3;
+  --paper-warm: #f3eedf;
+  /* The logo's hat red (about 6.2:1 on white); also used for errors */
+  --accent: #b3302a;
+  --accent-light: #f7e9e6;
+  /* The logo's tile. About 2.2:1 on white, so only for fills, stripes and lines, never text */
+  --gold: #c9ae3c;
+  --gold-light: #f5edcb;
   --success: #2d6a4f;
   --success-light: #e8f5ee;
-  --border: #e4dfd9;
+  --border: #e7e0d2;
   --radius: 4px;
   /* The font families come from next/font in _app.tsx */
-  --font-serif: var(--font-libre-baskerville), Georgia, serif;
+  --font-serif: var(--font-young-serif), Georgia, serif;
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;
   --shadow: 0 1px 3px rgba(26,23,20,0.08), 0 4px 16px rgba(26,23,20,0.04);
   --shadow-lg: 0 2px 8px rgba(26,23,20,0.1), 0 12px 40px rgba(26,23,20,0.08);
@@ -60,9 +64,10 @@ body {
   }
 }
 
+/* Young Serif has one weight, already heavy; asking for 700 would make the browser fake a bolder one */
 h1, h2, h3 {
   font-family: var(--font-serif);
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1.2;
 }
 
@@ -200,6 +205,7 @@ input::placeholder {
 .card {
   background: white;
   border: 1px solid var(--border);
+  border-top: 3px solid var(--gold);
   border-radius: 8px;
   box-shadow: var(--shadow);
 }

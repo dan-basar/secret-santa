@@ -52,7 +52,7 @@ function emailLayout(toName: string, body: string): string {
 function emailButton(href: string, label: string): string {
   return `
         <p style="margin: 32px 0;">
-          <a href="${href}" style="display: inline-block; padding: 12px 24px; background: #c84b2f; color: #ffffff; text-decoration: none; border-radius: 6px; font-family: Arial, sans-serif; font-size: 16px;">${label}</a>
+          <a href="${href}" style="display: inline-block; padding: 12px 24px; background: #b3302a; color: #ffffff; text-decoration: none; border-radius: 6px; font-family: Arial, sans-serif; font-size: 16px;">${label}</a>
         </p>`;
 }
 
@@ -90,7 +90,7 @@ export async function sendMatchEmail(
     : '';
   const htmlDetails = withDetails ? `
         <p style="font-size: 16px; line-height: 1.6;">First, some details:</p>
-        <div style="border-left: 3px solid #c84b2f; background: #faf8f5; padding: 12px 16px; margin: 8px 0 0; font-size: 15px; line-height: 1.5; overflow-wrap: break-word; word-wrap: break-word; word-break: break-word;">${
+        <div style="border-left: 3px solid #c9ae3c; background: #faf8f3; padding: 12px 16px; margin: 8px 0 0; font-size: 15px; line-height: 1.5; overflow-wrap: break-word; word-wrap: break-word; word-break: break-word;">${
           details.organizer_note ? `
           <p style="margin: 0 0 8px; overflow-wrap: anywhere; word-break: break-word;"><strong>A note from your organizer:</strong><br>&ldquo;${escapeHtml(details.organizer_note)}&rdquo;</p>` : ''}${
           lines.map(line => `
