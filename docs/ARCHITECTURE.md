@@ -28,7 +28,7 @@ stateDiagram-v2
 ```
 
 - **Created.** Matches are drawn and saved with the draw. The organizer can share personal links, send emails, Edit & Redraw, or delete. When nobody has an email address, sending emails just the organizer their link (one email against the cap) and the draw stays in this state.
-- **Edit & Redraw** (only before emails go out) copies the participants back into the home page form. The old draw stays live until the new one is saved; `create-draw` then soft-deletes the old draw in the **same transaction** that saves the new one, so there is never a moment with neither or both. The new draw keeps the old one's saved note, budget and date.
+- **Edit & Redraw** (only before emails go out) copies the participants back into the home page form. The old draw stays live until the new one is saved; `create-draw` then soft-deletes the old draw, recording the new one in its `replaced_by`, in the **same transaction** that saves the new one, so there is never a moment with neither or both. The new draw keeps the old one's saved note, budget and date.
 - **Emails sent.** The first send records the organizer's name and email and sets `Draws.emails_sent_at` (how a send works is under [Sending emails](#sending-emails)). A second full send is refused (`409`); only people whose email failed can be sent to again. Redraw is blocked from here on, in the UI and in `create-draw`, because emails can't be taken back.
 - **Deleted.** `deleted_at` is set; the rows stay. Every link to the draw, including personal links, then gets `410` / "no longer available".
 
@@ -111,10 +111,10 @@ DailyStats (stat_date)                — one row of counts per UTC day, written
 RateLimits (bucket, window_start)     — hits per hashed client (IPv4 or IPv6 /64) + route per hour, and emails per hashed client per hour (the 24-hour email budget)
 ```
 
-- **Draws** — one row per draw: admin key, timestamps (`emails_sent_at`, `deleted_at` double as flags), organizer name/email once emails are sent, and the optional organizer note, budget (in cents) and exchange date.
-- **Participants** — one row per person: name, optional email, optional group name, position in the draw, their reveal token, when their email went out, and a short-lived claim while it is being sent.
+- **Draws** — one row per draw: admin key, timestamps (`emails_sent_at`, `deleted_at` double as flags), organizer name/email once emails are sent, the optional organizer note, budget (in cents) and exchange date, and `replaced_by`, the draw Edit & Redraw saved in its place.
+- **Participants** — one row per person: name, optional email, optional group name, position in the draw, their reveal code, when their email went out, and a short-lived claim while it is being sent.
 - **Matches** — one row per giver → receiver pair, pointing at two Participants rows, linked by position rather than name. Each participant appears once as a giver and once as a receiver (`UNIQUE` on both columns).
-- **EmailSendLog**, **RateLimits** and **DailyStats** are counters, not tied to any draw. `Participants.revealed_at` is set by `reveal` the first time a personal link shows a match, so the stats can say how many links get opened.
+- **EmailSendLog**, **RateLimits** and **DailyStats** are counters, not tied to any draw. `Participants.revealed_at` is set by `reveal` the first time a personal link shows a match, so the stats can say how many links get opened. Draws with `replaced_by` set are left out of the draws and participants counts, so fixing a typo with Edit & Redraw doesn't count the draw twice.
 
 The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 
@@ -126,11 +126,11 @@ The schema, with comments, is [`sql/setup.sql`](../sql/setup.sql).
 | Who drew whom | Matches | Kept with the draw |
 | Organizer name and email | Draws, set on first send | Kept with the draw |
 | Organizer note, budget, exchange date | Draws, set by save-details or the first send | Kept with the draw |
-| Admin key, reveal tokens | Draws, Participants | Kept with the draw |
+| Admin key, reveal codes | Draws, Participants | Kept with the draw |
 | Hashed IP + route hit counts, and emails per hashed IP | RateLimits (HMAC-SHA-256 with a secret key; raw IPs never stored) | About 2 days, then hard-deleted by `src/proxy.ts` |
 | Emails sent per hour | EmailSendLog (a count only) | Kept |
 | Draws, participants, emails and first link opens per day | DailyStats (counts only) | Kept |
 | Page views (path with personal codes replaced, referrer, country, device) | Vercel Web Analytics | Vercel's retention |
 | Server errors | Sentry (stack trace only: the request, URL and user are removed before sending) | Sentry's retention |
 
-Draws are only ever soft-deleted: deleting hides a draw from every link but keeps the rows. Participant and organizer email addresses are kept too, by decision for now; there is no purge job. Emails themselves are sent through the Gmail account in `GMAIL_USER`, so copies also sit in its Sent folder.
+Draws are only ever soft-deleted: deleting hides a draw from every link but keeps the rows. Participant and organizer email addresses are kept too, by decision for now; there is no purge job. The one exception was a one-time purge in October 2026 (`sql/migrations/012_v2_cleanup.sql`), which removed every draw created before 17 October 2026 for good. Emails themselves are sent through the Gmail account in `GMAIL_USER`, so copies also sit in its Sent folder.

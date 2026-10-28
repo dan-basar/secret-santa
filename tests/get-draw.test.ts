@@ -27,9 +27,9 @@ const drawRow = {
 
 // Positions with gaps, so the test shows matches map by position, not by row number
 const participantRows = [
-  { position: 10, name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_token: 'Aa111111', email_sent_at: new Date('2026-10-02T09:00:00.000Z') },
-  { position: 20, name: 'Sam', email: 'sam@example.com', group_name: null, reveal_token: 'Bb222222', email_sent_at: null },
-  { position: 30, name: 'Jo', email: null, group_name: 'Smiths', reveal_token: 'Cc333333', email_sent_at: null },
+  { position: 10, name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_code: 'Aa111111', email_sent_at: new Date('2026-10-02T09:00:00.000Z') },
+  { position: 20, name: 'Sam', email: 'sam@example.com', group_name: null, reveal_code: 'Bb222222', email_sent_at: null },
+  { position: 30, name: 'Jo', email: null, group_name: 'Smiths', reveal_code: 'Cc333333', email_sent_at: null },
 ];
 
 // Alex -> Sam -> Jo -> Alex

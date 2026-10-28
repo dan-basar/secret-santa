@@ -54,11 +54,12 @@ describe('POST /api/create-draw replacing an earlier draw', () => {
     expect(sql).toHaveBeenCalledTimes(4);
     const update = queries().find(q => q.text.includes('SET deleted_at = now()'));
     expect(update?.text).toContain('AND emails_sent_at IS NULL');
-    expect(update?.values).toEqual([OLD_KEY]);
-    // The new draw copies the old one's saved details
+    // The new draw copies the old one's saved details, and the old one records it as its replacement
     const insert = queries().find(q => q.text.includes('INSERT INTO Draws'));
     expect(insert?.text).toContain('FROM Draws');
     expect(insert?.values.at(-1)).toBe(OLD_KEY);
+    expect(update?.text).toContain('replaced_by =');
+    expect(update?.values).toEqual([insert?.values[0], OLD_KEY]);
   });
 
   it('rejects a malformed key with 403 before touching the database', async () => {

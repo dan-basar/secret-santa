@@ -63,7 +63,7 @@ describe('routes against a real Postgres', () => {
     const { adminKey } = await create();
     expect(adminKey).toMatch(/^[0-9A-Za-z]{14}$/);
     const draw = await adminView(adminKey);
-    expect(draw.participants.every(p => /^[0-9A-Za-z]{8}$/.test(p.reveal_token))).toBe(true);
+    expect(draw.participants.every(p => /^[0-9A-Za-z]{8}$/.test(p.reveal_code))).toBe(true);
     expect(draw.participants.map(p => p.name)).toEqual(['Alex', 'Sam', 'Jo', 'Kim']);
     expect(draw.matches).toHaveLength(4);
     for (const m of draw.matches) {
@@ -85,7 +85,7 @@ describe('routes against a real Postgres', () => {
     expect(after.participants.filter(p => p.email_sent_at).map(p => p.name)).toEqual(['Alex', 'Sam', 'Kim']);
 
     for (const m of after.matches) {
-      const r = await call(reveal, { method: 'GET', query: { token: after.participants[m.giver].reveal_token } });
+      const r = await call(reveal, { method: 'GET', query: { token: after.participants[m.giver].reveal_code } });
       expect(r.statusCode).toBe(200);
       const body = r.body as RevealResponse;
       expect(body.name).toBe(after.participants[m.giver].name);
@@ -134,7 +134,7 @@ describe('routes against a real Postgres', () => {
 
     const view = await adminView(adminKey);
     expect(view).toMatchObject({ ...details, organizer_name: 'Pat' });
-    const r = await call(reveal, { method: 'GET', query: { token: view.participants[0].reveal_token } });
+    const r = await call(reveal, { method: 'GET', query: { token: view.participants[0].reveal_code } });
     expect(r.body).toMatchObject(details);
   });
 
@@ -159,7 +159,7 @@ describe('routes against a real Postgres', () => {
     expect(saved.body).toEqual(details);
     expect(sendMatchEmail).not.toHaveBeenCalled();
     expect(await adminView(adminKey)).toMatchObject({ ...details, emails_sent_at: null });
-    const r = await call(reveal, { method: 'GET', query: { token: view.participants[0].reveal_token } });
+    const r = await call(reveal, { method: 'GET', query: { token: view.participants[0].reveal_code } });
     expect(r.body).toMatchObject({ ...details, organizer_name: null });
 
     expect((await save({ organizerNote: '', budget: '', exchangeDate: '' })).body).toEqual({ organizer_note: null, budget_cents: null, exchange_date: null });
@@ -236,6 +236,12 @@ describe('routes against a real Postgres', () => {
     expect(fresh.adminKey).not.toBe(old.adminKey);
     const oldView = await call(getDraw, { method: 'GET', headers: { 'x-admin-key': old.adminKey } });
     expect(oldView.statusCode).toBe(410);
+    const [link] = await sql`
+      SELECT old.replaced_by = fresh.id as points_at_fresh
+      FROM Draws as old, Draws as fresh
+      WHERE old.admin_key = ${old.adminKey} AND fresh.admin_key = ${fresh.adminKey}
+    ` as { points_at_fresh: boolean }[];
+    expect(link.points_at_fresh).toBe(true);
 
     const twice = await call(createDraw, { method: 'POST', body: { participants: people, replacesKey: old.adminKey } });
     expect(twice.statusCode).toBe(410);
@@ -249,7 +255,7 @@ describe('routes against a real Postgres', () => {
 
   it('soft-deletes a draw once, so its links answer 410', async () => {
     const { adminKey } = await create();
-    const token = (await adminView(adminKey)).participants[0].reveal_token;
+    const token = (await adminView(adminKey)).participants[0].reveal_code;
     const deletedAt = async () => (await sql`SELECT deleted_at FROM Draws WHERE admin_key = ${adminKey}`)[0].deleted_at as Date | null;
 
     expect((await call(deleteDraw, { method: 'POST', body: { key: 'wrong' } })).statusCode).toBe(403);
@@ -278,14 +284,14 @@ describe('routes against a real Postgres', () => {
 
   it('draws fresh tokens when a new one repeats one already saved', async () => {
     const { adminKey } = await create();
-    const taken = (await adminView(adminKey)).participants[0].reveal_token;
+    const taken = (await adminView(adminKey)).participants[0].reveal_code;
     // The first attempt reuses a saved personal link token; the retry gets fresh ones
     const tokens = await import('@/lib/tokens');
     const newToken = vi.spyOn(tokens, 'newToken');
     newToken.mockImplementationOnce(() => 'Ab3dEf6hIj9kLm').mockImplementationOnce(() => taken);
     const second = await create();
     expect(second.adminKey).not.toBe('Ab3dEf6hIj9kLm');
-    const tokensNow = (await adminView(second.adminKey)).participants.map(p => p.reveal_token);
+    const tokensNow = (await adminView(second.adminKey)).participants.map(p => p.reveal_code);
     expect(tokensNow).not.toContain(taken);
     // A key and 4 tokens for the refused attempt, then again for the retry
     expect(newToken).toHaveBeenCalledTimes(10);
@@ -313,7 +319,7 @@ describe('routes against a real Postgres', () => {
   it('records the first time each personal link is opened', async () => {
     const { adminKey } = await create();
     const view = await adminView(adminKey);
-    const token = view.participants[0].reveal_token;
+    const token = view.participants[0].reveal_code;
     const opened = async () => await sql`SELECT revealed_at FROM Participants WHERE reveal_code = ${token}` as { revealed_at: Date | null }[];
     expect((await opened())[0].revealed_at).toBeNull();
 
@@ -343,6 +349,11 @@ describe('routes against a real Postgres', () => {
     `;
     await sql`UPDATE Participants SET email_sent_at = now() WHERE draw_id = (SELECT id FROM Draws WHERE admin_key = ${adminKey}) AND name <> 'Kim'`;
     await sql`UPDATE Participants SET revealed_at = ${yesterday}::date + interval '13 hours' WHERE draw_id = (SELECT id FROM Draws WHERE admin_key = ${adminKey}) AND name = 'Alex'`;
+
+    // A draw made yesterday and replaced by Edit & Redraw today: not counted again
+    const replaced = await create();
+    await create({ replacesKey: replaced.adminKey });
+    await sql`UPDATE Draws SET created_at = ${yesterday}::date + interval '14 hours' WHERE admin_key = ${replaced.adminKey}`;
 
     expect((await call(opsCheck, { method: 'GET', headers: {} })).statusCode).toBe(403);
     const run = await call(opsCheck, { method: 'GET', headers });

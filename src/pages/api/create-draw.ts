@@ -174,6 +174,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         WITH replaced as (
              UPDATE Draws
              SET deleted_at = now()
+                 ,replaced_by = ${drawId}::uuid
              WHERE admin_key = ${replacesKey}
                   AND deleted_at IS NULL
                   AND emails_sent_at IS NULL

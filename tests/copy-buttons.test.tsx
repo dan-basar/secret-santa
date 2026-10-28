@@ -9,8 +9,8 @@ function stubClipboard(writeText: () => Promise<void>) {
 }
 
 const participants = [
-  { name: 'Alex', email: null, group_name: null, reveal_token: 'token-a', email_sent_at: null },
-  { name: 'Sam', email: null, group_name: null, reveal_token: 'token-s', email_sent_at: null },
+  { name: 'Alex', email: null, group_name: null, reveal_code: 'token-a', email_sent_at: null },
+  { name: 'Sam', email: null, group_name: null, reveal_code: 'token-s', email_sent_at: null },
 ];
 
 afterEach(() => {

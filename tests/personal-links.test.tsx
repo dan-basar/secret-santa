@@ -11,7 +11,7 @@ describe('personal links', () => {
   it('fills each Text link with a short message ending in that person’s link', () => {
     render(
       <PersonalLinks
-        participants={[{ name: 'Sam', email: null, group_name: null, reveal_token: 'k7Qm2xPa', email_sent_at: null }]}
+        participants={[{ name: 'Sam', email: null, group_name: null, reveal_code: 'k7Qm2xPa', email_sent_at: null }]}
         emailsSent={false}
         linkFor={(token) => `https://example.com/secret-santa/reveal/${token}`}
       />,

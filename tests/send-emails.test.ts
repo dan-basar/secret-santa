@@ -96,7 +96,7 @@ vi.mock('@/lib/db', async (importOriginal) => {
         giver_name: giver.name,
         giver_email: giver.email,
         giver_email_sent_at: giver.email_sent_at,
-        giver_reveal_token: `token-${giver.id}`,
+        giver_reveal_code: `token-${giver.id}`,
         receiver_name: db.participants.find(p => p.id === db.receiverOf[giver.id])!.name,
       }));
     }
