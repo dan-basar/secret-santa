@@ -56,8 +56,8 @@ vi.mock('@/lib/db', async (importOriginal) => {
     // The one statement that checks the cap, updates the draw, claims the
     // participants, and reserves the cap for whoever will be emailed
     if (text.includes('WITH cap AS')) {
-      const [count, limit, bucket, , ipLimit, , note, budgetCents, exchangeDate, organizerOnly, , organizerName, , organizerEmail, , retryFailed, ids, expiryMinutes] =
-        values as [number, number, string | null, number, number, string | null, string | null, number | null, string | null, boolean, boolean, string, boolean, string, string, boolean, number[], number];
+      const [count, limit, bucket, , ipLimit, , note, budgetCents, exchangeDate, organizerOnly, , organizerName, , organizerEmail, , retryFailed, newEmail, ids, expiryMinutes] =
+        values as [number, number, string | null, number, number, string | null, string | null, number | null, string | null, boolean, boolean, string, boolean, string, string, boolean, string | null, number[], number];
       const capOk = emailsCounted() + count <= limit;
       const ipOk = bucket === null || ipEmailsCounted(bucket) + count <= ipLimit;
       const allowed = capOk && ipOk;
@@ -77,7 +77,10 @@ vi.mock('@/lib/db', async (importOriginal) => {
         ? db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at
           && (p.email_claimed_at === null || p.email_claimed_at < db.now - expiryMinutes * 60_000))
         : [];
-      for (const p of claimed) p.email_claimed_at = db.now;
+      for (const p of claimed) {
+        p.email_claimed_at = db.now;
+        p.email = newEmail ?? p.email;
+      }
       // Each claimed participant, plus the organizer's link when the draw was updated
       const reserved = claimed.length + (drawUpdated ? 1 : 0);
       let reservedHour: Date | null = null;
@@ -93,6 +96,7 @@ vi.mock('@/lib/db', async (importOriginal) => {
       if (values[0] !== db.draw.admin_key) return [];
       return db.participants.map(giver => ({
         giver_id: giver.id,
+        giver_position: giver.id,
         giver_name: giver.name,
         giver_email: giver.email,
         giver_email_sent_at: giver.email_sent_at,
@@ -336,6 +340,64 @@ describe('POST /api/send-emails', () => {
     // The resend doesn't email the organizer their link again
     expect(sendOrganizerLinkEmail).toHaveBeenCalledTimes(1);
     expect(emailsCounted()).toBe(4);
+  });
+
+  describe('resending to one person', () => {
+    // Sam (index 1) and Jo (index 2) both fail on the first send
+    beforeEach(async () => {
+      failFor('sam@example.com', 'jo@example.com');
+      await post(firstSend);
+      failFor();
+      sendMatchEmail.mockClear();
+    });
+
+    it('emails just that person and leaves the others unsent', async () => {
+      const res = await post({ ...resend, person: 1 });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ totalSent: 1, totalFailed: 0 });
+      expect(emailed()).toEqual(['sam@example.com']);
+      expect(sentNames()).toEqual(['Alex', 'Sam']);
+    });
+
+    it('saves a corrected address and sends to it, and keeps it when that send fails too', async () => {
+      failFor('sam@example.org');
+      const res = await post({ ...resend, person: 1, email: ' Sam@Example.org ' });
+      expect(res.statusCode).toBe(500);
+      expect(emailed()).toEqual(['sam@example.org']);
+      expect(db.participants[1].email).toBe('sam@example.org');
+      expect(sentNames()).toEqual(['Alex']);
+
+      failFor();
+      expect((await post({ ...resend, person: 1 })).statusCode).toBe(200);
+      expect(emailed().at(-1)).toBe('sam@example.org');
+    });
+
+    it('refuses someone who already has their email, has no address, or isn\'t in the draw', async () => {
+      const already = await post({ ...resend, person: 0, email: 'alex2@example.com' });
+      expect(already.statusCode).toBe(409);
+      expect(already.body).toEqual({ error: 'Alex already has their email.' });
+      // Their address can't be changed once their email has gone out
+      expect(db.participants[0].email).toBe('alex@example.com');
+      expect((await post({ ...resend, person: 3 })).statusCode).toBe(409);
+      expect((await post({ ...resend, person: 9 })).statusCode).toBe(400);
+      expect(sendMatchEmail).not.toHaveBeenCalled();
+    });
+
+    it('rejects a bad person or address before checking the CAPTCHA', async () => {
+      vi.mocked(fetch).mockClear();
+      for (const body of [
+        { ...resend, person: -1 },
+        { ...resend, person: 1.5 },
+        { ...resend, person: '1' },
+        { ...firstSend, person: 1 },
+        { ...resend, email: 'sam@example.org' },
+        { ...resend, person: 1, email: 'not an address' },
+        { ...resend, person: 1, email: 42 },
+      ]) {
+        expect((await post(body)).statusCode).toBe(400);
+      }
+      expect(fetch).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps someone unsent when their resend fails again', async () => {

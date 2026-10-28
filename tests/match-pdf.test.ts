@@ -6,9 +6,9 @@ import type { GetDrawResponse } from '@/types/api';
 const draw: GetDrawResponse = {
   created_at: '2026-10-15T12:00:00.000Z', emails_sent_at: null,
   participants: [
-    { name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_code: 'Aa111111', email_sent_at: null },
-    { name: 'Smith, José', email: 'jose@example.com', group_name: null, reveal_code: 'Bb222222', email_sent_at: null },
-    { name: 'Sam', email: null, group_name: 'Smiths', reveal_code: 'Cc333333', email_sent_at: null },
+    { name: 'Alex', email: 'alex@example.com', group_name: 'Smiths', reveal_code: 'Aa111111', email_sent_at: null, revealed_at: null },
+    { name: 'Smith, José', email: 'jose@example.com', group_name: null, reveal_code: 'Bb222222', email_sent_at: null, revealed_at: null },
+    { name: 'Sam', email: null, group_name: 'Smiths', reveal_code: 'Cc333333', email_sent_at: null, revealed_at: null },
   ],
   matches: [{ giver: 0, receiver: 1 }, { giver: 1, receiver: 2 }, { giver: 2, receiver: 0 }],
   organizer_name: null, organizer_note: null, budget_cents: null, exchange_date: null,
@@ -34,7 +34,7 @@ describe('buildMatchesPdf', () => {
 
   it('runs onto more pages for a big draw, numbering them', async () => {
     const participants = Array.from({ length: 50 }, (_, i) => ({
-      name: `Person ${i + 1}`, email: `person${i + 1}@example.com`, group_name: null, reveal_code: `Tok${i}`, email_sent_at: null,
+      name: `Person ${i + 1}`, email: `person${i + 1}@example.com`, group_name: null, reveal_code: `Tok${i}`, email_sent_at: null, revealed_at: null,
     }));
     const doc = await buildMatchesPdf(
       { ...draw, participants, matches: participants.map((_, i) => ({ giver: i, receiver: (i + 1) % 50 })) },
@@ -68,7 +68,7 @@ describe('the PDF font', () => {
 
   it('embeds Noto Sans when the font files load', async () => {
     const people = ['Ivana Čačić', 'Иван Петров', 'Ελένη'].map((name, i) => ({
-      name, email: null, group_name: null, reveal_code: `Tok${i}`, email_sent_at: null,
+      name, email: null, group_name: null, reveal_code: `Tok${i}`, email_sent_at: null, revealed_at: null,
     }));
     const doc = await buildMatchesPdf(
       { ...draw, participants: people, matches: people.map((_, i) => ({ giver: i, receiver: (i + 1) % 3 })) },

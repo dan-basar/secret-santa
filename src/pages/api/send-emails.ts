@@ -3,13 +3,16 @@
 // participant emails, the first send emails just the organizer their link, and
 // can be repeated. Admin key required. Body: { key, turnstileToken } plus
 // organizerName and organizerEmail on the first send, or retryFailed: true to
-// resend only the failed. The first send may also carry the optional exchange
+// resend only the failed. A resend can carry person (an index into get-draw's
+// participants) to resend to just that person, plus email to correct their
+// address first; only someone whose email didn't go out can be resent to or
+// have their address changed. The first send may also carry the optional exchange
 // details organizerNote, budget (dollars as typed) and exchangeDate (YYYY-MM-DD),
 // saved with the draw and put in every match email; with no participant emails
 // they are saved with each organizer link email, for the personal link pages.
 // Returns 200 { success, totalSent, totalFailed, failedNames, organizerLinkSent }; 400 bad input;
 // 403 missing, malformed or unknown key, or failed CAPTCHA; 409 already sent /
-// nothing to resend; 410 deleted;
+// nothing to resend / that person already has their email; 410 deleted;
 // 429 the sender's IP has used its email budget (100 emails in any 24 hours);
 // 503 daily cap hit (495 emails in any 24 hours, across all draws).
 
@@ -46,6 +49,7 @@ interface DrawRow {
 
 interface MatchRow {
   giver_id: number;
+  giver_position: number;
   giver_name: string;
   giver_email: string | null;
   giver_email_sent_at: Date | null;
@@ -92,9 +96,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(405).json({ error: 'Method not allowed.' });
   }
 
-  const { key, organizerName, organizerEmail, organizerNote, budget, exchangeDate, turnstileToken, retryFailed } = req.body;
+  const { key, organizerName, organizerEmail, organizerNote, budget, exchangeDate, turnstileToken, retryFailed, person, email } = req.body;
   if (typeof key !== 'string' || !isAdminKey(key)) return res.status(403).json({ error: 'Only the organizer can send emails for this draw.' });
   if (retryFailed !== undefined && typeof retryFailed !== 'boolean') return res.status(400).json({ error: 'retryFailed must be true or false.' });
+  if (person !== undefined && (!retryFailed || !Number.isInteger(person) || person < 0)) return res.status(400).json({ error: 'person must be a participant number, with retryFailed.' });
+  if (email !== undefined && (person === undefined || typeof email !== 'string')) return res.status(400).json({ error: 'email must be text, with person.' });
+  // A corrected address, stored like create-draw stores addresses
+  const newEmail: string | null = typeof email === 'string' ? email.trim().toLowerCase() : null;
+  if (newEmail !== null && (newEmail.length > 320 || !isValidEmail(newEmail))) return res.status(400).json({ error: 'Please enter a valid email address.' });
 
   // A resend reuses the organizer name and email saved by the first send, so
   // they're only read from the body for the first send
@@ -173,6 +182,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       sql`
         SELECT
              givers.id as giver_id
+            ,givers.position as giver_position
             ,givers.name as giver_name
             ,givers.email as giver_email
             ,givers.email_sent_at as giver_email_sent_at
@@ -202,7 +212,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       return res.status(409).json({ error: 'Emails have already been sent for this draw.' });
     }
 
-    const unsent = matchRows.filter((match): match is MatchRow & { giver_email: string } => !!match.giver_email && !match.giver_email_sent_at);
+    let unsent = matchRows.filter((match): match is MatchRow & { giver_email: string } => !!match.giver_email && !match.giver_email_sent_at);
+
+    if (person !== undefined) {
+      // Positions are 1-based; person is an index into get-draw's list, which is in position order
+      const chosen = matchRows.find(match => match.giver_position === person + 1);
+      if (!chosen) return res.status(400).json({ error: 'There is no such participant in this draw.' });
+      if (chosen.giver_email_sent_at) return res.status(409).json({ error: `${chosen.giver_name} already has their email.` });
+      if (!chosen.giver_email) return res.status(409).json({ error: `${chosen.giver_name} has no email address to resend to.` });
+      unsent = [{ ...chosen, giver_email: newEmail ?? chosen.giver_email }];
+    }
 
     if (retryFailed && !unsent.length) return res.status(409).json({ error: 'Everyone has already been sent their email.' });
 
@@ -263,8 +282,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
                   AND (SELECT ok FROM allowed)
              RETURNING id
         ), participant_claim AS (
+             -- A corrected address is saved with the claim, so it only changes for
+             -- someone whose email hasn't gone out, and stays for a later resend if
+             -- this one fails
              UPDATE Participants
              SET email_claimed_at = now()
+                 ,email = COALESCE(${newEmail}::varchar, email)
              WHERE id = ANY(${unsent.map(match => match.giver_id)}::int[])
                   AND email_sent_at IS NULL
                   AND (email_claimed_at IS NULL OR email_claimed_at < now() - make_interval(mins => ${CLAIM_EXPIRY_MINUTES}))

@@ -376,6 +376,30 @@
   min-width: 0;
 }
 
+/* Under each name: whether their email went out and whether they've opened their link */
+.linkStatus {
+  font-size: 12px;
+  color: var(--ink-light);
+}
+
+.linkStatusFailed {
+  color: var(--accent);
+}
+
+/* Resend and Change email, or the corrected address and Save & send, under a failed row */
+.fixEmail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.fixEmail .organizerInput {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
 .footer {
   border-top: 1px solid var(--border);
   /* Side padding lines the links up with the 860px content column */
