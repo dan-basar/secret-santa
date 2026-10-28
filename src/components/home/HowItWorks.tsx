@@ -13,7 +13,7 @@ export default function HowItWorks() {
           to tell them who they drew. Up to {MAX_PARTICIPANTS} people.
         </li>
         <li>
-          <strong>Keep people apart.</strong> Put couples, families or teams in the same group, and nobody draws someone
+          <strong>Keep people apart.</strong> Put couples, families, or teams in the same group, and nobody draws someone
           from their own group.
         </li>
         <li>
