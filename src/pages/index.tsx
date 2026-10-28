@@ -9,6 +9,7 @@ import { hasLink } from '@/lib/sanitize';
 import { duplicateNames, duplicateNamesMessage, nameKey } from '@/lib/names';
 import { moveEmailDraft } from '@/lib/email-draft';
 import { FormGroup, FormParticipant, MAX_GROUPS, MAX_PARTICIPANTS, groupNameFor, newId, parseFormDraft } from '@/lib/groups';
+import HowItWorks from '@/components/home/HowItWorks';
 import styles from '@/styles/Home.module.css';
 import logo from '../../public/logo.svg';
 import type { ApiError, CreateDrawResponse } from '@/types/api';
@@ -447,6 +448,8 @@ export default function Home() {
               {loading ? 'Drawing matches…' : '🎁 Draw matches'}
             </button>
           </div>
+
+          <HowItWorks />
         </main>
 
         <footer className={styles.footer}>
