@@ -52,9 +52,15 @@ describe('personal links', () => {
   });
 
   it('shows no email status before the emails go out', () => {
-    renderLinks([person('Sam', { email: 'sam@example.com' })], { emailsSent: false });
+    renderLinks([person('Sam', { email: 'sam@example.com' }), person('Jo')], { emailsSent: false });
     expect(screen.queryByText(/sam@example\.com/)).toBeNull();
+    expect(screen.queryByText('No email address')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Resend' })).toBeNull();
+  });
+
+  it('never says "No email address" when nobody in the draw has one', () => {
+    renderLinks([person('Sam'), person('Jo')]);
+    expect(screen.queryByText('No email address')).toBeNull();
   });
 
   it('resends to one person, or to a corrected address', () => {
