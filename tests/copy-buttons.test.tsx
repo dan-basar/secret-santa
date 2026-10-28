@@ -9,8 +9,8 @@ function stubClipboard(writeText: () => Promise<void>) {
 }
 
 const participants = [
-  { name: 'Alex', email: null, group_name: null, reveal_code: 'token-a', email_sent_at: null },
-  { name: 'Sam', email: null, group_name: null, reveal_code: 'token-s', email_sent_at: null },
+  { name: 'Alex', email: null, group_name: null, reveal_code: 'token-a', email_sent_at: null, revealed_at: null },
+  { name: 'Sam', email: null, group_name: null, reveal_code: 'token-s', email_sent_at: null, revealed_at: null },
 ];
 
 afterEach(() => {
@@ -36,7 +36,7 @@ describe('copy buttons', () => {
 
   it('marks only the copied personal link, and says when the copy failed', async () => {
     stubClipboard(async () => {});
-    render(<PersonalLinks participants={participants} emailsSent={false} linkFor={token => `https://example.com/reveal/${token}`} />);
+    render(<PersonalLinks participants={participants} emailsSent={false} linkFor={token => `https://example.com/reveal/${token}`} onResend={() => {}} canResend={false} resendingPerson={null} resendError={null} />);
     fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[1]);
     expect(await screen.findByRole('button', { name: '✓ Copied' })).toBeTruthy();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://example.com/reveal/token-s');

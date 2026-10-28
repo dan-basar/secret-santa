@@ -1,7 +1,8 @@
 // GET /api/get-draw: the organizer's view of one draw, found by its admin key.
 // The key comes in the X-Admin-Key header, never the query string, so it stays
 // out of request logs. Returns the participants with their emails, groups,
-// reveal tokens and per-person email status, the matches (as positions in the
+// reveal codes, per-person email status and when each person first opened their
+// link, the matches (as positions in the
 // participant list, which already carries each person's email and group), and
 // the organizer's exchange details (note, budget and date) when set, and the
 // organizer's name once the emails have gone out.
@@ -30,6 +31,7 @@ interface ParticipantRow {
   group_name: string | null;
   reveal_code: string;
   email_sent_at: Date | null;
+  revealed_at: Date | null;
 }
 
 interface MatchRow {
@@ -72,6 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             ,participants.group_name
             ,participants.reveal_code
             ,participants.email_sent_at
+            ,participants.revealed_at
         FROM Participants as participants
              INNER JOIN Draws as draws ON participants.draw_id = draws.id
         WHERE draws.admin_key = ${key}
@@ -111,6 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         group_name: p.group_name,
         reveal_code: p.reveal_code,
         email_sent_at: p.email_sent_at?.toISOString() ?? null,
+        revealed_at: p.revealed_at?.toISOString() ?? null,
       })),
       matches: matchRows.map(m => ({
         giver: indexByPosition.get(m.giver_position)!,

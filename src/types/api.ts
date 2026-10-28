@@ -24,6 +24,7 @@ export interface AdminParticipant {
   group_name: string | null;
   reveal_code: string;
   email_sent_at: string | null;
+  revealed_at: string | null; // when they first opened their personal link and saw their match
 }
 
 // Indexes into GetDrawResponse.participants, which holds each person's name, email

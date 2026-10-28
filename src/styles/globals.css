@@ -120,7 +120,7 @@ input:focus, select:focus {
 
 /* A field the last submit found a problem in (the home form sets aria-invalid) */
 input[aria-invalid="true"] {
-  border-color: var(--error);
+  border-color: var(--accent);
 }
 
 input::placeholder {

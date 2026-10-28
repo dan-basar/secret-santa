@@ -68,7 +68,7 @@ Tests use Vitest and live in `tests/` (never under `src/pages/`, where Next.js w
 ### Frontend
 - **State management**: local React hooks only (`useState`, `useEffect`, `useCallback`, `useRef`) — no Redux or Context
 - **Components**: a page's sections live in `src/components/<page>/`, one per file (e.g. `src/components/draw/`). Fetching, effects and shared state stay in the page and go down as props and callbacks; a component keeps only its own UI state (a "Copied" flash, a confirm step) and uses its page's CSS module
-- **Styling**: CSS Modules per page + `globals.css` for design tokens (CSS custom properties on `:root`, e.g. `--ink`, `--accent`, `--success`, `--error`)
+- **Styling**: CSS Modules per page + `globals.css` for design tokens (CSS custom properties on `:root`, e.g. `--ink`, `--accent` (also used for errors), `--success`)
 - **Typography**: Libre Baskerville (headings) + DM Sans (body), loaded with `next/font/google` in `_app.tsx` (downloaded at build time and served from this site), feeding `--font-serif` / `--font-sans`
 - **Forms**: client-side validation before API calls; errors displayed inline
 - **Groups on the home page** are referenced by a stable id (`src/lib/groups.ts`), never by name, so renaming a group keeps its members

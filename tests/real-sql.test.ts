@@ -197,6 +197,26 @@ describe('routes against a real Postgres', () => {
     expect((await adminView(adminKey)).participants.every(p => !p.email || p.email_sent_at)).toBe(true);
   });
 
+  it('resends to one person at a corrected address, and won\'t change an address that was emailed', async () => {
+    const { adminKey } = await create();
+    sendMatchEmail.mockImplementation(async (...args: unknown[]) => {
+      if (args[1] === 'kim@example.com') throw new Error('SMTP down');
+    });
+    await call(sendEmails, { method: 'POST', body: { key: adminKey, organizerName: 'Pat', organizerEmail: 'pat@example.com', turnstileToken: 't' } });
+
+    sendMatchEmail.mockReset();
+    // Kim is index 3 in the organizer's list
+    const fixed = await call(sendEmails, { method: 'POST', body: { key: adminKey, retryFailed: true, person: 3, email: 'kim@example.org', turnstileToken: 't' } });
+    expect(fixed.statusCode).toBe(200);
+    expect(sendMatchEmail.mock.calls.map(c => (c as unknown[])[1])).toEqual(['kim@example.org']);
+    const view = await adminView(adminKey);
+    expect(view.participants[3]).toMatchObject({ email: 'kim@example.org', email_sent_at: expect.any(String) });
+
+    const sent = await call(sendEmails, { method: 'POST', body: { key: adminKey, retryFailed: true, person: 0, email: 'alex@example.org', turnstileToken: 't' } });
+    expect(sent.statusCode).toBe(409);
+    expect((await adminView(adminKey)).participants[0].email).toBe('alex@example.com');
+  });
+
   it('counts each IP\'s emails, gives back the failed ones, and refuses a send over 100 with 429', async () => {
     const ip = '203.0.113.77';
     const headers = { 'x-forwarded-for': ip };
