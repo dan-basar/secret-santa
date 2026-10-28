@@ -44,20 +44,20 @@ export default function PersonalLinks({ participants, emailsSent, linkFor }: Pro
           <li key={i} className={styles.personalLinkRow}>
             <div className={styles.personalLinkText}>
               <span className={styles.name}>{p.name}</span>
-              <span className={styles.shareUrl}>{linkFor(p.reveal_token)}</span>
+              <span className={styles.shareUrl}>{linkFor(p.reveal_code)}</span>
             </div>
             <div className={styles.personalLinkActions}>
-              <button className="btn btn-secondary" onClick={() => handleCopy(p.reveal_token)}>
+              <button className="btn btn-secondary" onClick={() => handleCopy(p.reveal_code)}>
                 <svg className={styles.phoneIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="9" y="9" width="12" height="12" rx="2" />
                   <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
                 </svg>
-                {copied?.token === p.reveal_token ? (copied.ok ? '✓ Copied' : 'Copy failed') : 'Copy'}
+                {copied?.token === p.reveal_code ? (copied.ok ? '✓ Copied' : 'Copy failed') : 'Copy'}
               </button>
               {/* "?&body=" is the form both iPhone and Android read; no number, so they pick who */}
               <a
                 className={`btn btn-secondary ${styles.textLink}`}
-                href={`sms:?&body=${encodeURIComponent(textMessage(p.name, linkFor(p.reveal_token)))}`}
+                href={`sms:?&body=${encodeURIComponent(textMessage(p.name, linkFor(p.reveal_code)))}`}
                 aria-label={`Text ${p.name} their link`}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

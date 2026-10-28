@@ -22,7 +22,7 @@ export interface AdminParticipant {
   name: string;
   email: string | null;
   group_name: string | null;
-  reveal_token: string;
+  reveal_code: string;
   email_sent_at: string | null;
 }
 

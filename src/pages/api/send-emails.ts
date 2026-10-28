@@ -49,7 +49,7 @@ interface MatchRow {
   giver_name: string;
   giver_email: string | null;
   giver_email_sent_at: Date | null;
-  giver_reveal_token: string;
+  giver_reveal_code: string;
   receiver_name: string;
 }
 
@@ -176,7 +176,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             ,givers.name as giver_name
             ,givers.email as giver_email
             ,givers.email_sent_at as giver_email_sent_at
-            ,givers.reveal_code as giver_reveal_token
+            ,givers.reveal_code as giver_reveal_code
             ,receivers.name as receiver_name
         FROM Matches as matches
              INNER JOIN Draws as draws ON matches.draw_id = draws.id
@@ -331,7 +331,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const delivered = await Promise.all(toSend.map(async match => {
       let ok = true;
       try {
-        await sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_token, details);
+        await sendMatchEmail(match.giver_name, match.giver_email, match.receiver_name, safeOrganizerName, safeOrganizerEmail, match.giver_reveal_code, details);
       } catch (err) {
         console.error(err);
         firstSendError ??= err;

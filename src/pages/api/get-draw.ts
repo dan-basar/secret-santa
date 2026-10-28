@@ -28,7 +28,7 @@ interface ParticipantRow {
   name: string;
   email: string | null;
   group_name: string | null;
-  reveal_token: string;
+  reveal_code: string;
   email_sent_at: Date | null;
 }
 
@@ -70,7 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             ,participants.name
             ,participants.email
             ,participants.group_name
-            ,participants.reveal_code as reveal_token
+            ,participants.reveal_code
             ,participants.email_sent_at
         FROM Participants as participants
              INNER JOIN Draws as draws ON participants.draw_id = draws.id
@@ -109,7 +109,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         name: p.name,
         email: p.email,
         group_name: p.group_name,
-        reveal_token: p.reveal_token,
+        reveal_code: p.reveal_code,
         email_sent_at: p.email_sent_at?.toISOString() ?? null,
       })),
       matches: matchRows.map(m => ({

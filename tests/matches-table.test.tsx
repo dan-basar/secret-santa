@@ -8,7 +8,7 @@ import type { AdminParticipant } from '@/types/api';
 afterEach(cleanup);
 
 const participants: AdminParticipant[] = ['Alex', 'Sam'].map((name, i) => ({
-  name, email: null, group_name: null, reveal_token: `token-${i}`, email_sent_at: null,
+  name, email: null, group_name: null, reveal_code: `token-${i}`, email_sent_at: null,
 }));
 
 // The page keeps whether the table is shown

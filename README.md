@@ -95,6 +95,7 @@ You can also paste the script into the SQL Editor in the Neon console. See [`sql
 | `009_exchange_details.sql` | `Draws.organizer_note`, `budget_cents` and `exchange_date`, the optional details shown in match emails and on personal link pages |
 | `010_drop_daily_email_log.sql` | Removes the unused `DailyEmailLog` table that 007 left behind, so older databases match `setup.sql` |
 | `011_ops_stats.sql` | `Participants.revealed_at` (when a personal link was first opened) and the `DailyStats` table the daily check job writes, for the usage stats |
+| `012_v2_cleanup.sql` | Removes every draw created before 17 October 2026 for good (a one-time purge), drops the retired `Participants.reveal_token`, makes `reveal_code` `NOT NULL`, and adds `Draws.replaced_by` so the usage stats leave out draws replaced by Edit & Redraw |
 
 Numbering starts at 002 because 001 was the original Azure SQL schema, which was replaced by `setup.sql` when the app moved to Neon. How to apply one safely is in [docs/OPERATIONS.md](docs/OPERATIONS.md#applying-a-migration).
 

@@ -130,13 +130,14 @@ async function dailyCheck(): Promise<{ statDate: string; warnings: string[] }> {
     `,
     sql`
       SELECT
-           (SELECT COUNT(*)::int FROM Draws WHERE created_at >= ${dayStart}::timestamptz AND created_at < ${dayStart}::timestamptz + interval '1 day') as draws_created
+           (SELECT COUNT(*)::int FROM Draws WHERE created_at >= ${dayStart}::timestamptz AND created_at < ${dayStart}::timestamptz + interval '1 day' AND replaced_by IS NULL) as draws_created
           ,(SELECT COUNT(*)::int FROM Draws WHERE emails_sent_at >= ${dayStart}::timestamptz AND emails_sent_at < ${dayStart}::timestamptz + interval '1 day') as draws_emailed
           ,(
                 SELECT COUNT(*)::int
                 FROM Participants as participants
                      INNER JOIN Draws as draws ON participants.draw_id = draws.id
                 WHERE draws.created_at >= ${dayStart}::timestamptz AND draws.created_at < ${dayStart}::timestamptz + interval '1 day'
+                     AND draws.replaced_by IS NULL
            ) as participants_created
           ,(SELECT COALESCE(SUM(emails_sent), 0)::int FROM EmailSendLog WHERE hour_start >= ${dayStart}::timestamptz AND hour_start < ${dayStart}::timestamptz + interval '1 day') as emails_sent
           ,(SELECT COUNT(*)::int FROM Participants WHERE revealed_at >= ${dayStart}::timestamptz AND revealed_at < ${dayStart}::timestamptz + interval '1 day') as links_opened
@@ -190,8 +191,13 @@ async function weeklyReport(): Promise<void> {
         ,COALESCE(SUM(participants_created), 0)::int as participants_created
         ,COALESCE(SUM(emails_sent), 0)::int as emails_sent
         ,COALESCE(SUM(links_opened), 0)::int as links_opened
-        ,(SELECT COUNT(*)::int FROM Draws) as total_draws
-        ,(SELECT COUNT(*)::int FROM Participants) as total_participants
+        ,(SELECT COUNT(*)::int FROM Draws WHERE replaced_by IS NULL) as total_draws
+        ,(
+              SELECT COUNT(*)::int
+              FROM Participants as participants
+                   INNER JOIN Draws as draws ON participants.draw_id = draws.id
+              WHERE draws.replaced_by IS NULL
+         ) as total_participants
     FROM DailyStats
     WHERE stat_date >= current_date - 7 AND stat_date < current_date
   `) as WeekRow[];

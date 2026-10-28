@@ -13,8 +13,8 @@ const adminView = {
   created_at: '2026-10-01T00:00:00.000Z', emails_sent_at: null,
   organizer_name: null, organizer_note: null, budget_cents: null, exchange_date: null,
   participants: [
-    { name: 'Alex', email: null, group_name: null, reveal_token: 'Aa111111', email_sent_at: null },
-    { name: 'Sam', email: null, group_name: null, reveal_token: 'Bb222222', email_sent_at: null },
+    { name: 'Alex', email: null, group_name: null, reveal_code: 'Aa111111', email_sent_at: null },
+    { name: 'Sam', email: null, group_name: null, reveal_code: 'Bb222222', email_sent_at: null },
   ],
   matches: [{ giver: 0, receiver: 1 }, { giver: 1, receiver: 0 }],
 };
