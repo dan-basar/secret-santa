@@ -8,6 +8,7 @@ import { organizerUrl, revealUrl } from '@/lib/site';
 import { isAdminKey, isCutShort, ADMIN_KEY_LENGTH } from '@/lib/tokens';
 import { formatBudget, hasDetails, noteError, parseBudget, sameDetails, typedDetails } from '@/lib/details';
 import { hasLink } from '@/lib/sanitize';
+import { ADDRESS_EMAIL_LIMIT } from '@/lib/limits';
 import { EMAIL_DRAFT_KEY, readEmailDraft, type EmailDraft } from '@/lib/email-draft';
 import OrganizerLink from '@/components/draw/OrganizerLink';
 import MatchesTable from '@/components/draw/MatchesTable';
@@ -200,13 +201,18 @@ export default function DrawPage() {
             organizerNote: organizerNote.trim(), budget: budget.trim(), exchangeDate, turnstileToken,
           }),
       });
-      if (res.ok && !retryFailed) {
-        // Sent and saved on the server, so the next draw in this tab starts with an empty card
-        try { sessionStorage.removeItem(EMAIL_DRAFT_KEY); } catch { /* storage blocked */ }
+      if (res.ok) {
         const data: SendEmailsResponse = await res.json();
-        setOrganizerLinkNotice(data.organizerLinkSent
-          ? `✓ Your organizer link was emailed to ${organizerEmail.trim()}.`
-          : 'We couldn\'t email you your organizer link. Copy it from the top of this page instead.');
+        if (!retryFailed) {
+          // Sent and saved on the server, so the next draw in this tab starts with an empty card
+          try { sessionStorage.removeItem(EMAIL_DRAFT_KEY); } catch { /* storage blocked */ }
+          setOrganizerLinkNotice(data.organizerLinkSent
+            ? `✓ Your organizer link was emailed to ${organizerEmail.trim()}.`
+            : 'We couldn\'t email you your organizer link. Copy it from the top of this page instead.');
+        }
+        if (data.limitedNames.length) {
+          showError(`Not emailed: ${data.limitedNames.join(', ')}. Their address already had ${ADDRESS_EMAIL_LIMIT} emails from this site in the last 24 hours, the most one address can get. Send them their personal link below, or resend tomorrow.`);
+        }
       }
       if (!res.ok) {
         // A send that runs past the function's time limit gets a 504 from Vercel

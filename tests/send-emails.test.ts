@@ -16,7 +16,7 @@ const db = vi.hoisted(() => ({
   participants: [] as FakeParticipant[],
   receiverOf: {} as Record<number, number>,
   emailLog: [] as { hour: number; sent: number }[],
-  // Emails counted against each IP's budget, by RateLimits bucket
+  // RateLimits rows: emails counted against each IP's budget and each address's limit, by bucket
   ipLog: [] as { bucket: string; hour: number; hits: number }[],
   // Each awaited query or transaction is one HTTPS request to Neon
   roundTrips: 0,
@@ -56,12 +56,22 @@ vi.mock('@/lib/db', async (importOriginal) => {
     // The one statement that checks the cap, updates the draw, claims the
     // participants, and reserves the cap for whoever will be emailed
     if (text.includes('WITH cap AS')) {
-      const [count, limit, bucket, , ipLimit, , note, budgetCents, exchangeDate, organizerOnly, , organizerName, , organizerEmail, , retryFailed, newEmail, ids, expiryMinutes] =
-        values as [number, number, string | null, number, number, string | null, string | null, number | null, string | null, boolean, boolean, string, boolean, string, string, boolean, string | null, number[], number];
+      const [count, limit, bucket, , ipLimit, , organizerId, recipientIds, recipientBuckets, addressLimit, , note, budgetCents, exchangeDate, organizerOnly, , organizerName, , organizerEmail, , retryFailed, , newEmail, ids, expiryMinutes] =
+        values as [number, number, string | null, number, number, string | null, number, number[], (string | null)[], number, number, string | null, number | null, string | null, boolean, boolean, string, boolean, string, string, boolean, boolean, string | null, number[], number];
       const capOk = emailsCounted() + count <= limit;
       const ipOk = bucket === null || ipEmailsCounted(bucket) + count <= ipLimit;
       const allowed = capOk && ipOk;
-      const drawUpdated = allowed && !retryFailed && !db.draw.emails_sent_at;
+      // Each address's limit, per recipient: people sharing an address in order, the organizer last
+      const order = recipientIds.map((id, i) => ({ id, bucket: recipientBuckets[i] }))
+        .sort((a, b) => Number(a.id === organizerId) - Number(b.id === organizerId) || a.id - b.id);
+      const nth = new Map<string, number>();
+      const addressOk = new Set(order.filter(r => {
+        if (r.bucket === null) return true;
+        nth.set(r.bucket, (nth.get(r.bucket) ?? 0) + 1);
+        return ipEmailsCounted(r.bucket) + nth.get(r.bucket)! <= addressLimit;
+      }).map(r => r.id));
+      const organizerOk = addressOk.has(organizerId);
+      const drawUpdated = allowed && !retryFailed && !db.draw.emails_sent_at && (!organizerOnly || organizerOk);
       if (drawUpdated) {
         db.draw.organizer_note = note;
         db.draw.budget_cents = budgetCents;
@@ -74,21 +84,23 @@ vi.mock('@/lib/db', async (importOriginal) => {
         }
       }
       const claimed = allowed && (retryFailed || drawUpdated)
-        ? db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at
+        ? db.participants.filter(p => ids.includes(p.id) && !p.email_sent_at && addressOk.has(p.id)
           && (p.email_claimed_at === null || p.email_claimed_at < db.now - expiryMinutes * 60_000))
         : [];
       for (const p of claimed) {
         p.email_claimed_at = db.now;
         p.email = newEmail ?? p.email;
       }
-      // Each claimed participant, plus the organizer's link when the draw was updated
-      const reserved = claimed.length + (drawUpdated ? 1 : 0);
+      // Each claimed participant, plus the organizer's link when the draw was updated and their address is under its limit
+      const emailing = [...claimed.map(p => p.id), ...(drawUpdated && organizerOk ? [organizerId] : [])];
       let reservedHour: Date | null = null;
-      if (reserved) {
-        reservedHour = reserve(reserved);
-        reserveIp(bucket, reserved);
+      if (emailing.length) {
+        reservedHour = reserve(emailing.length);
+        reserveIp(bucket, emailing.length);
+        for (const id of emailing) reserveIp(recipientBuckets[recipientIds.indexOf(id)], 1);
       }
-      return [{ cap_ok: capOk, ip_ok: ipOk, draw_updated: drawUpdated, claimed_ids: claimed.map(p => p.id), reserved_hour: reservedHour }];
+      const limitedIds = recipientIds.filter(id => id !== organizerId && !addressOk.has(id));
+      return [{ cap_ok: capOk, ip_ok: ipOk, draw_updated: drawUpdated, claimed_ids: claimed.map(p => p.id), limited_ids: limitedIds, organizer_ok: organizerOk, reserved_hour: reservedHour }];
     }
     // Both reads find the draw by its admin key alone
     if (text.includes('FROM Draws')) return values[0] === db.draw.admin_key ? [{ ...db.draw }] : [];
@@ -108,6 +120,14 @@ vi.mock('@/lib/db', async (importOriginal) => {
     if (text.includes('UPDATE EmailSendLog')) {
       const [count, hour] = values as [number, Date];
       db.emailLog.find(r => r.hour === hour.getTime())!.sent -= count;
+      return [];
+    }
+    if (text.includes('UPDATE RateLimits') && text.includes('released')) {
+      const [buckets, hour] = values as [(string | null)[], Date];
+      for (const b of buckets) {
+        const row = db.ipLog.find(r => r.bucket === b && r.hour === hour.getTime());
+        if (row) row.hits -= 1;
+      }
       return [];
     }
     if (text.includes('UPDATE RateLimits')) {
@@ -156,7 +176,7 @@ const reportError = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('@/lib/report', () => ({ reportError, reportWarning: vi.fn(async () => {}) }));
 
 import handler from '@/pages/api/send-emails';
-import { rateLimitBucket } from '@/lib/rate-limit';
+import { addressBucket, rateLimitBucket } from '@/lib/rate-limit';
 
 const DRAW_ID = '0b6f1c2a-8d3e-4f5a-9b7c-1d2e3f4a5b6c';
 const ADMIN_KEY = 'Ab3dEf6hIj9kLm';
@@ -224,7 +244,7 @@ describe('POST /api/send-emails', () => {
   it('sends to everyone with an email and marks each of them sent', async () => {
     const res = await post(firstSend);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, totalSent: 3, totalFailed: 0, failedNames: [], organizerLinkSent: true });
+    expect(res.body).toEqual({ success: true, totalSent: 3, totalFailed: 0, failedNames: [], limitedNames: [], organizerLinkSent: true });
     expect(emailed().sort()).toEqual(['alex@example.com', 'jo@example.com', 'sam@example.com']);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(db.draw.emails_sent_at).not.toBeNull();
@@ -242,7 +262,7 @@ describe('POST /api/send-emails', () => {
     sendOrganizerLinkEmail.mockImplementation(async () => { throw new Error('SMTP refused pat@example.com'); });
     const res = await post(firstSend);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, totalSent: 3, totalFailed: 0, failedNames: [], organizerLinkSent: false });
+    expect(res.body).toEqual({ success: true, totalSent: 3, totalFailed: 0, failedNames: [], limitedNames: [], organizerLinkSent: false });
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
     expect(emailsCounted()).toBe(3);
   });
@@ -255,7 +275,7 @@ describe('POST /api/send-emails', () => {
     it('emails just the organizer their link, without marking the draw sent', async () => {
       const res = await post(firstSend);
       expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual({ success: true, totalSent: 0, totalFailed: 0, failedNames: [], organizerLinkSent: true });
+      expect(res.body).toEqual({ success: true, totalSent: 0, totalFailed: 0, failedNames: [], limitedNames: [], organizerLinkSent: true });
       expect(sendMatchEmail).not.toHaveBeenCalled();
       expect(sendOrganizerLinkEmail).toHaveBeenCalledWith('Pat', 'pat@example.com', ADMIN_KEY);
       // Edit & Redraw stays open, and the organizer can ask again
@@ -291,7 +311,7 @@ describe('POST /api/send-emails', () => {
     failFor('sam@example.com');
     const res = await post(firstSend);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, totalSent: 2, totalFailed: 1, failedNames: ['Sam'], organizerLinkSent: true });
+    expect(res.body).toEqual({ success: true, totalSent: 2, totalFailed: 1, failedNames: ['Sam'], limitedNames: [], organizerLinkSent: true });
     expect(sentNames()).toEqual(['Alex', 'Jo']);
     expect(db.draw.emails_sent_at).not.toBeNull();
     expect(emailsCounted()).toBe(3);
@@ -333,7 +353,7 @@ describe('POST /api/send-emails', () => {
     sendMatchEmail.mockClear();
     const res = await post(resend);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, totalSent: 1, totalFailed: 0, failedNames: [], organizerLinkSent: false });
+    expect(res.body).toEqual({ success: true, totalSent: 1, totalFailed: 0, failedNames: [], limitedNames: [], organizerLinkSent: false });
     expect(emailed()).toEqual(['sam@example.com']);
     expect(sendMatchEmail.mock.calls[0].slice(3, 5)).toEqual(['Pat', 'pat@example.com']);
     expect(sentNames()).toEqual(['Alex', 'Sam', 'Jo']);
@@ -809,5 +829,131 @@ describe('per-IP email budget', () => {
     const res = await post(firstSend);
     expect(res.statusCode).toBe(200);
     expect(console.error).toHaveBeenCalledWith('Email budget check skipped', expect.any(Error));
+  });
+});
+
+describe('per-address email limit', () => {
+  // Emails already sent to this address in the last day, counted an hour ago
+  async function received(address: string, count: number, hoursAgo = 1) {
+    db.ipLog.push({ bucket: (await addressBucket(address))!, hour: hourOf(db.now) - hoursAgo * HOUR, hits: count });
+  }
+  const countFor = async (address: string) => ipEmailsCounted(await addressBucket(address));
+
+  it('counts each email against its address, the organizer link included', async () => {
+    await post(firstSend);
+    expect(await countFor('alex@example.com')).toBe(1);
+    expect(await countFor('pat@example.com')).toBe(1);
+  });
+
+  it('sends the 9th email to an address but not the 10th, and names who was held back', async () => {
+    await received('alex@example.com', 8);
+    await received('sam@example.com', 9);
+    const res = await post(firstSend);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ success: true, totalSent: 2, totalFailed: 0, failedNames: [], limitedNames: ['Sam'], organizerLinkSent: true });
+    expect(emailed()).toEqual(['alex@example.com', 'jo@example.com']);
+    expect(claimedNames()).toEqual([]);
+    expect(await countFor('sam@example.com')).toBe(9);
+    // Held back, not failed: the cap and the IP budget aren't charged for Sam either
+    expect(emailsCounted()).toBe(3);
+  });
+
+  it('takes people sharing an address in order within one send', async () => {
+    for (const p of db.participants) p.email = p.email && 'family@example.com';
+    await received('family@example.com', 7);
+    const res = await post(firstSend);
+    expect(res.body).toMatchObject({ totalSent: 2, limitedNames: ['Jo'] });
+    expect(sentNames()).toEqual(['Alex', 'Sam']);
+    expect(await countFor('family@example.com')).toBe(9);
+  });
+
+  it('holds back the organizer link before a participant sharing its address', async () => {
+    db.participants[0].email = 'pat@example.com';
+    await received('pat@example.com', 8);
+    const res = await post(firstSend);
+    expect(res.body).toMatchObject({ totalSent: 3, limitedNames: [], organizerLinkSent: false });
+    expect(sendOrganizerLinkEmail).not.toHaveBeenCalled();
+    expect(db.draw.emails_sent_at).not.toBeNull();
+    expect(await countFor('pat@example.com')).toBe(9);
+  });
+
+  it('refuses a resend to one person over the limit with 429', async () => {
+    failFor('sam@example.com');
+    await post(firstSend);
+    failFor();
+    await received('sam@example.com', 9);
+    const res = await post({ ...resend, person: 1 });
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual({
+      error: "Sam's email address has already had 9 emails from this site in the last 24 hours, the most one address can get. Try again tomorrow, or send each person their personal link below.",
+    });
+    expect(claimedNames()).toEqual([]);
+  });
+
+  it('checks a corrected address, not the old one', async () => {
+    failFor('sam@example.com');
+    await post(firstSend);
+    failFor();
+    await received('sam@example.com', 9);
+    const res = await post({ ...resend, person: 1, email: 'sam@example.org' });
+    expect(res.statusCode).toBe(200);
+    expect(emailed()).toContain('sam@example.org');
+  });
+
+  it('refuses a resend with 429 when everyone left is over the limit, naming them', async () => {
+    failFor('sam@example.com', 'jo@example.com');
+    await post(firstSend);
+    failFor();
+    await received('sam@example.com', 9);
+    await received('jo@example.com', 9);
+    const res = await post(resend);
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toMatchObject({ error: expect.stringContaining('The email addresses of Sam, Jo have already had 9 emails') });
+  });
+
+  it('refuses an organizer-only send over the limit with 429, saving nothing', async () => {
+    for (const p of db.participants) p.email = null;
+    await received('pat@example.com', 9);
+    const res = await post({ ...firstSend, budget: '20' });
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual({
+      error: 'Your email address has already had 9 emails from this site in the last 24 hours, the most one address can get. Try again tomorrow, or copy your organizer link above.',
+    });
+    expect(sendOrganizerLinkEmail).not.toHaveBeenCalled();
+    expect(db.draw.budget_cents).toBeNull();
+    expect(emailsCounted()).toBe(0);
+  });
+
+  it('gives back the count for an email that failed', async () => {
+    failFor('sam@example.com');
+    sendOrganizerLinkEmail.mockImplementation(async () => { throw new Error('SMTP refused pat@example.com'); });
+    await post(firstSend);
+    expect(await countFor('sam@example.com')).toBe(0);
+    expect(await countFor('pat@example.com')).toBe(0);
+    expect(await countFor('alex@example.com')).toBe(1);
+  });
+
+  it('lets emails from more than 24 hours ago roll out', async () => {
+    await received('sam@example.com', 9, 25);
+    expect((await post(firstSend)).body).toMatchObject({ limitedNames: [] });
+  });
+
+  it('skips the limit for an address in ADDRESS_LIMIT_EXEMPT, in any case and spacing', async () => {
+    await received('sam@example.com', 50);
+    const samBucket = (await addressBucket('sam@example.com'))!;
+    vi.stubEnv('ADDRESS_LIMIT_EXEMPT', 'other@example.com, SAM@example.com ');
+    expect(await addressBucket('sam@example.com')).toBeNull();
+    const res = await post(firstSend);
+    expect(res.body).toMatchObject({ totalSent: 3, limitedNames: [] });
+    // Nothing is counted for an exempt address
+    expect(ipEmailsCounted(samBucket)).toBe(50);
+  });
+
+  it('skips the limit, still sending, when the hash secret is missing', async () => {
+    await received('sam@example.com', 9);
+    vi.stubEnv('RATE_LIMIT_HASH_SECRET', '');
+    const res = await post(firstSend);
+    expect(res.body).toMatchObject({ totalSent: 3, limitedNames: [] });
+    expect(console.error).toHaveBeenCalledWith('Address limit check skipped', expect.any(Error));
   });
 });

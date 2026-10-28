@@ -59,7 +59,7 @@ Never put real keys in `.env.development.local`; it keeps the test keys.
 
 **Rate-limit hash secret** (`RATE_LIMIT_HASH_SECRET`)
 1. Generate a new random value (`openssl rand -hex 32`), replace it in Vercel and redeploy.
-2. Every bucket gets a new hash, so current hourly counts start again from zero; the old rows are deleted after 2 days as usual. Rotating it also resets each IP's 24-hour email budget. If the variable is missing, rate limiting and the email budget are skipped (they fail open and log an error), so set it before deploying.
+2. Every bucket gets a new hash, so current hourly counts start again from zero; the old rows are deleted after 2 days as usual. Rotating it also resets each IP's 24-hour email budget and each address's limit. If the variable is missing, rate limiting, the email budget and the address limit are skipped (they fail open and log an error), so set it before deploying.
 
 ## Edge rate limit (Vercel Firewall)
 
@@ -87,6 +87,7 @@ Symptoms: `send-emails` reports failures (`failedNames`), or `503` "The site's e
   ```
   There is no midnight reset: room comes back as each hour rolls out of the window.
 - **One connection's budget.** A `429` "You've sent the most emails allowed from your connection for now" means that IP (or IPv6 /64) has had 100 emails in the last 24 hours (`IP_EMAIL_BUDGET`), counted in `RateLimits` like the cap above. It frees up as each hour rolls out; to let one organizer past it, add their IP to `RATE_LIMIT_IP_WHITELIST` and redeploy.
+- **One address's limit.** "Not emailed: … Their address already had 9 emails" on the draw page, or a `429` naming an address on a resend, means that address has had 9 emails from the site in the last 24 hours across all draws (`ADDRESS_EMAIL_LIMIT`), counted in `RateLimits` under a hash of the address. Those people can be sent their personal link now, or resent to once the hours roll out. To lift it for an address (your own, for testing), add it to `ADDRESS_LIMIT_EXEMPT` (comma-separated) in Vercel and redeploy; never put addresses in the repo.
 - **Gmail itself blocked or throttled the account** (sending limits, suspicious-activity lock, revoked app password). Check the Gmail account's inbox for a notice and the Vercel function logs for the SMTP error. A revoked or changed password needs the rotation steps above.
 
 The daily job emails "needs a look" when people on a sent draw were left unemailed for over an hour, or when the 24-hour count is above 80% of the cap.
