@@ -305,3 +305,15 @@ describe('home form', () => {
     });
   });
 });
+
+describe('how it works', () => {
+  // A folded <details> only hides its text, so search engines still read every step and answer
+  it('starts folded with every step and answer still in the page', () => {
+    const { container } = render(<Home />);
+    const folds = container.querySelectorAll('details');
+    expect([...folds].map((d) => d.querySelector('summary h2')?.textContent)).toEqual(['How it works', 'Frequently Asked Questions']);
+    expect([...folds].every((d) => !d.open)).toBe(true);
+    expect(container.textContent).toContain('Add everyone.');
+    expect(container.textContent).toContain('Can I set a budget or date?');
+  });
+});
