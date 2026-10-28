@@ -17,8 +17,8 @@ export default function HowItWorks() {
           from their own group.
         </li>
         <li>
-          <strong>Draw and share.</strong> Draw matches, then email everyone or send each person their own link by text or
-          chat. Each person sees only who they drew.
+          <strong>Draw and share.</strong> The names are randomly matched, then everyone gets an email or text with their
+          secret match. Each person only sees who they drew.
         </li>
       </ol>
 
