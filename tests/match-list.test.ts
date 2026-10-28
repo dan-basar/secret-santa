@@ -3,7 +3,7 @@ import { exportFileName, listSubtitle, matchesCsv, sortedPairs } from '@/lib/mat
 import type { AdminParticipant } from '@/types/api';
 
 function person(name: string, group: string | null = null, email: string | null = null): AdminParticipant {
-  return { name, email, group_name: group, reveal_code: `tok-${name}`, email_sent_at: null };
+  return { name, email, group_name: group, reveal_code: `tok-${name}`, email_sent_at: null, revealed_at: null };
 }
 
 // Each person gives to the next one

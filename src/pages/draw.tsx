@@ -65,6 +65,9 @@ export default function DrawPage() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   // Bumped after each send to remount the CAPTCHA: a Turnstile token works once
   const [turnstileKey, setTurnstileKey] = useState(0);
+  // A resend to one person from the personal links, and its error, shown on that row
+  const [resendingPerson, setResendingPerson] = useState<number | null>(null);
+  const [resendError, setResendError] = useState<{ person: number; message: string } | null>(null);
 
   // People with an email address who haven't been sent one: everyone before the
   // first send, and anyone whose email failed after it
@@ -175,18 +178,23 @@ export default function DrawPage() {
   };
 
   // retryFailed resends only to people whose email didn't go out; the server
-  // reuses the organizer name and email saved by the first send
-  const handleSendEmails = async (retryFailed: boolean) => {
+  // reuses the organizer name and email saved by the first send. person narrows a
+  // resend to one of them (from the personal links), sent to email when corrected
+  const handleSendEmails = async (retryFailed: boolean, person?: number, email?: string) => {
     if (!draw) return;
     setEmailLoading(true);
     setEmailError('');
+    setResendError(null);
+    setResendingPerson(person ?? null);
     setOrganizerLinkNotice('');
+    // One person's resend reports on their row; the rest report in the email card
+    const showError = (message: string) => (person === undefined ? setEmailError(message) : setResendError({ person, message }));
     try {
       const res = await fetch(`${router.basePath}/api/send-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(retryFailed
-          ? { key: drawKey.current, turnstileToken, retryFailed: true }
+          ? { key: drawKey.current, turnstileToken, retryFailed: true, person, email }
           : {
             key: drawKey.current, organizerName: organizerName.trim(), organizerEmail: organizerEmail.trim(),
             organizerNote: organizerNote.trim(), budget: budget.trim(), exchangeDate, turnstileToken,
@@ -204,11 +212,11 @@ export default function DrawPage() {
         // A send that runs past the function's time limit gets a 504 from Vercel
         // whose body isn't JSON, while emails may still have gone out
         const data: Partial<SendEmailsError> = await res.json().catch(() => ({}));
-        setEmailError(data.error || (res.status >= 500 ? MAYBE_SENT : 'Failed to send emails.'));
+        showError(data.error || (res.status >= 500 ? MAYBE_SENT : 'Failed to send emails.'));
       }
     } catch {
       // The request may have reached the server before the connection dropped
-      setEmailError(MAYBE_SENT);
+      showError(MAYBE_SENT);
     } finally {
       // Always reload for each person's sent status rather than guessing it
       await loadDraw();
@@ -216,6 +224,7 @@ export default function DrawPage() {
       setTurnstileKey((k) => k + 1);
       setTurnstileToken(null);
       setEmailLoading(false);
+      setResendingPerson(null);
     }
   };
 
@@ -446,6 +455,10 @@ export default function DrawPage() {
             participants={draw.participants}
             emailsSent={!!draw.emails_sent_at}
             linkFor={revealUrl}
+            onResend={(person, email) => handleSendEmails(true, person, email)}
+            canResend={!!turnstileToken && !emailLoading}
+            resendingPerson={resendingPerson}
+            resendError={resendError}
           />
           <MatchListExport draw={draw} details={listDetails} organizerName={listOrganizer} shown={matchesShown} />
           <DeleteSection onDelete={handleDelete} loading={deleteLoading} error={deleteError} />

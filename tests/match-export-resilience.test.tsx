@@ -27,7 +27,7 @@ const participants: AdminParticipant[] = NAMES.map((name, i) => ({
   email: i % 3 === 0 ? `=x,y"${i}@ex.com` : null,
   group_name: i % 4 === 0 ? NAMES[(i + 5) % NAMES.length] : null,
   reveal_code: `Tok${i}`,
-  email_sent_at: null,
+  email_sent_at: null, revealed_at: null,
 }));
 const matches = participants.map((_, i) => ({ giver: i, receiver: (i + 1) % participants.length }));
 

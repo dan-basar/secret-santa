@@ -15,7 +15,7 @@ function drawWith(emails: Array<string | null>): GetDrawResponse {
   return {
     created_at: '2026-12-01T00:00:00.000Z',
     emails_sent_at: null,
-    participants: emails.map((email, i) => ({ name: `P${i}`, email, group_name: null, reveal_code: `token-${i}`, email_sent_at: null })),
+    participants: emails.map((email, i) => ({ name: `P${i}`, email, group_name: null, reveal_code: `token-${i}`, email_sent_at: null, revealed_at: null })),
     matches: emails.map((_, i) => ({ giver: i, receiver: (i + 1) % emails.length })),
     organizer_name: null,
     organizer_note: null,
