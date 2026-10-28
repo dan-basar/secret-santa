@@ -16,12 +16,14 @@ interface Props {
   resendError: { person: number; message: string } | null;
 }
 
-// One line under each name: whether their email went out and whether they've opened their link
-function statusFor(p: AdminParticipant, emailsSent: boolean): { text: string; failed: boolean } | null {
+// One line under each name: whether their email went out and whether they've opened their link.
+// "No email address" only matters once emails have gone out to the others
+function statusFor(p: AdminParticipant, emailsSent: boolean, hasEmails: boolean): { text: string; failed: boolean } | null {
   const parts: string[] = [];
   let failed = false;
-  if (!p.email) parts.push('No email address');
-  else if (p.email_sent_at) parts.push(`✓ Emailed to ${p.email}`);
+  if (!p.email) {
+    if (emailsSent && hasEmails) parts.push('No email address');
+  } else if (p.email_sent_at) parts.push(`✓ Emailed to ${p.email}`);
   else if (emailsSent) {
     parts.push(`Not delivered to ${p.email}`);
     failed = true;
@@ -71,7 +73,7 @@ export default function PersonalLinks({ participants, emailsSent, linkFor, onRes
       )}
       <ul className={styles.personalLinks}>
         {participants.map((p, i) => {
-          const status = statusFor(p, emailsSent);
+          const status = statusFor(p, emailsSent, hasEmails);
           const typed = editing?.person === i ? editing.email.trim() : '';
           const typedValid = isValidEmail(typed);
           return (
