@@ -180,7 +180,8 @@
 }
 
 .about {
-  margin-top: 16px;
+  /* With main's 24px gap, 80px below the Draw matches button */
+  margin-top: 56px;
   font-size: 15px;
   line-height: 1.6;
 }
