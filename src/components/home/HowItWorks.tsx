@@ -17,8 +17,8 @@ export default function HowItWorks() {
           from their own group.
         </li>
         <li>
-          <strong>Draw and share.</strong> Draw matches, then email everyone or send each person their own link by text or
-          chat. Each person sees only who they drew.
+          <strong>Draw and share.</strong> The names are randomly matched, then everyone gets an email or text with their
+          secret match. Each person only sees who they drew.
         </li>
       </ol>
 
@@ -27,11 +27,11 @@ export default function HowItWorks() {
         <h3>Is it free?</h3>
         <p>Yes! There&rsquo;s no sign-up and no account.</p>
         <h3>Do I need everyone&rsquo;s email?</h3>
-        <p>No! Emails are fully optional.</p>
+        <p>No, emails are fully optional.</p>
         <h3>Can the organizer take part?</h3>
         <p>Yes! Your organizer page keeps the matches hidden unless you choose to show them.</p>
         <h3>Can I set a budget or date?</h3>
-        <p>Yes! Add a budget, exchange date, or note after the draw, and everyone sees them with their match.</p>
+        <p>Yes. Add a budget, exchange date, or note after the draw, and everyone sees them with their match.</p>
       </div>
     </section>
   );

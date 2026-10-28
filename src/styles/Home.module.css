@@ -180,7 +180,8 @@
 }
 
 .about {
-  margin-top: 16px;
+  /* With main's 24px gap, 80px below the Draw matches button */
+  margin-top: 56px;
   font-size: 15px;
   line-height: 1.6;
 }
@@ -211,10 +212,6 @@
   font-size: 14px;
   color: var(--ink);
   font-weight: 400;
-}
-
-.footerLink {
-  margin-top: 24px;
 }
 
 @media (max-width: 600px) {
