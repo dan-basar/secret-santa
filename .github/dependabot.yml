@@ -13,7 +13,7 @@ updates:
       # The app runs on Node 24 (engines.node), so its types stay on 24
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-      # React 19 is a migration of its own, done deliberately rather than as a bump
+      # A new React major is a migration of its own, done deliberately rather than as a bump
       - dependency-name: "react"
         update-types: ["version-update:semver-major"]
       - dependency-name: "react-dom"
