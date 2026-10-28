@@ -16,8 +16,23 @@ import type { ApiError, CreateDrawResponse } from '@/types/api';
 // The form as typed, kept for a refresh or an accidental Back; it ends with the tab
 const DRAFT_KEY = 'homeFormDraft';
 
-const TITLE = 'Secret Santa Picker';
-const DESCRIPTION = 'Draw Secret Santa matches and notify everyone by email.';
+const NAME = 'Secret Santa Picker';
+// Worded for search results: the phrases people search for, in under 60 and 160 characters
+const TITLE = `${NAME}: Free Secret Santa Generator`;
+const DESCRIPTION = 'Free Secret Santa generator: add names, keep couples and families apart, draw matches, and email everyone who they drew. No sign-up needed.';
+
+// Tells search engines this page is a free web app, for richer results
+const STRUCTURED_DATA = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: NAME,
+  url: siteUrl(),
+  description: DESCRIPTION,
+  applicationCategory: 'LifestyleApplication',
+  operatingSystem: 'Any',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  publisher: { '@type': 'Organization', name: 'Base Workshop' },
+});
 
 function emptyParticipant(): FormParticipant {
   return { id: newId(), name: '', email: '', groupId: '' };
@@ -243,7 +258,7 @@ export default function Home() {
         <meta name="description" content={DESCRIPTION} />
         <link rel="canonical" href={siteUrl()} />
         <meta property="og:type" content="website" />
-        <meta property="og:site_name" content={TITLE} />
+        <meta property="og:site_name" content={NAME} />
         <meta property="og:title" content={TITLE} />
         <meta property="og:description" content={DESCRIPTION} />
         <meta property="og:url" content={siteUrl()} />
@@ -255,6 +270,7 @@ export default function Home() {
         <meta name="twitter:title" content={TITLE} />
         <meta name="twitter:description" content={DESCRIPTION} />
         <meta name="twitter:image" content={siteUrl('/og-image.png')} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: STRUCTURED_DATA }} />
       </Head>
 
       <div className={styles.page}>
