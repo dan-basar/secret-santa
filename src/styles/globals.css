@@ -101,6 +101,11 @@ input, select {
   outline-offset: 2px;
 }
 
+/* Text the page moves focus to (a revealed match, the matches table) so screen readers read it out; it isn't a control, so no ring */
+[tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
 /* Safari on iPhone zooms in on any field with text under 16px */
 @media (max-width: 600px) {
   input, select {
@@ -111,6 +116,11 @@ input, select {
 input:focus, select:focus {
   border-color: var(--ink-light);
   box-shadow: 0 0 0 3px rgba(26,23,20,0.06);
+}
+
+/* A field the last submit found a problem in (the home form sets aria-invalid) */
+input[aria-invalid="true"] {
+  border-color: var(--error);
 }
 
 input::placeholder {

@@ -105,8 +105,32 @@ describe('home form', () => {
     type('Person 1 email', 'ann@example');
     type('Person 2 email', 'bob@example.com');
     fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
-    expect(screen.getByText('Please fix: Person 1 needs a name; Person 2 needs a name.')).toBeTruthy();
+    expect(screen.getByText(
+      'Please fix: Person 1 needs a name; Person 1 has an email address that isn\'t valid; Person 2 needs a name.',
+    )).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports every kind of problem at once, marks each field and focuses the first', () => {
+    render(<Home />);
+    type('Person 1 name', 'Sam');
+    type('Person 2 name', 'sam');
+    type('Person 2 email', 'sam@example');
+    fireEvent.click(screen.getByRole('button', { name: /draw matches/i }));
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toMatch(/^Please fix: Person 2 \(sam\) has an email address that isn't valid\. Names must be distinguishable/);
+    const [name1, name2, email2] = ['Person 1 name', 'Person 2 name', 'Person 2 email'].map((l) => screen.getByLabelText(l));
+    for (const field of [name1, name2, email2]) {
+      expect(field.getAttribute('aria-invalid')).toBe('true');
+      expect(field.getAttribute('aria-describedby')).toBe(alert.id);
+    }
+    expect(screen.getByLabelText('Person 1 email').getAttribute('aria-invalid')).toBeNull();
+    expect(document.activeElement).toBe(name1);
+
+    // Editing a field clears its mark and leaves the others
+    type('Person 2 email', 'sam@example.com');
+    expect(email2.getAttribute('aria-invalid')).toBeNull();
+    expect(name2.getAttribute('aria-invalid')).toBe('true');
   });
 
   it('asks for at least two participants', () => {

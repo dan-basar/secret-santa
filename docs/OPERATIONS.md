@@ -15,6 +15,21 @@ Migrations live in [`sql/migrations/`](../sql/migrations). Each `NNN_name.sql` h
 
 Migrations that change more than one thing are wrapped in `BEGIN; ... COMMIT;`, so a failure leaves the database unchanged. Don't run a migration twice: most `ALTER TABLE ... ADD` statements fail on the second run, which is harmless but noisy.
 
+## Restoring data
+
+Neon keeps 7 days of history on production (the Launch plan maximum; set in Neon → project settings → Instant restore), so a bad migration, a mistaken bulk change or the V2 purge can be undone up to a week later.
+
+**Before a risky change** (any production migration, the V2 purge), make a named restore point: Neon console → **Branches** → **Create branch**, from the production branch, named for the change (for example `before-v2-purge`). It costs nothing while unchanged. Delete it a week later, once the change has proved itself.
+
+**To get data back:**
+
+1. **Look before you restore.** Neon → **Branches** → production branch → **Restore**, choose the time just before the problem (or the named branch above), and restore it **to a new branch**, not over production. Open the SQL Editor on that branch and check the rows you need are there.
+2. **Restore production.** If only a few rows are wrong, copy them across with SQL from the checked branch. If the whole database is wrong, run the same Restore on the production branch itself. Neon keeps the pre-restore state as a backup branch, so this step can itself be undone.
+3. **Check the app.** Open `/api/health` and a draw page. The app connects by the production branch's connection string, which a restore in place leaves unchanged, so no Vercel change or redeploy is needed.
+4. **Clean up** the temporary branches once you're sure.
+
+A restore puts back every table, including the counters in `RateLimits` and `EmailSendLog`. An email already sent stays sent: restoring a draw from before its emails went out marks it unsent again, so don't press **Send** on it a second time without checking.
+
 ## Environment variables
 
 | Where | Used by | Holds |
@@ -56,6 +71,8 @@ Never put real keys in `.env.development.local`; it keeps the test keys.
 4. **Save Rule**, then **Review Changes** → **Publish**.
 
 60 a minute per IP is far above anything a real organizer or household sends (each page makes one or two API calls), and well below a flood. The Hobby plan allows one rate-limit rule per project, fixed window only (10 seconds to 10 minutes), and 1,000,000 allowed requests a month; requests the rule refuses aren't billed as function invocations. The edge `429` doesn't carry the app's `{ error }` JSON, which the pages already handle: the organizer and personal link pages show their "busy" message for any `429`, and the other calls fall back to their generic error. To check it, Firewall → **Overview** shows the rule's matches and rate-limited requests.
+
+The app's own limits rely on seeing each visitor's real address through that hand-off from baseworkshop-home. Checked 2026-10-27: a phone on mobile data and a computer each got their own `RateLimits` rows. If every row ever lands under one or two addresses, the hand-off has started hiding visitors and everyone is sharing one budget.
 
 ## When Gmail stops sending
 

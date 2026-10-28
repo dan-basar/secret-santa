@@ -2,7 +2,7 @@
 // the reveal page and email would then say "you're the Secret Santa for Sam" with no
 // way to tell which one. So names must differ once case and spaces are ignored.
 // Shared by the home form and create-draw.
-function nameKey(name: string): string {
+export function nameKey(name: string): string {
   return name.replace(/\s+/g, '').toLowerCase();
 }
 
