@@ -184,11 +184,50 @@
   margin-top: 56px;
   font-size: 15px;
   line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* "How it works" and the FAQ each fold up under their heading, closed at first */
+.foldToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+/* Safari draws its own triangle unless told not to */
+.foldToggle::-webkit-details-marker {
+  display: none;
+}
+
+.foldToggle .sectionTitle {
+  margin-bottom: 0;
+}
+
+.foldToggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.foldChevron {
+  display: inline-block;
+  font-size: 22px;
+  line-height: 1;
+  margin-left: -8px;
+  color: var(--ink-light);
+  transition: transform 0.15s;
+}
+
+.fold[open] .foldChevron {
+  transform: rotate(90deg);
 }
 
 .howSteps {
   padding-left: 20px;
-  margin: 12px 0 28px;
+  margin: 12px 0 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
