@@ -213,10 +213,6 @@
   font-weight: 400;
 }
 
-.footerLink {
-  margin-top: 24px;
-}
-
 @media (max-width: 600px) {
   .headerInner {
     flex-direction: column;

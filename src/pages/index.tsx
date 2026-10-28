@@ -453,9 +453,8 @@ export default function Home() {
         </main>
 
         <footer className={styles.footer}>
-          <p>Matches are randomly generated and saved with a private organizer link.</p>
           {/* The policy lives on the root site, outside this app's base path */}
-          <p className={styles.footerLink}><a href="/privacy">Privacy policy</a></p>
+          <p><a href="/privacy">Privacy policy</a></p>
         </footer>
       </div>
     </>
