@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { siteUrl } from '@/lib/site';
 import { isValidEmail } from '@/lib/email-address';
 import { hasLink } from '@/lib/sanitize';
-import { duplicateNames, duplicateNamesMessage } from '@/lib/names';
+import { duplicateNames, duplicateNamesMessage, nameKey } from '@/lib/names';
 import { moveEmailDraft } from '@/lib/email-draft';
 import { FormGroup, FormParticipant, MAX_GROUPS, MAX_PARTICIPANTS, groupNameFor, newId, parseFormDraft } from '@/lib/groups';
 import styles from '@/styles/Home.module.css';
@@ -39,6 +39,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Fields the last submit found a problem in, as "<participant id>:name" or ":email";
+  // each is cleared as soon as it's edited
+  const [invalid, setInvalid] = useState<Set<string>>(new Set());
 
   // Set by Edit & Redraw: the admin key of the earlier draw, which stays live until this form submits
   const [replacesKey, setReplacesKey] = useState<string | null>(null);
@@ -117,6 +120,12 @@ export default function Home() {
   };
 
   const updateParticipant = (id: string, field: keyof FormParticipant, value: string) => {
+    setInvalid((s) => {
+      if (!s.has(`${id}:${field}`)) return s;
+      const next = new Set(s);
+      next.delete(`${id}:${field}`);
+      return next;
+    });
     setParticipants((ps) =>
       ps.map((p) => (p.id === id ? { ...p, [field]: value } : p))
     );
@@ -137,31 +146,46 @@ export default function Home() {
       setError('Please enter at least 2 participants.');
       return;
     }
-    // Named by the row label on the form ("Person 3"), plus the name when there is one
+    // Every problem in one pass, so fixing one kind doesn't reveal the next. Rows are
+    // named by their label on the form ("Person 3"), plus the name when there is one
+    const bad = new Set<string>();
+    const mark = (p: FormParticipant, field: 'name' | 'email') => bad.add(`${p.id}:${field}`);
     const problems = participants.flatMap((p, i) => {
       const name = p.name.trim();
       const email = p.email.trim();
       if (!name && !email) return [];
       const row = name ? `Person ${i + 1} (${name})` : `Person ${i + 1}`;
-      if (!name) return [`${row} needs a name`];
-      if (email && !isValidEmail(email)) return [`${row} has an email address that isn't valid`];
-      return [];
+      const rowProblems: string[] = [];
+      if (!name) { mark(p, 'name'); rowProblems.push(`${row} needs a name`); }
+      if (email && !isValidEmail(email)) { mark(p, 'email'); rowProblems.push(`${row} has an email address that isn't valid`); }
+      return rowProblems;
     });
-    if (problems.length > 0) {
-      setError(`Please fix: ${problems.join('; ')}.`);
-      return;
-    }
-    const duplicates = duplicateNames(filled.map((p) => p.name));
+    const messages = problems.length > 0 ? [`Please fix: ${problems.join('; ')}.`] : [];
+    // A row missing its name is already reported above
+    const named = filled.filter((p) => p.name.trim());
+    const duplicates = duplicateNames(named.map((p) => p.name));
     if (duplicates.length > 0) {
-      setError(duplicateNamesMessage(duplicates));
-      return;
+      const keys = new Set(duplicates.map(nameKey));
+      named.forEach((p) => { if (keys.has(nameKey(p.name))) mark(p, 'name'); });
+      messages.push(duplicateNamesMessage(duplicates));
     }
     // Names go into the match emails, so the server refuses web addresses in them
-    const linkNames = filled.filter((p) => hasLink(p.name));
+    const linkNames = named.filter((p) => hasLink(p.name));
     if (linkNames.length > 0) {
-      setError(`Names cannot contain web addresses: ${linkNames.map((p) => p.name.trim()).join(', ')}`);
+      linkNames.forEach((p) => mark(p, 'name'));
+      messages.push(`Names cannot contain web addresses: ${linkNames.map((p) => p.name.trim()).join(', ')}`);
+    }
+    if (messages.length > 0) {
+      setInvalid(bad);
+      setError(messages.join(' '));
+      // Focus the first marked field in page order: by row, a row's name before its email
+      const first = participants
+        .flatMap((p, i) => (['name', 'email'] as const).map((f) => ({ key: `${p.id}:${f}`, id: `person-${i + 1}-${f}` })))
+        .find((f) => bad.has(f.key));
+      if (first) document.getElementById(first.id)?.focus();
       return;
     }
+    setInvalid(new Set());
 
     const payload = filled.map((p) => ({
       name: p.name.trim(),
@@ -350,6 +374,8 @@ export default function Home() {
                     value={p.name}
                     onChange={(e) => updateParticipant(p.id, 'name', e.target.value)}
                     maxLength={200}
+                    aria-invalid={invalid.has(`${p.id}:name`) || undefined}
+                    aria-describedby={invalid.has(`${p.id}:name`) ? 'form-error' : undefined}
                   />
                   <label htmlFor={`person-${i + 1}-group`} className="visually-hidden">Person {i + 1} group</label>
                   <select
@@ -370,6 +396,8 @@ export default function Home() {
                     value={p.email}
                     onChange={(e) => updateParticipant(p.id, 'email', e.target.value)}
                     maxLength={320}
+                    aria-invalid={invalid.has(`${p.id}:email`) || undefined}
+                    aria-describedby={invalid.has(`${p.id}:email`) ? 'form-error' : undefined}
                   />
                   <button
                     className={`btn btn-secondary ${styles.removeBtn}`}
@@ -392,7 +420,7 @@ export default function Home() {
           </section>
 
           {statusMsg && <p className="status-msg fade-in" role="status">{statusMsg}</p>}
-          {error && <p className="error-msg fade-in" role="alert">{error}</p>}
+          {error && <p id="form-error" className="error-msg fade-in" role="alert">{error}</p>}
 
           <div className={styles.submitRow}>
             <button

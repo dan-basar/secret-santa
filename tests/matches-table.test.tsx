@@ -36,4 +36,10 @@ describe('MatchesTable', () => {
     expect(screen.getByRole('table')).toBeTruthy();
     expect(screen.getAllByText('Sam')).toHaveLength(2);
   });
+
+  it('moves focus to the table it shows, so a screen reader reads it out', () => {
+    render(<Table />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show all matches' }));
+    expect(document.activeElement).toBe(screen.getByRole('table', { name: 'Matches' }));
+  });
 });

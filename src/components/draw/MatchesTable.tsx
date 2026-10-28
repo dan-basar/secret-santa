@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { sortedPairs } from '@/lib/match-list';
 import type { AdminMatch, AdminParticipant } from '@/types/api';
 import styles from '@/styles/Draw.module.css';
@@ -18,6 +19,8 @@ export default function MatchesTable({ participants, matches, emailsSent, onEdit
   const hasGroups = participants.some((p) => p.group_name);
   // Grouped people first, by group, then by giver name
   const sorted = sortedPairs(participants, matches);
+  // Set by the Show button so the table takes focus as it appears, the way the button it replaces had it
+  const focusTable = useRef(false);
 
   return (
     <section className={`card ${styles.section}`}>
@@ -37,7 +40,7 @@ export default function MatchesTable({ participants, matches, emailsSent, onEdit
 
       {!shown ? (
         <div className={styles.matchesHidden}>
-          <button className="btn btn-primary" onClick={onShow}>
+          <button className="btn btn-primary" onClick={() => { focusTable.current = true; onShow(); }}>
             Show all matches
           </button>
           <p className={styles.sectionDesc}>
@@ -45,7 +48,14 @@ export default function MatchesTable({ participants, matches, emailsSent, onEdit
           </p>
         </div>
       ) : (
-        <table className={styles.table}>
+        <table
+          className={styles.table}
+          aria-label="Matches"
+          tabIndex={-1}
+          ref={(el) => {
+            if (el && focusTable.current) { focusTable.current = false; el.focus(); }
+          }}
+        >
           <colgroup>
             {hasGroups ? (
               <>

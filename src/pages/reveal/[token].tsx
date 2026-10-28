@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -19,6 +19,7 @@ export default function RevealPage() {
   const [data, setData] = useState<RevealResponse | null>(null);
   // Hidden until tapped, so a glance over someone's shoulder doesn't spoil it
   const [revealed, setRevealed] = useState(false);
+  const matchRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
     if (typeof token !== 'string') return;
@@ -36,6 +37,11 @@ export default function RevealPage() {
       })
       .catch(() => setState('error'));
   }, [token, router.basePath]);
+
+  // The button disappears on tap, so move focus to the name: a screen reader reads it out and the keyboard isn't left on nothing
+  useEffect(() => {
+    if (revealed) matchRef.current?.focus();
+  }, [revealed]);
 
   // The token in the URL is the only key to this match: keep the page out of
   // search engines and never send the URL to another site as a referrer
@@ -99,7 +105,7 @@ export default function RevealPage() {
           <p className={styles.lead}>you&rsquo;re the Secret Santa for&hellip;</p>
 
           {revealed ? (
-            <p className={`${styles.matchName} fade-in`}>{data.match_name}</p>
+            <p ref={matchRef} tabIndex={-1} className={`${styles.matchName} fade-in`}>{data.match_name}</p>
           ) : (
             <button className={`btn btn-primary ${styles.revealButton}`} onClick={() => setRevealed(true)}>
               Tap to reveal
